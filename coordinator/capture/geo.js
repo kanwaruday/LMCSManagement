@@ -18,3 +18,10 @@ export function shouldCapture(last, fix, spacingM = FRAME_SPACING_M, maxAccuracy
   if (!Number.isFinite(fix.accuracy) || fix.accuracy > maxAccuracyM) return false;
   return !last || distanceM(last, fix) >= Math.max(spacingM, fix.accuracy);
 }
+
+// Is the phone upright (portrait)? portrait: the orientation media query's answer, or null when it can't be read; then the camera
+// frame's own shape decides (w x h). Nothing to go by: not upright, so a phone with no orientation API is never locked out.
+export function upright(portrait, w, h) {
+  if (typeof portrait === 'boolean') return portrait;
+  return !!(w && h && h > w);
+}

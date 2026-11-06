@@ -8,7 +8,7 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
 
 (async () => {
   const dir = '../../coordinator/capture/';
-  const { distanceM, shouldCapture, FRAME_SPACING_M } = await import(dir + 'geo.js');
+  const { distanceM, shouldCapture, FRAME_SPACING_M, upright } = await import(dir + 'geo.js');
   const { createRunStore } = await import(dir + 'run-store.js');
   const { createUploader: createUp } = await import(dir + 'uploader.js');
   const createUploader = (o) => createUp({ parallel: 1, batch: 1, ...o }); // the order checks below send one at a time; parallel sends have their own tests
@@ -41,6 +41,14 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     assert.strictEqual(shouldCapture(last, { ...at(40), accuracy: 80 }), false);
     assert.strictEqual(shouldCapture(null, { ...at(0), accuracy: 10 }), true);
     assert.strictEqual(shouldCapture(null, { ...at(0), accuracy: 80 }), false);
+  });
+  await test('upright: the orientation query decides; without it the frame shape; nothing to go by is not upright', () => {
+    assert.strictEqual(upright(true, 1280, 720), true); // the query wins over a stale frame
+    assert.strictEqual(upright(false, 720, 1280), false);
+    assert.strictEqual(upright(null, 720, 1280), true); // no orientation API: a tall frame is a phone held upright
+    assert.strictEqual(upright(null, 1280, 720), false);
+    assert.strictEqual(upright(null, 0, 0), false); // no camera yet: never locked out
+    assert.strictEqual(upright(undefined), false);
   });
   await test('a fix with no or non-finite accuracy is not a good fix', () => {
     for (const accuracy of [undefined, NaN, null, Infinity]) assert.strictEqual(shouldCapture(null, { ...at(0), accuracy }), false, String(accuracy));

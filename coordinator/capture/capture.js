@@ -10,7 +10,7 @@
 //   the run's Inspection JSON {itemId: {ok, date?, fileId?}} (uploader.js swaps each photo's seq for its Drive file id).
 // Everything is saved on the phone first (run-store.js) and sent later from the Upload tab (uploader.js -> Roster web app).
 // Never shows speed or trip time, and no sound.
-import { shouldCapture, distanceM } from './geo.js';
+import { shouldCapture, distanceM, upright } from './geo.js';
 import { createCaptureIdb, createRunStore } from './run-store.js';
 import { wantsDriverMode, TOKEN_KEY } from './driver-mode.js';
 import { createUploader } from './uploader.js';
@@ -18,6 +18,8 @@ import { createUploader } from './uploader.js';
 const COORD_URL = 'https://script.google.com/macros/s/AKfycbwilcvrgZQga_qo1A-fBTUzKLifrBYIwlPHoWMITmchf5sZOYjKIJ7_4J0TeBF_-6B6/exec'; // = BACKEND_URL in coordinator/shared.js
 const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // = ROSTER_URL in assets/auth.js
 const FULL_MSG = 'The phone is full. Send your runs now, then carry on.';
+const PORTRAIT = window.matchMedia ? matchMedia('(orientation: portrait)') : null;
+const TURN = 'फ़ोन को आड़ा करें · Turn the phone sideways';
 const KIND = { timelapse: 'Timelapse', count: 'Count run', inspection: 'Safety check' };
 const START = { timelapse: 'timelapse', count: 'count run', inspection: 'safety check' };
 const HELP = {
@@ -179,7 +181,9 @@ function wire() {
   $('fixCount').addEventListener('click', openFix);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('sheetWrap').hidden) closeSheet(); });
   document.addEventListener('visibilitychange', onVisibility);
-  PORTRAIT.addEventListener('change', turnCheck);
+  const turned = () => { turnCheck(); startGate(); };
+  if (PORTRAIT) PORTRAIT.addEventListener('change', turned);
+  addEventListener('resize', turned); // some browsers miss the query's change event on a turn; a resize always comes
 }
 
 function showTab(tab) {
@@ -201,10 +205,12 @@ function setMode(mode) {
   $('privacy').checked = false; // asked again before every timelapse start
   $('trialRow').hidden = mode !== 'timelapse' || !!S.resumeId || !canTrial(); // a resumed run keeps what it was
   $('trial').checked = false; // off by default, every time
+  delete $('start').dataset.label; // startGate puts the turn prompt back over the new label
   $('start').textContent = (S.resumeId ? 'Carry on the ' : 'Start ') + START[mode];
   $('setupMsg').textContent = '';
   loadoutLine();
   if (S.driver) driverLabels();
+  startGate();
 }
 const PRIVACY_HI = 'कैमरा सड़क की ओर · फ़्रेम में बच्चों के चेहरे नहीं · Camera faces the road · no children\'s faces in the frame'; // any time of day (Uday, 30 Oct: a person is sent to capture); faces still blurred on the Mac
 // Driver mode speaks Hindi first (a driver may read little; driver/index.html does the same), English small after it
@@ -219,11 +225,13 @@ function driverLabels() {
   $('busNote').className = 'cap-hint';
   if (S.mode === 'timelapse') document.querySelector('#privacyRow span').textContent = PRIVACY_HI;
   t('hint', 'चार्जर लगाएँ, स्क्रीन चालू रखें · Plug in the charger and keep the screen on.');
+  delete $('start').dataset.label;
   t('start', (S.resumeId ? 'जारी रखें · Carry on' : S.shots ? '📷 फ़ोटो शुरू करें · Start' : '🎥 रिकॉर्ड शुरू करें · Start'));
   $('stopHere').innerHTML = 'बस स्टॉप दर्ज करें<small>Mark a Bus Stop</small>'; // the big button: Hindi big, English small under it (fixed text)
   t('end', 'रूट खत्म · End run');
   document.querySelector('[data-tab="capture"]').firstChild.textContent = 'रिकॉर्ड · Record';
   document.querySelector('[data-tab="upload"]').firstChild.textContent = 'भेजें · Send ';
+  startGate();
 }
 // Bus photos (the bus setup chain, assets/game/bus-chain.js): ?shots=1 from the staff quest, or a driver phone's photo step. The same
 // safety check with the vehicle shots in front of the Owner's loadout, so it also counts as that month's check.
@@ -404,8 +412,11 @@ async function start() {
     const loc = navigator.permissions && await navigator.permissions.query({ name: 'geolocation' }).catch(() => null);
     if (loc && loc.state === 'denied') return setupSay(LOC_HELP);
     if (kind === 'timelapse') {
+      const sideways = TURN + ', then tap Start. Auto-rotate off? Turn it on.';
+      if (uprightNow()) return setupSay(sideways);
       S.camWanted = true;
       try { await openCamera(); } catch (e) { S.camWanted = false; return setupSay(camMsg(e)); } // no camera, no run
+      if (uprightNow()) { S.camWanted = false; closeCamera(); return setupSay(sideways); } // turned while the camera opened, or no orientation API: the frame's shape
       lockLandscape();
     }
     const bus = busOf(reg);
@@ -495,9 +506,9 @@ async function onFix(p) {
 // Timelapse frames are landscape only (Uday, 6 Nov: "I feel that gives more data"). Upright: the turn prompt, and no frames until
 // the phone is sideways. Stop photos and safety-check photos are not gated. The lock is best effort (Chrome on Android allows it
 // in full screen only); the check on every fix is what holds.
-const PORTRAIT = matchMedia('(orientation: portrait)');
+const uprightNow = () => upright(PORTRAIT ? PORTRAIT.matches : null, $('cam').videoWidth, $('cam').videoHeight);
 function turnCheck() {
-  const up = !!(S.active && S.run && S.run.kind === 'timelapse' && PORTRAIT.matches);
+  const up = !!(S.active && S.run && S.run.kind === 'timelapse' && uprightNow());
   $('turn').hidden = !up;
   return up;
 }
@@ -506,6 +517,13 @@ async function lockLandscape() {
     if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
     await screen.orientation.lock('landscape');
   } catch (e) { /* not allowed here: the turn prompt does the job */ }
+}
+// No timelapse ever starts upright (Uday, 6 Nov: "the phone shouldnt activate if portrait shots are being taken"): while the
+// phone is upright, Start reads the turn prompt; sideways, it is Start again. start() refuses too, so a tap never opens a run.
+function startGate() {
+  const b = $('start'), up = !S.active && S.mode === 'timelapse' && uprightNow();
+  if (up && !b.dataset.label) { b.dataset.label = b.textContent; b.textContent = TURN; }
+  else if (!up && b.dataset.label) { b.textContent = b.dataset.label; delete b.dataset.label; }
 }
 function unlockLandscape() {
   try { screen.orientation.unlock(); } catch (e) { /* never locked */ }
@@ -646,7 +664,7 @@ function endClick() { // two taps, so a bump in a moving bus cannot end the run
   endRun();
 }
 async function endRun() {
-  S.active = false;
+  S.active = false; startGate();
   if (S.watch != null) navigator.geolocation.clearWatch(S.watch);
   S.watch = null;
   if (S.wake) S.wake.release().catch(() => {});
