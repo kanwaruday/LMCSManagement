@@ -1780,7 +1780,7 @@ function paySettleFnf_(ss, d, caller) {
 
 // ── ESI coverage per contribution period (2026-09-30, "do what is legally right") ──
 // Periods run Apr-Sep and Oct-Mar. Coverage is decided on the full-month wages
-// (Basic + ADA + DA) in force at the start of the period -- or on joining, for
+// (the ESI wage base, payEsiWages_) in force at the start of the period -- or on joining, for
 // someone who joined during it -- and holds for the whole period.
 function payEsiCovered_(rows, rates, settings, ctx) {
   if (!rows || !rows.length) return undefined;
@@ -1792,7 +1792,7 @@ function payEsiCovered_(rows, rates, settings, ctx) {
   const r = pick.row, rt = rates[payEntity_(r['Entity'])];
   if (!rt) return undefined;
   const b = payNum_(r['Full Basic']);
-  return b + payRound_(b * rt.ada) + payRound_(b * rt.da) <= settings.esiThreshold;
+  return payEsiWages_(b, payRound_(b * rt.ada), payRound_(b * rt.da), payNum_(r['Staff-Child Tuition']), periodStart) <= settings.esiThreshold;
 }
 
 // ── Outputs (stage 3, 2026-09-30) ─────────────────────────────────────
@@ -1954,7 +1954,7 @@ function payDataQuality_(ss, month) {
   const rates = payRates_(payOpenById_(PAY_RATES_SHEET_ID));
   const computed = payCompute_(ss, month);
   const wages = {};
-  computed.rows.forEach(function (row) { wages[row.code] = row.wages; });
+  computed.rows.forEach(function (row) { wages[row.code] = row.esiWages; });
   const seen = {}, issues = [];
   const flag = function (code, name, entity, text) { issues.push({ code: code, name: name, entity: entity, text: text }); };
   // One row per person: the latest Salary Master row in force this month (a raise, increment or transfer adds
@@ -1990,7 +1990,7 @@ function payDataQuality_(ss, month) {
     // report doesn't build), so someone covered mid-period on a now-higher wage could
     // still be missed; it only clears the much larger false-positive case.
     if ((rates[payEntity_(r['Entity'])] || {}).esiRegistered && !k.esi && wages[code] !== undefined && wages[code] <= computed.settings.esiThreshold) {
-      flag(code, name, entity, 'No ESI number on file (wages ₹' + wages[code] + ' are at/under the ESI threshold)');
+      flag(code, name, entity, 'No ESI number on file (ESI wages ₹' + wages[code] + ' are at/under the ESI threshold)');
     }
   });
   // Text dates: a real date cell is fine in any display format, but TEXT such as 05/09/2026 is read as

@@ -242,7 +242,7 @@ module.exports = function run(t) {
       ['EmployeeCode', 'BankAcNumber', 'IFSCCode', 'UanNumber', 'EsiNumber', 'PanNo'],
       ['FOX/24/02/090', '', '', '', '', ''], // on payroll, EPF member, nothing on file
       ['FOX/23/09/104', '1234567890', 'HDFC0001234', 'UAN456', 'ESI789', 'PAN1234A'], // clean
-      ['ELK/05/03/005', '1234567890', 'HDFC0001234', 'UAN789', '', 'PAN5678B'], // wages above the ESI threshold, no ESI number
+      ['ELK/05/03/005', '1234567890', 'HDFC0001234', 'UAN789', '', 'PAN5678B'], // wages 28000, but ESI wages (Basic + DA, from Oct 2026) 21000, no ESI number
     ], 'EmpKeyNumbers', h.counter);
     const r = call('dataquality', { month: M });
     const byCode = {};
@@ -252,7 +252,8 @@ module.exports = function run(t) {
     assert.ok(!byCode['FOX/23/09/104'], 'clean row raises nothing');
     assert.ok(byCode['OWL/24/01/050'].some((t) => /Not found in EmpKeyNumbers/.test(t)), 'everyone else is missing from EmpKeyNumbers entirely');
     assert.ok(!byCode['JAY/21/03/020'].some((t) => /No ESI number/.test(t)), 'LMS6 is not ESI-registered, so no ESI-number flag even though absent from EmpKeyNumbers');
-    assert.ok(!byCode['ELK/05/03/005'], 'wages above the ESI threshold -- no ESI-number flag even with none on file');
+    // From Oct 2026 ESI wages leave ADA out (Uday, 2026-11-06): 20000 + 5% DA = 21000, at the threshold, so covered.
+    assert.ok(byCode['ELK/05/03/005'].some((t) => /No ESI number on file \(ESI wages ₹21000/.test(t)), 'ESI wages at the threshold -- flagged');
   });
 
   t.test('leave template: CL/Comp balance carries forward when a month has no upload yet', () => {

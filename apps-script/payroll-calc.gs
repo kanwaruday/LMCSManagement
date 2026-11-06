@@ -11,8 +11,10 @@
 //   Wages         = Basic + ADA + DA  (EPF/ESI base; tuition & CL encashment excluded)
 //   EPF           = 12% × MIN(Wages, EPF ceiling) if member (or gross < EPF Mandatory Below Gross) AND entity registered;
 //                   employer contribution = the same amount
-//   ESI           = 0.75% employee / 3.25% employer of Wages, if Wages <= threshold
-//                   AND entity registered
+//   ESI           = 0.75% employee / 3.25% employer of ESI Wages, if ESI Wages <= threshold
+//                   AND entity registered. ESI Wages = Wages up to Sep 2026; from Oct 2026
+//                   Basic + DA (ADA left out, Code on Social Security), plus any left-out
+//                   allowances above 50% of pay added back (Uday, 2026-11-06). EPF keeps ADA.
 //   CL Encashment = CL days × (Wages − EPF − ESI) / divisor (30)
 //   Gross         = Wages + CL Encashment + Tuition + Other Earnings
 //   CTI           = Gross + EPF employer + ESI employer
@@ -24,6 +26,16 @@
 //   Gratuity prov = ROUND((Basic + DA) × 5%) -- employer provision, not deducted
 // Gratuity wages exclude ADA by law (EPF wages include it).
 // ═══════════════════════════════════════════════════════════════════
+
+// ESI wage base for the month ending monthEnd. From Oct 2026 the Code on Social Security
+// definition: Basic + DA, with left-out allowances (ADA, tuition, other earnings) over 50% of
+// that pay added back. CL encashment stays out of both sides -- it is worked out from ESI itself.
+const PAY_ESI_CODE_FROM = new Date(2026, 9, 1);
+function payEsiWages_(basic, ada, da, otherAllowances, monthEnd) {
+  if (monthEnd < PAY_ESI_CODE_FROM) return basic + ada + da;
+  const total = basic + ada + da + (Number(otherAllowances) || 0);
+  return basic + da + Math.max(0, payRound_(total / 2 - (basic + da)));
+}
 
 function payMonthsBetween_(from, to) {
   let m = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
@@ -62,9 +74,10 @@ function payCalc_(emp, input, rates, s, ctx) {
   const epf = (emp.epfMember || epfMandatory) && rates.epfRegistered ? up(Math.min(wages, s.epfCeiling) * s.epfRate) : 0;
   // ESI: coverage is decided once per contribution period (Apr-Sep, Oct-Mar) -- someone covered at
   // its start stays covered even if wages cross the threshold mid-period.
-  const esiOn = rates.esiRegistered && (emp.esiCovered !== undefined ? !!emp.esiCovered : wages <= s.esiThreshold);
-  const esi = esiOn ? up(wages * s.esiEmpRate) : 0;
-  const esiEr = esiOn ? up(wages * s.esiErRate) : 0;
+  const esiWages = payEsiWages_(basic, ada, da, preGross - wages, ctx.monthEnd);
+  const esiOn = rates.esiRegistered && (emp.esiCovered !== undefined ? !!emp.esiCovered : esiWages <= s.esiThreshold);
+  const esi = esiOn ? up(esiWages * s.esiEmpRate) : 0;
+  const esiEr = esiOn ? up(esiWages * s.esiErRate) : 0;
   const clEnc = R((Number(input.clDays) || 0) * (wages - epf - esi) / s.clDivisor);
   const tuition = Number(emp.tuition) || 0;
   const otherEarnings = Number(input.otherEarnings) || 0;
@@ -101,7 +114,7 @@ function payCalc_(emp, input, rates, s, ctx) {
   const hold = input.hold === true ? 'fnf' : String(input.hold || '');
   const release = Number(input.release) || 0;
   return {
-    paidDays: paidDays, serviceMonths: months, basic: basic, ada: ada, da: da, wages: wages,
+    paidDays: paidDays, serviceMonths: months, basic: basic, ada: ada, da: da, wages: wages, esiWages: esiWages,
     clEncashment: clEnc, tuitionA: tuition, otherEarnings: otherEarnings, gross: gross,
     epf: epf, esi: esi, rrfRate: rrfRate, rrf: rrf, tuitionD: tuition, otherDeductions: otherDeductions, loanRecovery: loanRecovery, tds: tds,
     totalDeductions: totalDeductions, net: net, bankPayable: (hold ? 0 : net) + release, released: release,
@@ -256,6 +269,20 @@ function payrollCalcSelfTest_() {
   eq(r.loanRecovery, 5000, 'loan recovery'); eq(r.net, 14000 - 1680 - 105 - 1936 - 5000, 'net after recovery');
   r = payCalc_(emp, { loanRecovery: 50000 }, rates, S, ctx);
   eq(r.net, 0, 'recovery capped at net pay');
+  // ESI on Basic + DA from Oct 2026 (Uday, 2026-11-06); EPF still on Basic + ADA + DA. Synthetic figures.
+  const oct = Object.assign({}, ctx, { monthEnd: new Date(2026, 9, 31) });
+  r = payCalc_(emp, {}, rates, S, oct);
+  eq(r.esiWages, 10500, 'Oct: ESI wages = 10000 + 500, ADA left out'); eq(r.esi, 79, 'ESI 0.75% of 10500 = 78.75, rounded up');
+  eq(r.esiEmployer, 342, 'employer 3.25% of 10500 = 341.25, rounded up'); eq(r.epf, 1680, 'EPF unchanged: 12% of 14000 with ADA');
+  eq(r.cti, 14000 + 1680 + 342, 'employer ESI stays in CTI');
+  eq(payCalc_(emp, {}, Object.assign({}, rates, { ada: 0.25 }), S, oct).esi, 79, 'a 25% ADA school: same Basic + DA base');
+  r = payCalc_(Object.assign({}, emp, { fullBasic: 17000 }), {}, rates, S, oct);
+  eq(r.esiWages, 17850, 'wages 23800 but ESI wages 17850'); eq(r.esi, Math.ceil(17850 * 0.0075), 'now covered (under 21000)');
+  eq(payCalc_(Object.assign({}, emp, { fullBasic: 17000 }), {}, rates, S, ctx).esi, 0, 'Sep unchanged: 23800 > 21000, not covered');
+  eq(payCalc_(Object.assign({}, emp, { fullBasic: 20500 }), {}, rates, S, oct).esi, 0, 'Basic + DA 21525 > 21000: not covered');
+  r = payCalc_(Object.assign({}, emp, { tuition: 8000 }), {}, rates, S, oct);
+  eq(r.esiWages, 11000, 'left out 11500 of 22000 > 50%: the 500 excess is added back');
+  eq(payCalc_(Object.assign({}, emp, { tuition: 1000 }), {}, rates, S, oct).esiWages, 10500, 'under 50% left out: no add-back');
   const g = payGratuity_(20000, 0.05, new Date(2020, 3, 1), new Date(2026, 9, 31));
   eq(g.years, 7, '6y 6m rounds up to 7'); eq(g.wages, 21000, 'basic + DA'); eq(g.accrued, Math.round(15 / 26 * 21000 * 7), 'gratuity'); eq(g.vested, true, 'vested');
   eq(payGratuity_(20000, 0.05, new Date(2023, 0, 1), new Date(2026, 9, 31)).payable, 0, 'not payable before 5 years');

@@ -1610,6 +1610,8 @@ function ecr_() {
     ' · estimated admin (0.5%) ₹' + inr_(Math.round(w * 0.005)) + ' · EDLI (0.5%) ₹' + inr_(Math.round(w * 0.005)) + ' (not in CTI — CA question).</div>' +
     (missing.length ? '<div class="warn">No UAN in EmpKeyNumbers, left out of the file: ' + missing.map(esc_).join(', ') + '</div>' : '');
 }
+// ESI wage base the backend used (Basic + DA from Oct 2026); older saved rows lack it.
+function esiWages_(r) { return r.esiWages != null ? r.esiWages : r.basic + r.ada + r.da; }
 // ESIC monthly contribution upload (MC template).
 function esiFile_() {
   loadExcelJs_().then(function () {
@@ -1620,7 +1622,7 @@ function esiFile_() {
     rows.forEach(function (r) {
       const ip = String(key_(r).esi || '').replace(/\D/g, '');
       if (ip.length !== 10) { missing.push(r.code + ' ' + r.name); return; }
-      ws.addRow([ip, r.name.replace(/[^A-Za-z ]/g, ' ').replace(/\s+/g, ' ').trim(), Math.round(r.paidDays), r.basic + r.ada + r.da, 0, '']);
+      ws.addRow([ip, r.name.replace(/[^A-Za-z ]/g, ' ').replace(/\s+/g, ' ').trim(), Math.round(r.paidDays), esiWages_(r), 0, '']);
     });
     ws.getColumn(1).numFmt = '@';
     return wb.xlsx.writeBuffer().then(function (buf) {
@@ -1711,7 +1713,7 @@ function esiReport_() {
       sh.addRow(['ESINo', 'Month', 'EmpCode', 'EmpName', 'PresentDays', 'GrossPay', 'ESISalary SAL.', 'EmployeeShare', 'EmployerShare', 'TotalEmployeeEmployerShare']).font = { bold: true };
       const t = [0, 0, 0, 0, 0];
       outRows_(e).filter(function (r) { return r.esi > 0; }).forEach(function (r) {
-        const wages = r.basic + r.ada + r.da, k = key_(r);
+        const wages = esiWages_(r), k = key_(r);
         sh.addRow([k.esi || '-', mon, k.uan || '', r.name.trim().toUpperCase() + ' ( ' + (r.designation || '').toUpperCase() + ' )', r.paidDays, r.gross, wages, r.esi, r.esiEmployer, r.esi + r.esiEmployer]);
         t[0] += r.gross; t[1] += wages; t[2] += r.esi; t[3] += r.esiEmployer; t[4] += r.esi + r.esiEmployer; people++;
       });
