@@ -30,6 +30,8 @@
 // ESI wage base for the month ending monthEnd. From Oct 2026 the Code on Social Security
 // definition: Basic + DA, with left-out allowances (ADA, tuition, other earnings) over 50% of
 // that pay added back. CL encashment stays out of both sides -- it is worked out from ESI itself.
+// payEsiCovered_ (period-start coverage) passes only the standing tuition: other earnings are
+// this month's pay, not known at the period start; contributions use the month's actual pay.
 const PAY_ESI_CODE_FROM = new Date(2026, 9, 1);
 function payEsiWages_(basic, ada, da, otherAllowances, monthEnd) {
   if (monthEnd < PAY_ESI_CODE_FROM) return basic + ada + da;

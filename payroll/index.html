@@ -1610,8 +1610,8 @@ function ecr_() {
     ' · estimated admin (0.5%) ₹' + inr_(Math.round(w * 0.005)) + ' · EDLI (0.5%) ₹' + inr_(Math.round(w * 0.005)) + ' (not in CTI — CA question).</div>' +
     (missing.length ? '<div class="warn">No UAN in EmpKeyNumbers, left out of the file: ' + missing.map(esc_).join(', ') + '</div>' : '');
 }
-// ESI wage base the backend used (Basic + DA from Oct 2026); older saved rows lack it.
-function esiWages_(r) { return r.esiWages != null ? r.esiWages : r.basic + r.ada + r.da; }
+// ESI wage base the backend used (Basic + DA from Oct 2026); rows locked before it was saved lack it.
+function esiWages_(r) { return r.esiWages || r.basic + r.ada + r.da; }
 // ESIC monthly contribution upload (MC template).
 function esiFile_() {
   loadExcelJs_().then(function () {

@@ -85,7 +85,7 @@ const PAY_TABS = {
   'Payroll Register': ['Month', 'Employee Code', 'Name', 'Entity', 'Designation', 'Paid Days', 'Month Basic', 'ADA', 'DA',
     'CL Encashment', 'Tuition (A)', 'Other Earnings', 'Gross', 'EPF Employee', 'ESI Employee', 'RRF Rate', 'RRF',
     'Tuition (D)', 'Other Deductions', 'Total Deductions', 'Net Pay', 'Bank Payable', 'Held for F&F', 'EPF Employer',
-    'ESI Employer', 'CTI', 'Gratuity Provision', 'Locked At', 'Locked By', 'Withheld (Grievance)', 'Released Held', 'Loan Recovery', 'TDS'],
+    'ESI Employer', 'CTI', 'Gratuity Provision', 'Locked At', 'Locked By', 'Withheld (Grievance)', 'Released Held', 'Loan Recovery', 'TDS', 'ESI Wages'],
   'Run Log': ['Month', 'Entity', 'Status (Draft/Locked)', 'Headcount', 'Gross', 'Net Pay', 'CTI', 'Settings Snapshot',
     'Locked By', 'Locked At', 'Notes'],
   'Checklist': ['Month', 'Entity', 'Step', 'Done By', 'Done At'],
@@ -407,7 +407,7 @@ const PAY_REG_FIELDS = [['Paid Days', 'paidDays'], ['Month Basic', 'basic'], ['A
   ['Other Deductions', 'otherDeductions'], ['Total Deductions', 'totalDeductions'], ['Net Pay', 'net'],
   ['Bank Payable', 'bankPayable'], ['Held for F&F', 'heldForFnF'], ['Withheld (Grievance)', 'withheld'],
   ['Released Held', 'released'], ['EPF Employer', 'epfEmployer'], ['ESI Employer', 'esiEmployer'], ['CTI', 'cti'],
-  ['Gratuity Provision', 'gratuityProvision'], ['Loan Recovery', 'loanRecovery'], ['TDS', 'tds']];
+  ['Gratuity Provision', 'gratuityProvision'], ['Loan Recovery', 'loanRecovery'], ['TDS', 'tds'], ['ESI Wages', 'esiWages']];
 
 function payForMonth_(ss, tab, month) {
   return payRows_(ss.getSheetByName(tab)).filter(function (r) { return payMonthKey_(r['Month']) === month; });
@@ -508,7 +508,8 @@ function payMonth_(ss, month) {
     .map(function (r) {
       const o = { code: String(r['Employee Code']), name: String(r['Name']), entity: payEntity_(r['Entity']),
         designation: String(r['Designation']), adjustments: [], input: null };
-      PAY_REG_FIELDS.forEach(function (f) { o[f[1]] = payNum_(r[f[0]]); });
+      // ESI Wages is blank on rows locked before the column existed: leave it unset so the page falls back.
+      PAY_REG_FIELDS.forEach(function (f) { if (f[1] !== 'esiWages' || r[f[0]] !== '') o[f[1]] = payNum_(r[f[0]]); });
       return o;
     });
   const rows = live.rows.filter(function (r) { return !locks[r.entity]; }).concat(locked);
