@@ -118,8 +118,8 @@ function kingdomTier_(ctx, campusId, tier, n) {
     if (!(tier.owners || []).length) delete out.questId;
   } else if (ref === 'setup:game') {
     out.go = 'owner/index.html';
-    if (ctx.caller.primaryRole === 'Owner') {
-      try { out.steps = setupSteps_(ctx.cfg).map(function (s) { return { id: s.id, title: s.title, done: s.done, guide: s.guide }; }); } catch (err) { /* the tier state already says unknown */ }
+    if (ctx.caller.primaryRole === 'Owner') { // edit: the values a step's portal form shows (setupset), Owner only
+      try { out.steps = setupSteps_(ctx.cfg).map(function (s) { return { id: s.id, title: s.title, done: s.done, guide: s.guide, edit: s.edit }; }); } catch (err) { /* the tier state already says unknown */ }
     }
   } else if (ref.indexOf('daybook-setup:') === 0 && ctx.daybook) {
     const q = daybookSetupQuest_(ctx.daybook, campusId), s = q && q.steps.filter(function (x) { return x.id === ref.slice(14); })[0];

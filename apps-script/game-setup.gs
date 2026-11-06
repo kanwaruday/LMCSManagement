@@ -17,8 +17,89 @@ function setupSteps_(cfg) {
     ['term', "Set this term's end date", /^\d{4}-\d\d-\d\d$/.test(T.quests.termEnd || '')],
     ['suit', 'Open the track-suit decision', !!(suit && suit.opens && suit.closes)],
   ];
+  // the steps the Owner fills in the portal (Kingdom -> HQ, POST setupset): the current values, so the form shows what is there
+  const edit = { form: { kind: 'url', value: T.cwhwFormUrl || '' }, term: { kind: 'date', value: T.quests.termEnd || '' },
+    suit: { kind: 'window', opens: suit ? suit.opens : '', closes: suit ? suit.closes : '' } };
   return steps.filter(function (s) { return !(s[0] === 'form' && T.cwhwDeferred); }) // CW/HW is "a quest for later" (Uday, 30 Oct)
-    .map(function (s) { return { id: s[0], title: s[1], done: s[2], locked: false, go: '', guide: 'setup-' + s[0] }; });
+    .map(function (s) { const o = { id: s[0], title: s[1], done: s[2], locked: false, go: '', guide: 'setup-' + s[0] }; if (edit[s[0]]) o.edit = edit[s[0]]; return o; });
+}
+
+// ── POST setupset: the Owner fills a setup step in the portal (no sheet, no editor) ──
+// {step: 'suit', opens, closes} -> the Game Windows trackSuit row's Opens/Closes (both required: never blanks a date)
+// {step: 'term', value} -> Game Config teacher.quests.termEnd;  {step: 'form', value} -> Game Config teacher.cwhwFormUrl
+// Owner only, refused before anything is read; every input checked; read and written under the lock; one Game Progress row
+// (Kind 'setup_set') per change. A row or cell it can't read is refused, never overwritten.
+var SETUP_SET_KIND = 'setup_set';
+function setupIsDate_(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + 'T00:00:00Z');
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+function setupSet_(caller, body) {
+  const fail = function (code, error) { return { success: false, code: code, error: error }; };
+  try {
+    if (!caller || (caller.roles || []).indexOf('Owner') === -1) return fail('SETUP_NOT_YOURS', 'Only the Owner sets up the game.');
+    body = body && typeof body === 'object' ? body : {};
+    const step = body.step, str = function (v) { return typeof v === 'string' ? v.trim() : ''; };
+    let change;
+    if (step === 'suit') {
+      const opens = str(body.opens), closes = str(body.closes);
+      if (!setupIsDate_(opens) || !setupIsDate_(closes)) return fail('SETUP_BAD_DATE', 'Pick both dates.');
+      if (closes < opens) return fail('SETUP_BAD_DATE', 'The closing date must be on or after the opening date.');
+      change = { opens: opens, closes: closes };
+    } else if (step === 'term') {
+      const v = str(body.value);
+      if (!setupIsDate_(v)) return fail('SETUP_BAD_DATE', 'Pick the date the term ends.');
+      change = { value: v };
+    } else if (step === 'form') {
+      const v = str(body.value);
+      if (v.length > 500 || !TCH_FORM_URL_RE.test(v) || /\s/.test(v)) return fail('SETUP_BAD_URL', 'Paste a Google Form link: it starts with https://docs.google.com/forms/ or https://forms.gle/.');
+      change = { value: v };
+    } else return fail('SETUP_UNKNOWN', 'That setup step cannot be set here.');
+    const me = gameLower_(caller.email);
+    return gameWithLock_(function () {
+      const book = gameBook_(), out = step === 'suit' ? setupWriteSuit_(book, change) : setupWriteTeacher_(book, step, change.value);
+      if (out.code) return fail(out.code, out.error);
+      if (!out.unchanged) gameAppendText_(book.getSheetByName('Game Progress'), [[me, SETUP_SET_KIND, step, JSON.stringify(change), gameNow_().toISOString()]]);
+      return { success: true, step: step, unchanged: !!out.unchanged };
+    });
+  } catch (err) {
+    console.error('setupset: ' + (err && err.message)); // logged, never returned
+    return fail('SETUP_ERROR', "That didn't save. Try again.");
+  }
+}
+// under the lock: the trackSuit row's Opens (col 9) and Closes (col 10), as text
+function setupWriteSuit_(book, c) {
+  const sh = book.getSheetByName('Game Windows'), rows = sh ? sh.getDataRange().getValues() : [];
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() !== 'trackSuit') continue;
+    if (gameDateKey_(rows[i][8]) === c.opens && gameDateKey_(rows[i][9]) === c.closes) return { unchanged: true };
+    sh.getRange(i + 1, 9, 1, 2).setNumberFormat('@').setValues([[c.opens, c.closes]]);
+    return {};
+  }
+  return { code: 'SETUP_NO_WINDOW', error: 'The track-suit decision is not in the game yet. Ask the Game Director to add it.' };
+}
+// under the lock: one key inside the Game Config `teacher` JSON (every other key kept); the row is added when missing
+function setupWriteTeacher_(book, step, value) {
+  const sh = book.getSheetByName('Game Config'), rows = sh.getDataRange().getValues();
+  let at = 0, obj = {};
+  for (let i = 1; i < rows.length; i++) if (String(rows[i][0]).trim() === 'teacher') { at = i + 1; break; }
+  if (at && String(rows[at - 1][1] || '').trim()) {
+    try { obj = JSON.parse(String(rows[at - 1][1])); } catch (err) { obj = null; }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { code: 'SETUP_BAD_CONFIG', error: "The teacher settings can't be read, so nothing was changed. Ask the Game Director." };
+  }
+  if (step === 'term') {
+    const q = obj.quests && typeof obj.quests === 'object' && !Array.isArray(obj.quests) ? obj.quests : {};
+    if (q.termEnd === value) return { unchanged: true };
+    q.termEnd = value; obj.quests = q;
+  } else {
+    if (obj.cwhwFormUrl === value) return { unchanged: true };
+    obj.cwhwFormUrl = value;
+  }
+  const text = JSON.stringify(obj);
+  if (at) sh.getRange(at, 2).setNumberFormat('@').setValue(text);
+  else gameAppendText_(sh, [['teacher', text]]);
+  return {};
 }
 
 function setupQuests_(caller, cfg, now) {

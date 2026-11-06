@@ -292,6 +292,7 @@ function doPost(e) {
     if (action === 'gameeventtick') return gameJson_(eventTick_(caller, body));
     // An Owner tick-off quest step (game-setup.gs): POST only, never in GAME_MODULE_ACTIONS; the Owner check is inside it.
     if (action === 'ownertick') return gameJson_(ownerTick_(caller, body));
+    if (action === 'setupset') return gameJson_(setupSet_(caller, body)); // game-setup.gs: the Owner fills a setup step in the portal; Owner check inside
     if (action === 'roomssave') return gameJson_(roomsSave_(caller, body)); // 🏫 rooms (game-rooms.gs): POST only; Principal / Owner checks inside
     // The Owner's event-design decisions (game-event-design.gs): POST only, never in GAME_MODULE_ACTIONS; the Owner check is inside it.
     if (action === 'eventdesigndecide') return gameJson_(eventDesignDecide_(caller, body));

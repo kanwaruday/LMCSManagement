@@ -187,18 +187,19 @@ window.LMCSGuide = {
       "This step shows Done once the index has been built in the last two hours, so it may take a little while.",
     ] },
     { id: 'setup-form', title: 'Setup 4: Add the classwork and homework form link', roles: ['Owner'], body: [
-      "Open the LMCS Game sheet and go to the Game Config tab. Find the row named teacher and click its value cell.",
-      "Add cwhwFormUrl to the JSON, with your Google Form link as the value. It must start with https://docs.google.com/forms/ or https://forms.gle/. Keep the other keys as they are.",
-      "Teachers' Go button then opens that form.",
+      "Open the Kingdom, tap LMCS HQ, and under Set up the game tap Add the link next to this step.",
+      "Paste your Google Form link. It must start with https://docs.google.com/forms/ or https://forms.gle/. Then tap Save.",
+      "Teachers' Go button then opens that form. Tap Change to replace the link later.",
     ] },
     { id: 'setup-term', title: "Setup 5: Set this term's end date", roles: ['Owner'], body: [
-      "In the Game Config tab, open the same teacher row. Inside it, find or add \"quests\": {\"termEnd\": \"YYYY-MM-DD\"} with the date written that way.",
-      "Chapters that start after that date drop out of the teachers' chapter quests.",
+      "Open the Kingdom, tap LMCS HQ, and under Set up the game tap Set the date next to this step.",
+      "Pick the day the term ends, then tap Save. Chapters that start after that date drop out of the teachers' chapter quests.",
+      "Tap Change to move the date later.",
     ] },
     { id: 'setup-suit', title: 'Setup 6: Open the track-suit decision', roles: ['Owner'], body: [
-      "In the LMCS Game sheet, open the Game Windows tab and find the row trackSuit.",
-      "Fill in Opens and Closes, both as YYYY-MM-DD. Principals can choose their days between those dates.",
-      "This step shows Done once both dates are in.",
+      "Open the Kingdom, tap LMCS HQ, and under Set up the game tap Set the dates next to this step.",
+      "Pick the opening and closing dates, then tap Save. Principals choose their days between those dates.",
+      "This step shows Done once both dates are in. Tap Change to move them; the dates already set are shown first.",
     ] },
   ],
 };

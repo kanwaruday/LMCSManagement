@@ -103,7 +103,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   }
   // Buddy's line for a next action (warm, short, no pressure; names the place)
   function nextText(a) {
-    if (a.kind === 'setup') return 'Next in Set up the game: ' + a.step.title + '.' + (guideGo(a.step) ? ' My guide walks you through it.' : '');
+    if (a.kind === 'setup') return 'Next in Set up the game: ' + a.step.title + '.' + (editKind(a.step) ? ' You can do it right here.' : guideGo(a.step) ? ' My guide walks you through it.' : '');
     if (a.kind === 'assign') return 'Hand out ' + a.tier.label + ' at ' + a.base.name + '. Pick who sets it up, and it lands in their Today list.';
     if (a.kind === 'follow') return 'An approved request is waiting for someone to follow it up: ' + a.card.title + '.';
     if (a.kind === 'wait') return 'Next at ' + a.base.name + ': ' + a.tier.label + ' (' + a.building.name + ')' + (a.tier.owner && a.tier.owner.name ? ', with ' + a.tier.owner.name : '') + '.';
@@ -207,6 +207,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
     deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, fnLabels: fnLabels, progressOf: progressOf, progressText: progressText,
     nextTier: nextTier, onlySoon: onlySoon, nextAction: nextAction, nextText: nextText, levelSnapshot: levelSnapshot, levelUps: levelUps, levelUpText: levelUpText,
+    editKind: editKind, setupValueText: setupValueText, setupVerb: setupVerb, dayLabel: dayLabel,
     hooks: { tier: null, base: null, after: null } };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
@@ -267,12 +268,58 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function stepList(steps) {
     var next = steps.filter(function (s) { return !s.done; })[0];
     return h('ol', { class: 'kg-steps' }, steps.map(function (s) {
-      var how = guideGo(s), isNext = s === next;
+      var how = guideGo(s), isNext = s === next, ed = editKind(s), now = ed ? setupValueText(s.edit) : '';
+      // a step filled in the portal: its own button (the next step's is the primary), its current value, and How as a plain link
+      var act = ed ? h('button', { type: 'button', class: 'kg-btn kg-sbtn' + (isNext ? ' kg-primary' : ''), onclick: function (e) { openSetupEdit(s, e.currentTarget); } }, [s.done ? 'Change' : setupVerb(s.edit)])
+        : how ? (isNext ? goLink(how, 'Show me how', 'kg-btn kg-primary kg-sbtn') : goLink(how, 'How')) : null;
       return h('li', { class: s.done ? 'kg-sd' : isNext ? 'kg-snext' : '' }, [
         h('span', { class: 'kg-sm', 'aria-hidden': 'true' }, [s.done ? '✓' : '']),
-        h('span', { class: 'kg-stt' }, [isNext ? h('b', { class: 'kg-tag' }, ['Next']) : null, s.title, s.done ? h('span', { class: 'kg-sr' }, [' (done)']) : null]),
-        how ? (isNext ? goLink(how, 'Show me how', 'kg-btn kg-primary kg-sbtn') : goLink(how, 'How')) : null]);
+        h('span', { class: 'kg-stt' }, [isNext ? h('b', { class: 'kg-tag' }, ['Next']) : null, s.title, s.done ? h('span', { class: 'kg-sr' }, [' (done)']) : null,
+          now ? h('small', { class: 'kg-quiet' }, [' · ' + now]) : null]),
+        act, ed && how ? goLink(how, 'How') : null]);
     }));
+  }
+  // ── HQ setup steps filled in the portal (POST setupset; the server checks the Owner and every value) ──
+  function editKind(s) { var k = s && s.edit && s.edit.kind; return k === 'window' || k === 'date' || k === 'url' ? k : ''; }
+  function dayLabel(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '')); if (!m) return '';
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()] + ' ' + m[1];
+  }
+  function setupValueText(e) {
+    if (!e) return '';
+    if (e.kind === 'window') return e.opens && e.closes ? 'Opens ' + dayLabel(e.opens) + ', closes ' + dayLabel(e.closes) : e.opens ? 'Opens ' + dayLabel(e.opens) + ', no closing date yet' : e.closes ? 'Closes ' + dayLabel(e.closes) + ', no opening date yet' : '';
+    if (e.kind === 'date') return e.value ? 'Ends ' + dayLabel(e.value) : '';
+    return e.value ? 'Link added' : '';
+  }
+  function setupVerb(e) { return e.kind === 'window' ? 'Set the dates' : e.kind === 'date' ? 'Set the date' : 'Add the link'; }
+  function openSetupEdit(s, opener) {
+    var e = s.edit, today = (S.data && S.data.day) || '', f = [], body;
+    var date = function (id, label, v) { var i = h('input', { type: 'date', id: id, value: v || '', required: true }); f.push(h('label', { class: 'kg-fld', for: id }, [label, i])); return i; };
+    var intro = e.kind === 'window' ? 'Principals choose their 3 track-suit days between these dates. The decision closes at the end of the closing day.'
+      : e.kind === 'date' ? "Chapters that start after this date drop out of the teachers' chapter quests." : "Teachers' Go button opens this form. Paste the Google Form's link.";
+    var a, b;
+    if (e.kind === 'window') { a = date('kg-opens', 'Opens', e.opens || today); b = date('kg-closes', 'Closes', e.closes); }
+    else if (e.kind === 'date') a = date('kg-sval', 'Term ends', e.value);
+    else { a = h('input', { type: 'url', id: 'kg-sval', value: e.value || '', placeholder: 'https://forms.gle/…', inputmode: 'url' }); f.push(h('label', { class: 'kg-fld', for: 'kg-sval' }, ['Form link', a])); }
+    sheet(s.title, 'LMCS HQ · Set up the game', intro, f, 'Save', function (form, ctl) {
+      var v1 = a.value.trim(), v2 = b ? b.value.trim() : '', ok = /^\d{4}-\d{2}-\d{2}$/;
+      if (e.kind === 'window') {
+        if (!ok.test(v1) || !ok.test(v2)) { ctl.err.textContent = 'Pick both dates.'; return; }
+        if (v2 < v1) { ctl.err.textContent = 'The closing date must be on or after the opening date.'; return; }
+        body = { action: 'setupset', step: s.id, opens: v1, closes: v2 };
+        ctl.done = function () { return 'Saved. The track-suit decision opens ' + dayLabel(v1) + ' and closes ' + dayLabel(v2) + '.'; };
+      } else if (e.kind === 'date') {
+        if (!ok.test(v1)) { ctl.err.textContent = 'Pick the date the term ends.'; return; }
+        body = { action: 'setupset', step: s.id, value: v1 };
+        ctl.done = function () { return 'Saved. This term ends ' + dayLabel(v1) + '.'; };
+      } else {
+        if (!/^https:\/\/(docs\.google\.com\/forms\/|forms\.gle\/)\S+$/.test(v1)) { ctl.err.textContent = 'Paste a Google Form link: it starts with https://docs.google.com/forms/ or https://forms.gle/.'; return; }
+        body = { action: 'setupset', step: s.id, value: v1 };
+        ctl.done = function () { return 'Saved. Teachers will open this form.'; };
+      }
+      send(body, ctl);
+    }, opener);
   }
   function tierRow(t, base, bld, isNext) {
     var extra = api.hooks.tier ? api.hooks.tier(t, base, bld) : null;
@@ -358,7 +405,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   // Buddy's card: the one next step with one button, and the Kingdom's progress bar
   function nextCard(d, a) {
     var p = progressOf((d.kingdom && d.kingdom.campuses) || []), act = null;
-    if (a.kind === 'setup') act = goLink(guideGo(a.step), 'Show me how', 'kg-btn kg-primary');
+    if (a.kind === 'setup') act = editKind(a.step) ? h('button', { type: 'button', class: 'kg-btn kg-primary', onclick: function (e) { openSetupEdit(a.step, e.currentTarget); } }, [setupVerb(a.step.edit)]) : goLink(guideGo(a.step), 'Show me how', 'kg-btn kg-primary');
     else if (a.kind === 'assign') act = h('button', { type: 'button', class: 'kg-btn kg-primary', onclick: function (e) { openAssign(a.tier, a.base, e.currentTarget); } }, ['Pick who sets it up']);
     else if (a.kind === 'follow') act = h('button', { type: 'button', class: 'kg-btn kg-primary', onclick: function (e) { openFollow(a.card, e.currentTarget); } }, ['Pick who follows up']);
     var open = a.base ? h('button', { type: 'button', class: 'kg-btn', onclick: function (e) { openBase(a.base.id, e.currentTarget); } }, ['Open ' + a.base.name]) : null;
