@@ -72,6 +72,17 @@ def rnd(x):  # payRound_: Excel's ROUND with float noise removed first
     return 'ROUND(ROUND(%s,6),0)' % x
 
 
+# ESI wage base from Oct 2026 (mirror payroll-calc.gs PAY_ESI_CODE_FROM / PAY_ESI_COVERAGE_BASE):
+# Basic + DA, plus left-out pay (ADA + other earnings) over 50% of the total. Tuition and CL
+# encashment never count. Coverage is judged on the same base unless the backend says 'full'.
+ESI_FROM = 'DATE(2026,10,1)'
+ESI_COVERAGE_BASE = 'esi'
+
+
+def esi_base(basic, ada, da, other, when):  # payEsiWages_
+    return 'IF(%s<%s,%s+%s+%s,%s+%s+MAX(0,%s))' % (when, ESI_FROM, basic, ada, da, basic, da, rnd('(%s+%s+%s+%s)/2-(%s+%s)' % (basic, ada, da, other, basic, da)))
+
+
 def up(x):  # round UP to the next rupee (EPF and ESI -- confirmed with Pawan Sir 2026-10-01)
     return 'ROUNDUP(ROUND(%s,6),0)' % x
 
@@ -148,7 +159,9 @@ col('paid', 'Paid days', W('IF({inPaid}="",IF({employed}<DIM,{employed},DIM),{in
 col('basic', 'Month Basic', W(rnd('{fullBasic}*{paid}/DIM')), 'calc', '#,##0', 'ROUND(Full Basic × Paid Days ÷ Days in month).', '', "payCalc_: basic = R(fullBasic*paidDays/daysInMonth)", 10)
 col('adaAmt', 'ADA', W(rnd('{basic}*{adaPct}')), 'calc', '#,##0', 'ROUND(Month Basic × ADA %).', '', 'payCalc_: ada', 9)
 col('daAmt', 'DA', W(rnd('{basic}*{daPct}')), 'calc', '#,##0', 'ROUND(Month Basic × DA %).', '', 'payCalc_: da', 9)
-col('wages', 'Wages (Basic+ADA+DA)', W('{basic}+{adaAmt}+{daAmt}'), 'calc', '#,##0', 'EPF / ESI wage base. Tuition and CL encashment are NOT part of it.', '', 'payCalc_: wages', 11)
+col('wages', 'Wages (Basic+ADA+DA)', W('{basic}+{adaAmt}+{daAmt}'), 'calc', '#,##0', 'EPF wage base (and ESI before Oct 2026). Tuition and CL encashment are NOT part of it.', '', 'payCalc_: wages', 11)
+col('esiWages', 'ESI wages', W(esi_base('{basic}', '{adaAmt}', '{daAmt}', '{adjE}', 'ME')), 'calc', '#,##0',
+    'Before Oct 2026: Wages. From Oct 2026: Basic + DA, plus any part of (ADA + other earnings) above half of total pay. Tuition and CL encashment never count.', '', 'payEsiWages_', 10)
 
 # --- EPF / ESI ---------------------------------------------------------------------------------
 col('epfMand', 'EPF compulsory (gross below limit)', W('IF(AND(EPF_MAND>0,{wages}+{tuition}+{adjE}<EPF_MAND),1,0)'), 'calc', '0',
@@ -162,13 +175,17 @@ col('esiEff', 'ESI: Salary Master date used', W('IF({esiEffMax}=0,_xlfn.MINIFS(%
 col('esiRow', 'ESI: Salary Master row used', W('IFERROR(MATCH({code}&"|"&TEXT({esiEff},"yyyymmdd"),%s,0),"")' % rng('Salary Master', 'U')), 'calc', '0', 'Sheet row on Salary Master used to decide ESI coverage.', 'Salary Master (helper col U)', 'payEsiCovered_', 9)
 col('esiRateRow', 'ESI: Rates row used', W('IF({esiRow}="","",IFERROR(MATCH(SUBSTITUTE(UPPER(INDEX(%s,{esiRow}))," ",""),%s,0),""))' % (rng('Salary Master', 'C'), rng('PayRoll Rates', 'F'))), 'calc', '0', "PayRoll Rates row for that old row's school.", 'PayRoll Rates', 'payEsiCovered_', 9)
 col('esiBasic', 'ESI: Full Basic then', W('IF({esiRow}="","",%s)' % num("INDEX(%s,{esiRow})" % rng('Salary Master', 'G'))), 'calc', '#,##0', 'Full Basic on that old row.', 'Salary Master › Full Basic (col G) at the ESI row', 'payEsiCovered_', 10)
-col('esiWagesFull', 'ESI: full-month wages then', W('IF({esiRateRow}="","",{esiBasic}+ROUND(ROUND({esiBasic}*%s/100,6),0)+ROUND(ROUND({esiBasic}*%s/100,6),0))' %
-    (num("INDEX(%s,{esiRateRow})" % rng('PayRoll Rates', 'C')), num("INDEX(%s,{esiRateRow})" % rng('PayRoll Rates', 'B')))), 'calc', '#,##0',
-    'Basic + ADA + DA for a FULL month on that row (not prorated).', 'PayRoll Rates › ADA % / DA %', 'payEsiCovered_', 11)
-col('esiCovered', 'ESI covered this period?', W('IF({esiWagesFull}="",{wages}<=ESI_THR,{esiWagesFull}<=ESI_THR)'), 'calc', None,
-    'TRUE if those full-month wages are at or under the ESI threshold (₹21,000). If the old row cannot be found, this month\'s wages are used instead.', 'Settings: ESI Threshold', 'payEsiCovered_', 10)
-col('esi', 'ESI employee', W('IF(AND({esiReg}=1,{esiCovered}),%s,0)' % up('{wages}*ESI_EE')), 'calc', '#,##0', 'Wages × 0.75%, rounded UP; only if the school is ESI-registered and the person is covered.', 'Settings: ESI Employee %', 'payCalc_: esi', 10)
-col('esiEr', 'ESI employer', W('IF(AND({esiReg}=1,{esiCovered}),%s,0)' % up('{wages}*ESI_ER')), 'calc', '#,##0', 'Wages × 3.25%, rounded UP; employer cost, not deducted.', 'Settings: ESI Employer %', 'payCalc_: esiEr', 10)
+col('esiAdaThen', 'ESI: full-month ADA then', W('IF({esiRateRow}="","",%s)' % rnd('{esiBasic}*%s/100' % num("INDEX(%s,{esiRateRow})" % rng('PayRoll Rates', 'C')))), 'calc', '#,##0',
+    'ADA on that old row for a full month.', 'PayRoll Rates › ADA %', 'payEsiCovered_', 10)
+col('esiDaThen', 'ESI: full-month DA then', W('IF({esiRateRow}="","",%s)' % rnd('{esiBasic}*%s/100' % num("INDEX(%s,{esiRateRow})" % rng('PayRoll Rates', 'B')))), 'calc', '#,##0',
+    'DA on that old row for a full month.', 'PayRoll Rates › DA %', 'payEsiCovered_', 10)
+col('esiWagesFull', 'ESI: full-month coverage wages then', W('IF({esiRateRow}="","",%s)' % (
+    esi_base('{esiBasic}', '{esiAdaThen}', '{esiDaThen}', '0', 'PS') if ESI_COVERAGE_BASE == 'esi' else '{esiBasic}+{esiAdaThen}+{esiDaThen}')), 'calc', '#,##0',
+    'Coverage wages for a FULL month on that row (not prorated): Basic + ADA + DA for periods before Oct 2026, the ESI wage (Basic + DA rule) from then.', 'PayRoll Rates › ADA % / DA %', 'payEsiCoverageWages_', 11)
+col('esiCovered', 'ESI covered this period?', W('IF({esiWagesFull}="",%s<=ESI_THR,{esiWagesFull}<=ESI_THR)' % ('{esiWages}' if ESI_COVERAGE_BASE == 'esi' else '{wages}')), 'calc', None,
+    'TRUE if those coverage wages are at or under the ESI threshold (₹21,000). If the old row cannot be found, this month\'s ESI wages are used instead.', 'Settings: ESI Threshold', 'payEsiCovered_', 10)
+col('esi', 'ESI employee', W('IF(AND({esiReg}=1,{esiCovered}),%s,0)' % up('{esiWages}*ESI_EE')), 'calc', '#,##0', 'ESI wages × 0.75%, rounded UP; only if the school is ESI-registered and the person is covered.', 'Settings: ESI Employee %', 'payCalc_: esi', 10)
+col('esiEr', 'ESI employer', W('IF(AND({esiReg}=1,{esiCovered}),%s,0)' % up('{esiWages}*ESI_ER')), 'calc', '#,##0', 'ESI wages × 3.25%, rounded UP; employer cost, not deducted.', 'Settings: ESI Employer %', 'payCalc_: esiEr', 10)
 
 # --- pay lines ---------------------------------------------------------------------------------
 col('clEnc', 'CL encashment', W(rnd('{clDays}*({wages}-{epf}-{esi})/CL_DIV')), 'calc', '#,##0', 'CL days × (Wages − EPF − ESI) ÷ divisor (30).', 'Settings: CL Encashment Divisor', 'payCalc_: clEnc', 10)
@@ -553,7 +570,7 @@ def build(path, data, month, banner):
         ('', None),
         ('Rules worth knowing while proofreading', 'h'),
         ('EPF and ESI are both rounded UP to the next rupee (confirmed with Pawan Sir, 1 Oct 2026). ESI coverage for Apr-Sep / Oct-Mar is decided once, by the full-month wages in force on the 1st of the period (or on joining), and holds for the whole period even if pay later crosses ₹21,000.', None),
-        ('Wages for EPF/ESI = Basic + ADA + DA only. Tuition, CL encashment and other earnings never enter it.', None),
+        ('Wages for EPF = Basic + ADA + DA only. ESI used the same until Sep 2026; from Oct 2026 ESI wages = Basic + DA, plus any part of (ADA + other earnings) above half of total pay, and coverage is judged on that too. Tuition and CL encashment never count for either.', None),
         ('A person is skipped if they left before the 1st of the month (Last Working Day, else Status = Left), or their school has no PayRoll Rates row, or they have no Date of Joining.', None),
         ('If a code has several Salary Master rows (raises, transfers) the one with the latest Effective From on or before the month end is used. If two rows share the same Effective From the first one on the tab is picked (the portal prefers the later one) -- avoid duplicates.', None),
         ('Held salary (F&F / grievance) does not change Net Pay; it only moves it out of Bank payable.', None),

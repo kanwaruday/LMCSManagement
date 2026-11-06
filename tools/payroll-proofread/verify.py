@@ -103,7 +103,7 @@ def js(v):
     return v
 
 
-FIELDS = [('paid', 'paidDays'), ('basic', 'basic'), ('adaAmt', 'ada'), ('daAmt', 'da'), ('wages', 'wages'), ('epf', 'epf'), ('esi', 'esi'), ('esiEr', 'esiEmployer'),
+FIELDS = [('paid', 'paidDays'), ('basic', 'basic'), ('adaAmt', 'ada'), ('daAmt', 'da'), ('wages', 'wages'), ('epf', 'epf'), ('esiWages', 'esiWages'), ('esi', 'esi'), ('esiEr', 'esiEmployer'),
           ('clEnc', 'clEncashment'), ('adjE', 'otherEarnings'), ('adjD', 'otherDeductions'), ('tds', 'tds'), ('gross', 'gross'), ('cti', 'cti'), ('rrf', 'rrf'),
           ('loanRec', 'loanRecovery'), ('totDed', 'totalDeductions'), ('net', 'net'), ('bank', 'bankPayable'), ('heldF', 'heldForFnF'), ('withheld', 'withheld'), ('grat', 'gratuityProvision')]
 
@@ -111,6 +111,9 @@ FIELDS = [('paid', 'paidDays'), ('basic', 'basic'), ('adaAmt', 'ada'), ('daAmt',
 def recalc(src, outdir):
     subprocess.run([SOFFICE, '--headless', '--calc', '--convert-to', 'xlsx', '--outdir', outdir, src], check=True, capture_output=True, timeout=600)
     return os.path.join(outdir, os.path.basename(src))
+
+
+ESI_PATHS = set()  # which ESI rules the fixtures reached: 'old' base (to Sep 2026), 'new' (Basic + DA), 'addback' (>50% rule)
 
 
 def run(seed):
@@ -143,6 +146,7 @@ def run(seed):
             if be is None:
                 continue
             checked += 1
+            ESI_PATHS.add('old' if mo < '2026-10' else 'addback' if be['esiWages'] > be['basic'] + be['da'] else 'new')
             for k, bk in FIELDS:
                 v = ws['%s%d' % (let[k], r)].value
                 bv = be[bk]
@@ -157,4 +161,7 @@ if __name__ == '__main__':
     seeds = [int(x) for x in sys.argv[1:]] or [1, 2, 3]
     total = sum(run(s) for s in seeds)
     print('TOTAL MISMATCHES:', total)
+    missing = {'old', 'new', 'addback'} - ESI_PATHS
+    if missing and set(seeds) >= {1, 2}:
+        print('ESI paths not exercised by these fixtures:', sorted(missing)); total += 1
     sys.exit(1 if total else 0)

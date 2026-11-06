@@ -141,7 +141,7 @@ table.results tr.sep td{padding-top:8px}
           <h2>Statutory &amp; Deductions</h2>
           <div class="grid">
             <div class="field-check"><input type="checkbox" id="fEpf" checked><label for="fEpf">EPF applicable</label></div>
-            <div class="field-check"><input type="checkbox" id="fEsi" checked><label for="fEsi">ESI applicable (&lt;₹21,000 gross)</label></div>
+            <div class="field-check"><input type="checkbox" id="fEsi" checked><label for="fEsi">ESI applicable (Basic + DA ≤ ₹21,000)</label></div>
             <div class="field-check"><input type="checkbox" id="fMdExempt"><label for="fMdExempt">MD — request EPF exemption</label></div>
             <div class="field"><label>Child's Grade (fee wash)</label><select id="fChildGrade"><option value="">No child / N/A</option></select></div>
             <div class="field"><label>Second child's grade (optional — max 2 children)</label><select id="fChildGrade2"><option value="">No second child</option></select></div>
@@ -405,10 +405,13 @@ function calcSalary_() {
   const pfE = epfExempt ? 0 : Math.floor(ns > epfCeiling ? pfCap : ns * cVal_('PF Rate %') / 100);
   const totEpf = (epfE + pfE) * 2; // employee + employer combined
 
-  const esiThreshold = cVal_('ESI Threshold');
-  const esiAllowed = esiOn && ns < esiThreshold;
-  const esiE = esiAllowed ? Math.floor(ns * cVal_('ESI Employer %') / 100) : 0;
-  const esiEe = esiAllowed ? Math.floor(ns * cVal_('ESI Employee %') / 100) : 0;
+  // ESI as payroll-calc.gs (payEsiWages_, Oct 2026): Basic + DA, plus any ADA above half of
+  // total pay; coverage on the same wage (<= threshold); rounded up. Tuition never counts. EPF keeps ADA.
+  const esiWages = nb + da + Math.max(0, Math.round(ns / 2 - (nb + da)));
+  const esiUp = function (x) { return Math.ceil(Math.round(x * 1e6) / 1e6); };
+  const esiAllowed = esiOn && esiWages <= cVal_('ESI Threshold');
+  const esiE = esiAllowed ? esiUp(esiWages * cVal_('ESI Employer %') / 100) : 0;
+  const esiEe = esiAllowed ? esiUp(esiWages * cVal_('ESI Employee %') / 100) : 0;
   const totEsi = esiE + esiEe;
 
   // 2026-09-29, per Uday: RRF (Refundable Reserve Fund) is a REFUNDABLE
@@ -429,7 +432,7 @@ function calcSalary_() {
   const netY2 = cti - rrf2 - totEpf - totEsi - tuiFee;
   const netY3 = cti - rrf3 - totEpf - totEsi - tuiFee;
 
-  return { inc, nb, da, ada, ns, epfExempt, epfE, pfE, totEpf, esiAllowed, esiE, esiEe, totEsi, cti, tuiFee, rrf1, rrf2, rrf3, netY1, netY2, netY3 };
+  return { inc, nb, da, ada, ns, esiWages, epfExempt, epfE, pfE, totEpf, esiAllowed, esiE, esiEe, totEsi, cti, tuiFee, rrf1, rrf2, rrf3, netY1, netY2, netY3 };
 }
 
 function inr_(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
