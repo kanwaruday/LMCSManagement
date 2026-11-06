@@ -69,7 +69,7 @@
       if (LMCS.canViewOwnerPortal(session)) return showKingdom(session);
       const slot = document.getElementById('gate-slot');
       const p = document.createElement('p');
-      p.appendChild(document.createTextNode(LMCS.hasRole(session, 'Principal') ? "Your school's view comes soon. " : 'The Kingdom is for the Owner. '));
+      p.appendChild(document.createTextNode(LMCS.hasRole(session, 'Principal') ? "Your school's view comes soon. " : 'The Map is for the Owner. '));
       const a = document.createElement('a');
       a.href = '../index.html';
       a.textContent = 'Back to the portals';

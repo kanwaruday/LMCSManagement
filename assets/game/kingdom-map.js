@@ -2,7 +2,7 @@
 //   LMCSKingdomMap.mount(host, { bases, onPick }) -> draws the map inside host (call again with fresh bases to update the levels);
 //   bases: the Kingdom's campuses ({id, name, level}); onPick(id, pin) opens that base's sheet.
 // Positions and the connection lines (each place's `links`) come only from assets/game/places.js. Leaflet 1.9.4 (same cdnjs files and SRI as coordinator/route-map.js) loads here,
-// the first time the map is opened, never on the Kingdom's first paint.
+// when the Map page mounts the map (after the Owner check), never on other pages.
 window.LMCSKingdomMap = (function () {
   var LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
   var SRI = { js: 'sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g==',
@@ -117,7 +117,7 @@ window.LMCSKingdomMap = (function () {
     (opts.bases || []).forEach(function (b) { level[b.id] = Number(b.level) || 0; });
     if (!V.map) {
       var c = places.CENTER || { lat: 31.8, lng: 77.0, zoom: 9 };
-      V.map = L.map(V.mapEl, { zoomControl: true, attributionControl: true }).setView([c.lat, c.lng], c.zoom);
+      V.map = L.map(V.mapEl, { zoomControl: true, attributionControl: true, scrollWheelZoom: false }) // in the page: the wheel scrolls the page; zoom with + and −.setView([c.lat, c.lng], c.zoom);
       L.tileLayer(TILES, { maxZoom: 19, attribution: ATTR }).addTo(V.map);
       V.lines = L.layerGroup().addTo(V.map); // under the pins
       V.layer = L.layerGroup().addTo(V.map);
