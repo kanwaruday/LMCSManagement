@@ -1793,7 +1793,7 @@ function payEsiCovered_(rows, rates, settings, ctx) {
   const r = pick.row, rt = rates[payEntity_(r['Entity'])];
   if (!rt) return undefined;
   const b = payNum_(r['Full Basic']);
-  return payEsiCoverageWages_(b, payRound_(b * rt.ada), payRound_(b * rt.da), payNum_(r['Staff-Child Tuition']), periodStart) <= settings.esiThreshold;
+  return payEsiCoverageWages_(b, payRound_(b * rt.ada), payRound_(b * rt.da), 0, periodStart) <= settings.esiThreshold;
 }
 
 // ── Outputs (stage 3, 2026-09-30) ─────────────────────────────────────

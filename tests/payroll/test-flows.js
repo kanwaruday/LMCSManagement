@@ -71,7 +71,7 @@ module.exports = function run(t) {
     assert.deepEqual(Object.keys(m.locked), ['LMS1']);
     const a = m.rows.find((r) => r.code === A.code);
     assert.equal(a.adjustments.length, 1, 'locked row keeps its adjustment');
-    assert.equal(a.esiWages, a.basic + a.da + Math.max(0, Math.round((a.basic + a.ada + a.da + a.tuitionA + a.otherEarnings) / 2 - a.basic - a.da)), 'locked Oct row reads ESI Wages back from the Register');
+    assert.equal(a.esiWages, a.basic + a.da + Math.max(0, Math.round((a.basic + a.ada + a.da + a.otherEarnings) / 2 - a.basic - a.da)), 'locked Oct row reads ESI Wages back from the Register');
     const bad2 = call('addadjustment', { month: M, code: A.code, type: 'Fine', amount: 10 });
     assert.match(bad2.error, /LMS1 is locked/);
   });

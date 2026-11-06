@@ -28,10 +28,11 @@
 // ═══════════════════════════════════════════════════════════════════
 
 // ESI wage base for the month ending monthEnd. From Oct 2026 the Code on Social Security
-// definition: Basic + DA, with left-out allowances (ADA, tuition, other earnings) over 50% of
-// that pay added back. CL encashment stays out of both sides -- it is worked out from ESI itself.
-// payEsiCovered_ (period-start coverage) passes only the standing tuition: other earnings are
-// this month's pay, not known at the period start; contributions use the month's actual pay.
+// definition: Basic + DA, with left-out pay (ADA + other earnings) over 50% of the total added
+// back. The staff-child tuition concession is not counted (Uday, 2026-11-06, until the CA
+// confirms). CL encashment stays out of both sides -- it is worked out from ESI itself.
+// payEsiCovered_ (period-start coverage) passes no other earnings: they are this month's pay,
+// not known at the period start; contributions use the month's actual pay.
 const PAY_ESI_CODE_FROM = new Date(2026, 9, 1);
 function payEsiWages_(basic, ada, da, otherAllowances, monthEnd) {
   if (monthEnd < PAY_ESI_CODE_FROM) return basic + ada + da;
@@ -84,9 +85,10 @@ function payCalc_(emp, input, rates, s, ctx) {
   const epf = (emp.epfMember || epfMandatory) && rates.epfRegistered ? up(Math.min(wages, s.epfCeiling) * s.epfRate) : 0;
   // ESI: coverage is decided once per contribution period (Apr-Sep, Oct-Mar) -- someone covered at
   // its start stays covered even if wages cross the threshold mid-period.
-  const esiWages = payEsiWages_(basic, ada, da, preGross - wages, ctx.monthEnd);
+  const otherEarningsIn = Number(input.otherEarnings) || 0;
+  const esiWages = payEsiWages_(basic, ada, da, otherEarningsIn, ctx.monthEnd);
   const esiOn = rates.esiRegistered && (emp.esiCovered !== undefined ? !!emp.esiCovered
-    : payEsiCoverageWages_(basic, ada, da, preGross - wages, ctx.monthEnd) <= s.esiThreshold);
+    : payEsiCoverageWages_(basic, ada, da, otherEarningsIn, ctx.monthEnd) <= s.esiThreshold);
   const esi = esiOn ? up(esiWages * s.esiEmpRate) : 0;
   const esiEr = esiOn ? up(esiWages * s.esiErRate) : 0;
   const clEnc = R((Number(input.clDays) || 0) * (wages - epf - esi) / s.clDivisor);
@@ -126,7 +128,7 @@ function payCalc_(emp, input, rates, s, ctx) {
   const release = Number(input.release) || 0;
   return {
     paidDays: paidDays, serviceMonths: months, basic: basic, ada: ada, da: da, wages: wages, esiWages: esiWages,
-    esiCoverageWages: payEsiCoverageWages_(basic, ada, da, preGross - wages, ctx.monthEnd),
+    esiCoverageWages: payEsiCoverageWages_(basic, ada, da, otherEarningsIn, ctx.monthEnd),
     clEncashment: clEnc, tuitionA: tuition, otherEarnings: otherEarnings, gross: gross,
     epf: epf, esi: esi, rrfRate: rrfRate, rrf: rrf, tuitionD: tuition, otherDeductions: otherDeductions, loanRecovery: loanRecovery, tds: tds,
     totalDeductions: totalDeductions, net: net, bankPayable: (hold ? 0 : net) + release, released: release,
@@ -292,9 +294,10 @@ function payrollCalcSelfTest_() {
   eq(r.esiWages, 17850, 'wages 23800 but ESI wages 17850'); eq(r.esi, Math.ceil(17850 * 0.0075), 'now covered (under 21000)');
   eq(payCalc_(Object.assign({}, emp, { fullBasic: 17000 }), {}, rates, S, ctx).esi, 0, 'Sep unchanged: 23800 > 21000, not covered');
   eq(payCalc_(Object.assign({}, emp, { fullBasic: 20500 }), {}, rates, S, oct).esi, 0, 'Basic + DA 21525 > 21000: not covered');
-  r = payCalc_(Object.assign({}, emp, { tuition: 8000 }), {}, rates, S, oct);
+  r = payCalc_(emp, { otherEarnings: 8000 }, rates, S, oct);
   eq(r.esiWages, 11000, 'left out 11500 of 22000 > 50%: the 500 excess is added back');
-  eq(payCalc_(Object.assign({}, emp, { tuition: 1000 }), {}, rates, S, oct).esiWages, 10500, 'under 50% left out: no add-back');
+  eq(payCalc_(emp, { otherEarnings: 1000 }, rates, S, oct).esiWages, 10500, 'under 50% left out: no add-back');
+  eq(payCalc_(Object.assign({}, emp, { tuition: 8000 }), {}, rates, S, oct).esiWages, 10500, 'tuition concession never counts toward the add-back');
   const g = payGratuity_(20000, 0.05, new Date(2020, 3, 1), new Date(2026, 9, 31));
   eq(g.years, 7, '6y 6m rounds up to 7'); eq(g.wages, 21000, 'basic + DA'); eq(g.accrued, Math.round(15 / 26 * 21000 * 7), 'gratuity'); eq(g.vested, true, 'vested');
   eq(payGratuity_(20000, 0.05, new Date(2023, 0, 1), new Date(2026, 9, 31)).payable, 0, 'not payable before 5 years');
