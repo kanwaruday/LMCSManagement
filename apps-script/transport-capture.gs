@@ -294,11 +294,20 @@ function captureDriveCheck_() {
 function authorizeDrive() { Logger.log(JSON.stringify(captureDriveCheck_())); }
 
 /** POST capturediscard (see the header): bins one run's Drive folder and closes its Capture Runs row. A folder already gone
- *  (a retry after a lost reply) is fine; an unknown run is refused. */
+ *  (a retry after a lost reply) is fine; an unknown run is refused.
+ *  Two callers: the shelf (the push secret: trial runs only), or a linked driver phone (deviceToken, no secret: Uday, 6 Nov, "an
+ *  option to remove a run in case the driver is not satisfied") -- its own bus, a route video it recorded itself, never a safety
+ *  check (its findings must stay on record). Closed is final: captureRun_ and captureFile_ refuse a closed run. */
 function captureDiscard_(body) {
-  const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
-  if (!secret || String(body.secret || '').trim() !== secret) return { success: false, error: 'Not authorized' };
   const runId = String(body.runId || ''), reg = String(body.reg || '');
+  let driver = null;
+  if (!body.secret && body.deviceToken) {
+    driver = capAuth_({ deviceToken: body.deviceToken, reg: reg, runKind: 'timelapse' }); // linked phone, its own bus
+    if (driver.error) return { success: false, error: driver.error };
+  } else {
+    const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
+    if (!secret || String(body.secret || '').trim() !== secret) return { success: false, error: 'Not authorized' };
+  }
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId) || !/^[A-Z0-9]{1,16}$/.test(reg)) return { success: false, error: 'Bad run' };
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -307,8 +316,14 @@ function captureDiscard_(body) {
     let at = 0;
     for (let i = 1; i < rows.length; i++) if (String(rows[i][0]) === runId && String(rows[i][1]) === reg) { at = i + 1; break; }
     if (!at) return { success: false, error: 'Unknown run ' + runId };
-    const tcol = rows[0].indexOf(CAP_TRIAL_COL_); // only a trial timelapse is ever binned, whoever holds the secret
-    if (String(rows[at - 1][3]) !== 'timelapse' || tcol === -1 || String(rows[at - 1][tcol]) !== 'yes') return { success: false, error: 'Only a trial run can be discarded' };
+    if (driver) {
+      if (String(rows[at - 1][3]) !== 'timelapse') return { success: false, error: 'Only a route video can be removed from the phone' };
+      if (String(rows[at - 1][6]) !== driver.caller.email) return { success: false, error: 'Only the phone that recorded this run can remove it' };
+      if (String(rows[at - 1][12]) === 'closed') return { success: true }; // already removed: a retry after a lost reply
+    } else {
+      const tcol = rows[0].indexOf(CAP_TRIAL_COL_); // only a trial timelapse is ever binned, whoever holds the secret
+      if (String(rows[at - 1][3]) !== 'timelapse' || tcol === -1 || String(rows[at - 1][tcol]) !== 'yes') return { success: false, error: 'Only a trial run can be discarded' };
+    }
     let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
     capPath_().forEach(function (n) { f = f && capSub_(f, n); });
     const bus = f && capSub_(f, reg), dir = bus && capSub_(bus, runId);

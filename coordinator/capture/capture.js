@@ -46,7 +46,7 @@ const S = {
   session: null, mode: 'timelapse', buses: [], resumeId: null,
   run: null, active: false, fix: null, last: null, busy: false, stream: null, watch: null, wake: null,
   camWanted: false, camReady: false, camP: null,
-  stop: null, sending: false, progress: {},
+  stop: null, sending: false, progress: {}, gallery: false,
   loadout: undefined, insp: null, // the safety loadout list; the safety check being filled in {items, answers, thumbs}
 };
 const canvas = document.createElement('canvas');
@@ -166,6 +166,11 @@ function wire() {
   $('stopHere').addEventListener('click', () => (S.run.kind === 'count' ? openSheet() : tapStop()));
   $('end').addEventListener('click', endClick);
   $('send').addEventListener('click', sendAll);
+  $('runList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-r]'), li = b && b.closest('li[data-id]');
+    if (!li) return;
+    if (b.dataset.r === 'photos') openGallery(li.dataset.id); else removeClick(b, li.dataset.id);
+  });
   $('signIn').addEventListener('click', () => signIn());
   $('sheetWrap').addEventListener('click', (e) => { if (e.target === $('sheetWrap')) closeSheet(); }); // a tap on the dim backdrop closes the sheet
   $('inspSave').addEventListener('click', saveInspection);
@@ -559,7 +564,11 @@ function openFix() { // the last stop's count, put right: the same counters, sav
   drawSheet();
   behindSheet(true);
 }
-function closeSheet() { $('sheetWrap').hidden = true; behindSheet(false); S.stop = null; $('stopHere').focus(); }
+function closeSheet() {
+  const g = S.gallery; $('sheetWrap').hidden = true; behindSheet(false); S.stop = null; S.gallery = false;
+  if (g) $('sheet').textContent = ''; // the photos leave memory with the sheet
+  (g ? $('send') : $('stopHere')).focus();
+}
 function behindSheet(on) { // the sheet is modal: keyboard and screen reader stay inside it
   document.querySelectorAll('.gb-head, #appBody > :not(#sheetWrap):not(#toast)').forEach((el) => { el.inert = on; });
 }
@@ -707,7 +716,57 @@ function drawRow(li, run, p) {
   const pct = p.total ? (100 * p.sent / p.total) : run.endSent ? 100 : 0;
   li.innerHTML = `<div class="cap-runhead"><b>${esc(run.reg)}</b><span>${trialTag(run)}${esc(KIND[run.kind])}</span></div><p class="cap-note">${when(run.startedAt)}</p>` +
     `<p class="cap-line">${runLine(run, p)}</p>` + (run.kind === 'count' ? '' : `<div class="cap-bar"><i style="width:${pct}%"></i></div>`) +
-    `<p class="cap-note ${p.state === 'error' || (!p.state && run.status === 'error') ? 'cap-bad' : p.state === 'done' || (!p.state && run.endSent) ? 'cap-good' : ''}">${esc(stateLine(run, p))}</p>`;
+    `<p class="cap-note ${p.state === 'error' || (!p.state && run.status === 'error') ? 'cap-bad' : p.state === 'done' || (!p.state && run.endSent) ? 'cap-good' : ''}">${esc(stateLine(run, p))}</p>` +
+    // a driver's own route video (Uday, 6 Nov): see its photos on this phone, or remove it (two taps)
+    (S.driver && run.kind === 'timelapse' && run.endedAt ? '<div class="cap-runacts"><button type="button" class="cap-btn" data-r="photos">फ़ोटो देखें · See photos</button>' +
+      '<button type="button" class="cap-btn cap-remove" data-r="remove">रन हटाएँ · Remove run</button></div>' : '');
+}
+// ── A driver's own runs: photos and remove ──
+// The photos are the ones still on this phone (a sent photo is dropped from the phone once the school drive has it): nothing is
+// fetched, nothing leaves the phone. Driver mode only, so only the linked bus's runs are on this list.
+async function openGallery(id) {
+  const run = await store.getRun(id), left = await store.pending(id), sent = (await store.total(id)) - left.length, sheet = $('sheet');
+  let shown = 0;
+  sheet.innerHTML = `<div class="cap-sheethead"><h2 id="sheetTitle">फ़ोटो · Photos: ${esc(run.reg)}</h2><button type="button" class="cap-btn" data-g="close">Close</button></div>` +
+    `<p class="cap-note">${when(run.startedAt)} · ${plural(left.length, 'photo')} on this phone` + (sent ? ` · ${sent} already sent (on the school drive, not kept on this phone)` : '') + '.</p>' +
+    '<ul class="cap-gallery"></ul><button type="button" class="cap-btn" data-g="more" hidden>Show more</button>';
+  const ul = sheet.querySelector('.cap-gallery'), more = sheet.querySelector('[data-g="more"]');
+  const page = async () => { // 24 at a time: a run can hold 1,400 frames
+    for (const f of left.slice(shown, shown += 24)) {
+      const b64 = await store.fileData(id, f.kind, f.seq);
+      if (!b64 || !S.gallery) continue;
+      const li = document.createElement('li'), img = new Image();
+      img.alt = (f.kind === 'stop' ? 'Bus stop photo ' : 'Frame ') + (f.seq + 1); img.src = 'data:image/jpeg;base64,' + b64;
+      li.appendChild(img); ul.appendChild(li);
+    }
+    more.hidden = shown >= left.length;
+  };
+  more.addEventListener('click', page);
+  sheet.querySelector('[data-g="close"]').addEventListener('click', closeSheet);
+  S.gallery = true; $('sheetWrap').hidden = false; behindSheet(true);
+  sheet.querySelector('[data-g="close"]').focus();
+  await page();
+}
+function removeClick(b, id) { // two taps, like End run: a slip must not delete a run
+  if (!b.dataset.armed) {
+    b.dataset.armed = '1'; b.textContent = 'फिर दबाएँ · Tap again: the run and its photos are deleted';
+    setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'रन हटाएँ · Remove run'; } }, 4000);
+    return;
+  }
+  removeRun(id);
+}
+async function removeRun(id) {
+  if (S.sending) return toast('Wait until sending stops, then remove it.');
+  const run = await store.getRun(id).catch(() => null);
+  if (!run) return drawUpload();
+  if (run.startSent) { // the school already has part of it: bin it there first, so a resend can never bring it back
+    let r;
+    try { r = await post({ action: 'capturediscard', reg: run.reg, runId: run.id }); } catch (e) { r = { success: false, error: 'No connection' }; }
+    if (!r.success && !/discarded/i.test(r.error || '')) return toast('Not removed: ' + r.error + '. Try again.');
+  }
+  await store.discard(id);
+  toast('Run removed.');
+  drawUpload(); drawResume();
 }
 async function drawUpload() {
   const runs = (await store.runs()).sort((a, b) => b.startedAt - a.startedAt), list = $('runList');

@@ -177,6 +177,11 @@ a.cap-end{display:flex;align-items:center;justify-content:center;text-decoration
 .cap-runhead span{color:var(--c-mute);font-weight:600}
 .cap-runs .cap-note{margin:2px 0}
 .cap-line{font-size:17px;font-weight:700;margin:6px 0;font-variant-numeric:tabular-nums}
+.cap-runacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.cap-runacts .cap-btn{flex:1 1 140px;min-height:48px;padding:0 10px;font-size:15px}
+.cap-remove[data-armed]{border-color:#b3261e;color:#b3261e}
+.cap-gallery{list-style:none;margin:8px 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px}
+.cap-gallery img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:6px;display:block;background:#000}
 #authRoot{padding:0 16px}
 
 /* Safety check: the bus's loadout. The bus, then a HUD ("3 of 10 done" over a strip of slots: ticked green, red cross for missing, empty

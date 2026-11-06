@@ -305,6 +305,27 @@ assert.strictEqual(cr({ runId: 'TR5', reg: 'HP659511', kind: 'timelapse', status
 assert.strictEqual(cd({ secret: 'S', reg: 'HP659511', runId: 'TR5' }).success, true, 'no folder (never uploaded or already gone): still closes');
 assert.strictEqual(rowOf('TR5')[12], 'closed');
 
+// A driver removes a run of their own (Uday, 6 Nov): own bus, a route video that phone recorded, binned not deleted, final
+vm.runInContext("dlkLink_ = function (t) { return { dev1: { linkId: 'L1', reg: 'HP659511', campus: 'LMS4', name: 'Test Driver' }, dev2: { linkId: 'L2', reg: 'HP665805', campus: 'LMS1', name: 'Other Driver' }, dev3: { linkId: 'L3', reg: 'HP659511', campus: 'LMS4', name: 'New Phone' } }[t] || null; }", ctx);
+const dfile = (tok, b) => run('captureFile_(' + JSON.stringify(Object.assign({ deviceToken: tok, reg: 'HP659511', runKind: 'timelapse', kind: 'frame', base64: JPG }, b)) + ')');
+assert.strictEqual(dfile('dev1', { runId: 'TR4', seq: 0 }).success, true, "the driver's run has a frame on the drive");
+const d4 = runDirOf('TR4');
+const dd = (tok, b) => run('captureDiscard_(' + JSON.stringify(Object.assign({ deviceToken: tok, reg: 'HP659511' }, b)) + ')');
+assert.strictEqual(run('captureDiscard_(' + JSON.stringify({ reg: 'HP659511', runId: 'TR4' }) + ')').error, 'Not authorized', 'no token, no secret: refused');
+assert.strictEqual(dd('nope', { runId: 'TR4' }).success, false, 'an unlinked phone is refused');
+assert.match(dd('dev2', { runId: 'TR4' }).error, /only send for bus HP665805/, 'another bus\'s phone is refused');
+assert.match(dd('dev3', { runId: 'TR4' }).error, /Only the phone that recorded/, 'same bus, another phone: refused');
+assert.match(dd('dev1', { runId: 'R1' }).error, /Only the phone that recorded/, "a staff member's run on this bus: refused");
+assert.match(dd('dev1', { runId: 'BP1' }).error, /Only a route video/, 'a safety check stays on record');
+assert.match(dd('dev1', { runId: 'NOPE' }).error, /Unknown run/);
+assert.ok(!d4.trashed && rowOf('TR4')[12] !== 'closed', 'refusals change nothing');
+assert.strictEqual(dd('dev1', { runId: 'TR4' }).success, true, 'the driver removes their own run');
+assert.deepStrictEqual([d4.trashed, d4.files.length > 0, rowOf('TR4')[12]], [true, true, 'closed'], 'binned (recoverable), Status closed');
+assert.strictEqual(dd('dev1', { runId: 'TR4' }).success, true, 'a retry after a lost reply is fine');
+assert.match(drv({ runId: 'TR4', reg: 'HP659511', kind: 'timelapse', status: 'ended' }).error, /discarded/, 'final: a resent manifest cannot bring it back');
+assert.match(dfile('dev1', { runId: 'TR4', seq: 1 }).error || '', /discarded/, 'final: no new frames either');
+assert.strictEqual(rowOf('TR4')[12], 'closed');
+
 // Staff entries (2 Nov): a staff member's timelapse notes the bus's fleet driver in 'Driver' (by header name); a driver phone's never does
 tabs['LM Studio Fleet'] = [['Reg', 'Bus', 'Campus', 'Operational', 'Route', 'Start', 'Driver'], ['HP659511', 'Bus 4', 'LMS 4', 'yes', '', '', 'Fleet Driver'],
   ['HP665805', 'Bus 1', 'LMS 1', 'yes', '', '', ''], ['HP665686', 'Bus 5', 'LMS 4', 'yes', '', '', 'Bus Five Driver']];

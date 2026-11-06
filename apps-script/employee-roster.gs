@@ -213,7 +213,7 @@ function doPost(e) {
     if (body.action === 'capturefile') return staffJsonOut_(captureFile_(body)); // transport-capture.gs
     if (body.action === 'capturerun') return staffJsonOut_(captureRun_(body));
     if (body.action === 'captureprocessed') return staffJsonOut_(captureProcessed_(body)); // the Coordinator backend, shared secret
-    if (body.action === 'capturediscard') return staffJsonOut_(captureDiscard_(body)); // the shelf's Discard, same secret
+    if (body.action === 'capturediscard') return staffJsonOut_(captureDiscard_(body)); // the shelf's Discard (same secret), or a driver phone's own run
     if (body.action === 'driverlinkcreate') return staffJsonOut_(driverLinkCreate_(body)); // driver-link.gs
     if (body.action === 'driverlinkrevoke') return staffJsonOut_(driverLinkRevoke_(body));
     if (body.action === 'driverlinklist') return staffJsonOut_(driverLinkList_(body));
