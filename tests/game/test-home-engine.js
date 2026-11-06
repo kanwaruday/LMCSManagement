@@ -7,7 +7,7 @@ let progress = [];
 const ctx = {
   console: { log: () => {}, warn: () => {}, error: (...a) => errors.push(a.join(' ')) },
   gameLower_: (v) => String(v || '').trim().toLowerCase(),
-  gameBook_: () => ({ getSheetByName: (n) => (n === 'Game Progress' ? { getDataRange: () => ({ getValues: () => progress }) } : null) }),
+  gameBook_: () => ({ getSheetByName: (n) => (n === 'Game Progress' ? { getDataRange: () => ({ getValues: () => progress }) } : n === 'Game Config' ? { getDataRange: () => ({ getValues: () => [] }) } : null) }),
 };
 vm.createContext(ctx);
 // a module file may load before game-home.gs: its FILLS row must survive
@@ -99,4 +99,23 @@ assert(/slots\(\); el\.townhall\.hidden = !t\.townhall;/.test(hud) && /play\(b, 
 assert(/<link rel="stylesheet" href="\.\.\/assets\/game\/v2-animations\.css(\?v=[0-9a-f]+)?" \/>/.test(fs.readFileSync(__dirname + '/../../principal/index.html', 'utf8')), 'the Principal home loads v2-animations.css (room-unlock plays)');
 assert(!defaults.townhall.rooms.filter((r) => r.id === 'requests')[0].roles.includes('Owner'), 'no Requests door for the Owner (no one to ask)');
 assert(/home = at \? layer : row;/.test(hud) && /el\.slots = h\('div', \{ class: 'hh-slots'/.test(hud), 'a slot with no `at` docks above the quest line, never on the rooms (G2 nit)');
+// gametownhall (the Owner's Kingdom map has no Today): doors from recorded steps, the valley spot from config; registered as a GET action
+ctx.gameNow_ = () => new Date(); ctx.gameParseConfig_ = () => cfg;
+let g = ctx.homeTownhallGet_(clerk('LMS3'));
+assert.strictEqual(g.success, true);
+assert.strictEqual(g.townhall.rooms.map((r) => r.id + ':' + r.state).join(' '), 'requests:open office:open books:locked', 'recorded daybook-setup:approved fills treasury');
+assert.strictEqual(g.townhall.at, null, 'no spot in config: the page uses its own');
+ctx.gameParseConfig_ = () => Object.assign({}, cfg, { townhall: Object.assign({ at: [360, 195] }, cfg.townhall) });
+assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.homeTownhallGet_(clerk('LMS3')).townhall.at)), [360, 195]);
+assert.strictEqual(ctx.GAME_MODULE_ACTIONS.gametownhall, ctx.homeTownhallGet_);
+const own = ctx.homeTownhall_({ primaryRole: 'Owner', campusId: 'ALL' }, defaults, new Date(), null).rooms.map((r) => r.id).join(' ');
+assert.strictEqual(own, 'people events', "the Owner's doors: People and the Events hall, no Requests");
+assert(Array.isArray(defaults.townhall.at) && defaults.townhall.at.length === 2, 'the default valley spot');
+// the Owner's World: kingdom.js draws the Townhall building after each render and opens its doors in a layer
+const kjs = fs.readFileSync(__dirname + '/../../assets/game/kingdom.js', 'utf8');
+assert(/gdDraw\(\); thDraw\(\);/.test(kjs) && /gdLoad\(\); thLoad\(\);/.test(kjs) && /action=gametownhall/.test(kjs) && /k-townhall/.test(kjs), 'kingdom.js Townhall building');
+// idle pausing on the Home; the dock bobs (paused while hidden) and speaks only on a changed answer
+assert(/function idle\(\)/.test(hud) && /visibilitychange', idle/.test(hud) && /IntersectionObserver/.test(hud) && /'a-room-build-progress', !locked/.test(hud), 'Home idle loops pause off-screen');
+const dock = fs.readFileSync(__dirname + '/../../assets/game/buddy-dock.js', 'utf8');
+assert(/btn\.classList\.add\('a-buddy-bob'\)/.test(dock) && /v2-animations\.css' \+ V/.test(dock) && /shown\[t\.id\] !== line\.text/.test(dock), 'Buddy dock bob and speak');
 console.log('test-home-engine: ok');

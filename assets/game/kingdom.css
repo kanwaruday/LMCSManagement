@@ -269,3 +269,11 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
 .kg-rvtext { width:100%; box-sizing:border-box; font:inherit; padding:8px; border:1.5px solid var(--line); border-radius:8px; }
 .kg-rv .kg-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 .kg-rv .kg-btn { min-height:44px; }
+
+/* 🏢 Townhall (Home engine v2): the building beside LMCS HQ and its doors */
+.kg-th-list { list-style:none; margin:0; padding:0; }
+.kg-th-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:48px; padding:6px 0; border-bottom:1px solid var(--line); font-weight:700; }
+.kg-th-row:last-child { border-bottom:0; }
+.kg-th-row.is-locked { color:var(--muted); font-weight:400; }
+.kg-th-row .kg-quiet { margin:0; white-space:nowrap; }
+.kg-lvb.kg-th-mark { background:none; clip-path:none; font-size:20px; padding-bottom:0; }

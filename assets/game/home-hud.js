@@ -304,12 +304,20 @@ var LMCSHomeHud = (function () {
       b.classList.toggle('is-docked', !at); b.style.left = at ? Math.max(0, Math.min(100, Number(at[0]) || 0)) + '%' : ''; b.style.top = at ? Math.max(0, Math.min(100, Number(at[1]) || 0)) + '%' : '';
       b.classList.toggle('is-locked', locked); b.setAttribute('aria-disabled', String(locked)); b.setAttribute('aria-label', label + ', ' + sub);
       var mark = LMCSEmoji.get(locked ? 'locked' : s.emoji) || LMCSEmoji.get('setupUp'); b.children[0].textContent = mark; // its own aria-hidden span, beside the label
+      b.children[0].classList.toggle('a-room-build-progress', !locked); // a buildable door's mark breathes (an idle loop: idle() pauses it)
       b.children[1].textContent = label; b.children[2].textContent = sub;
       if (prev[s.id] === 'locked' && !locked) play(b, 'room-unlock'); // it just became buildable
     });
     Object.keys(S.sm).forEach(function (k) { if (!keep[k]) { S.sm[k].remove(); delete S.sm[k]; } });
     if (row) row.hidden = !row.children.length;
     S.slotNow = by; S.slotPrev = {}; list.forEach(function (s) { S.slotPrev[s.id] = s.state; });
+    idle();
+  }
+  // idle loops (v2-animations.css) stop while nobody can see them: tab hidden, the World view up, or the scene scrolled away
+  function idle() {
+    var sc = S.o && S.o.scene; if (!sc) return;
+    var off = document.hidden || S.away || !sc.getClientRects().length;
+    [].forEach.call(sc.querySelectorAll('[class*="a-"]'), function (n) { n.classList.toggle('is-paused', off); });
   }
   // the Townhall: one building for everyone, only this person's doors (today.townhall.rooms); a locked door says what opens it
   function openTownhall(opener) {
@@ -367,7 +375,9 @@ var LMCSHomeHud = (function () {
     document.addEventListener('lmcs-game-today', function (e) { S.today = e.detail; renderToday(); renderBase(); });
     new MutationObserver(renderEvents).observe(o.evSlot, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     new MutationObserver(function () { bubbles(); }).observe(o.building, { childList: true }); // the page redraws the building
-    new MutationObserver(function () { place(); }).observe(document.getElementById('modules'), { attributes: true, attributeFilter: ['hidden'] }); // back to Town: measure again
+    new MutationObserver(function () { place(); idle(); }).observe(document.getElementById('modules'), { attributes: true, attributeFilter: ['hidden'] }); // back to Town: measure again
+    document.addEventListener('visibilitychange', idle);
+    if (window.IntersectionObserver) new IntersectionObserver(function (es) { S.away = !es[es.length - 1].isIntersecting; idle(); }).observe(o.scene);
     o.building.addEventListener('scroll', place); window.addEventListener('resize', place);
     renderEvents(); bubbles();
   }

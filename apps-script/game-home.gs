@@ -3,6 +3,7 @@
 // schools: { <LMSn>: { scene, slots (added, or replace by id), hide: [slotId] } } } and `townhall.rooms[]` = { id, label, emoji, roles, needs, needsLabel, opens }.
 // The server works out each state; the page only draws. A role with no `homes` row gets no `home` field (the page keeps today's look).
 // Locked only hides or greys a door: nothing here blocks a page or an action.
+var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
 var GAME_MODULE_FILLS = GAME_MODULE_FILLS || {}; // { 'rooms.named': fn(caller, cfg, now) -> bool }: reads only, cheap, under the lock; a throw counts as false
 
 // `fills.quest` may say {campus}: 'rooms:{campus}:name' is the rooms quest's first step at the caller's school
@@ -67,16 +68,19 @@ function homeTownhall_(caller, cfg, now, home) {
   }) };
 }
 
+// this person's recorded quest steps ('questId:stepId' -> true) from Game Progress
+function homeRecordedDone_(caller) {
+  const me = gameLower_(caller.email), done = {};
+  gameBook_().getSheetByName('Game Progress').getDataRange().getValues().forEach(function (r) {
+    if (gameLower_(r[0]) === me && r[1] === 'quest_step' && r[3] === 'done') done[String(r[2])] = true;
+  });
+  return done;
+}
+
 // For a backend outside Today (engine-contract.md C): 'filled' | 'building' | 'locked' | null (not configured = treat as open).
 // Without `done` it reads this person's recorded quest steps from Game Progress (module quests' live `done` isn't there: pass `done` when you have it).
 function homeSlotState_(caller, cfg, now, slotId, done) {
-  if (!done) {
-    const me = gameLower_(caller.email);
-    done = {};
-    gameBook_().getSheetByName('Game Progress').getDataRange().getValues().forEach(function (r) {
-      if (gameLower_(r[0]) === me && r[1] === 'quest_step' && r[3] === 'done') done[String(r[2])] = true;
-    });
-  }
+  if (!done) done = homeRecordedDone_(caller);
   const home = homeSlotStates_(caller, cfg, now, done), s = home && home.slots.filter(function (x) { return x.id === slotId; })[0];
   return s ? s.state : null;
 }
@@ -87,3 +91,14 @@ function homeTodayFields_(caller, cfg, now, quests) {
   if (home) out.home = home;
   return out;
 }
+
+// GET action=gametownhall: the Townhall alone, for a page with no Today (the Owner's Kingdom map). Read only, no lock; a slot `needs`
+// reads recorded quest steps (homeSlotState_'s rule). `at` is the building's spot on the Kingdom valley (1000 x 620), from Game Config.
+function homeTownhallGet_(caller) {
+  const now = gameNow_(), cfg = gameParseConfig_(gameBook_().getSheetByName('Game Config').getDataRange().getValues());
+  const th = homeTownhall_(caller, cfg, now, homeSlotStates_(caller, cfg, now, homeRecordedDone_(caller)));
+  const at = cfg.townhall && cfg.townhall.at;
+  th.at = Array.isArray(at) && at.length === 2 ? at : null;
+  return { success: true, townhall: th };
+}
+GAME_MODULE_ACTIONS.gametownhall = homeTownhallGet_;

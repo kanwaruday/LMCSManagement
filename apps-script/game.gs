@@ -147,11 +147,14 @@ function gameConfigDefaults_() {
     },
     // The Townhall: one building on every World, each person sees only their doors. roles: missing or ['all'] = everyone;
     // needs: a fills key or one of the person's slot ids (the door shows locked until it is filled); needsLabel: the words for a fills key.
-    townhall: { rooms: [
+    townhall: { at: [360, 195], rooms: [ // at: the building on the Owner's Kingdom valley (1000 x 620), clear of LMCS HQ
       // every staff role files its own requests on the teacher page ("Leave and other requests go to your Principal/Owner"); the Owner has no one to ask
       { id: 'requests', label: 'Requests & leave', emoji: 'requests', roles: ['Coordinator', 'Principal', 'Teacher', 'Staff', 'FeeClerk', 'Accounts'], opens: 'teacher/index.html#panel-requests' },
       { id: 'evaluation', label: 'My evaluation', emoji: 'evaluate', roles: ['Teacher', 'Staff', 'Principal'], opens: 'teacher/index.html#panel-evals' },
-      { id: 'office', label: 'Office & fees', emoji: 'fees', roles: ['FeeClerk', 'Accounts', 'Principal'], opens: 'office/index.html' } ] },
+      { id: 'office', label: 'Office & fees', emoji: 'fees', roles: ['FeeClerk', 'Accounts', 'Principal'], opens: 'office/index.html' },
+      // the Owner's doors: the Owner pages that are services, not the Kingdom itself
+      { id: 'people', label: 'People', emoji: 'hiring', roles: ['Owner'], opens: 'owner/people.html' },
+      { id: 'events', label: 'Events hall', emoji: 'events', roles: ['Owner'], opens: 'owner/event-design.html' } ] },
     daysDenominator: { Principal: true, Coordinator: true, Owner: true, Teacher: false, Staff: false }, // Teachers and Staff: no leave source yet (R27)
     // 🎉 Events (game-event.gs). Game Config key `events` (an array; a row replaces the whole list). An event shows from `date` until the
     // person's checklist is done, or until `showTo`. steps[Role]: { id, emoji (the character assets/game/emoji.js uses for that concept), label, go, check, fn?, hint? }.

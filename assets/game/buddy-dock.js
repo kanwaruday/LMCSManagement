@@ -157,6 +157,7 @@ var LMCSDock = window.LMCSDock = (function () {
         if (r && r.success) refresh(); else { again(); err.textContent = (r && r.error) || 'Something went wrong. Try again.'; }
       }, function () { if (alive()) { again(); err.textContent = "Couldn't reach " + AG.name + '. Please try again.'; } });
     }
+    var shown = {}; // thread id -> the line last shown
     function draw() {
       banner.textContent = '';
       if (deskState(desk) === 'offline') banner.appendChild(h('p', {}, [h('strong', {}, AG.name + ' is offline — the Mac is off.'), h('br', {}), 'Your message is saved and will be answered when it wakes.']));
@@ -172,7 +173,8 @@ var LMCSDock = window.LMCSDock = (function () {
         } else if (pv) {
           extra = h('p', { class: 'bd-status' }, pv.state === 'failed' ? pv.note : { confirmed: 'Sending to the master agent when the Mac is on…', forwarded: 'Sent to the master agent', declined: 'Not sent', expired: 'This request expired' }[pv.state]);
         }
-        list.appendChild(h('li', { class: 'bd-th' }, [h('p', { class: 'bd-me' }, t.text), h('p', { class: 'bd-' + line.who }, line.text), extra]));
+        var fresh = shown[t.id] !== undefined && shown[t.id] !== line.text; shown[t.id] = line.text; // speaks when the answer changes, not on every poll
+        list.appendChild(h('li', { class: 'bd-th' }, [h('p', { class: 'bd-me' }, t.text), h('p', { class: 'bd-' + line.who + (fresh ? ' a-buddy-speak-bubble' : '') }, line.text), extra]));
       });
     }
     function refresh() {
@@ -276,7 +278,7 @@ var LMCSDock = window.LMCSDock = (function () {
           s.guide && h('a', { class: 'lg-go lg-go-soft', href: GUIDE + '#' + encodeURIComponent(s.guide), 'aria-label': 'How to: ' + s.title }, 'How'),
           sHref && h('a', { class: 'lg-go', href: sHref, 'aria-label': 'Go: ' + s.title }, 'Go')]),
       ].filter(Boolean);
-      if (rows.length) slot.appendChild(h('section', { class: 'bd-part', 'aria-labelledby': 'bd-next-h' }, [h('h3', { id: 'bd-next-h' }, 'Next for you'), rows]));
+      if (rows.length) slot.appendChild(h('section', { class: 'bd-part a-buddy-speak-bubble', 'aria-labelledby': 'bd-next-h' }, [h('h3', { id: 'bd-next-h' }, 'Next for you'), rows]));
     });
   }
 
@@ -311,6 +313,12 @@ var LMCSDock = window.LMCSDock = (function () {
     btn.type = 'button'; btn.className = 'bd-btn';
     btn.setAttribute('aria-label', 'Buddy: help'); btn.setAttribute('aria-haspopup', 'dialog'); btn.setAttribute('aria-expanded', 'false');
     btn.appendChild(av);
+    // Buddy bobs on the button (v2-animations.css, loaded here so every page with the dock has it); paused while the tab is hidden
+    var anim = [].some.call(document.styleSheets, function (x) { return /\/game\/v2-animations\.css/.test(x.href || ''); });
+    load('link', { rel: 'stylesheet', href: BASE + 'v2-animations.css' + V }, anim).catch(function () { /* no bob: still a button */ });
+    btn.classList.add('a-buddy-bob'); // the whole button: the avatar alone would show a gap inside its round clip
+    var rest = function () { btn.classList.toggle('is-paused', document.hidden); };
+    document.addEventListener('visibilitychange', rest); rest();
     btn.addEventListener('click', function () { if (panel) close(); else open(); });
     document.body.appendChild(btn);
     avatar((window.LMCSGame && LMCSGame.last && LMCSGame.last()) || kept());
