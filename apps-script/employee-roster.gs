@@ -211,6 +211,7 @@ function doPost(e) {
     if (body.action === 'driverfilllist') return staffJsonOut_(driverFillList_(body)); // driver-fill-confirm.gs: the Fee Clerk's check
     if (body.action === 'driverfilldecide') return staffJsonOut_(driverFillDecide_(body));
     if (body.action === 'capturefile') return staffJsonOut_(captureFile_(body)); // transport-capture.gs
+    if (body.action === 'capturefiles') return staffJsonOut_(captureFiles_(body)); // a batch of frames, one round trip
     if (body.action === 'capturerun') return staffJsonOut_(captureRun_(body));
     if (body.action === 'captureprocessed') return staffJsonOut_(captureProcessed_(body)); // the Coordinator backend, shared secret
     if (body.action === 'capturediscard') return staffJsonOut_(captureDiscard_(body)); // the shelf's Discard (same secret), or a driver phone's own run

@@ -9,26 +9,28 @@ const DELAYS = [5000, 15000, 60000];
 const TRANSIENT = /timed? ?out|try again|too many|temporar|could not obtain lock|failed to fetch|network|service|server error/i;
 
 export function createUploader({
-  store, post, onProgress = () => {}, delays = DELAYS, parallel = 3,
+  store, post, onProgress = () => {}, delays = DELAYS, parallel = 4, batch = 8,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   // Waiting for `online` hangs if the phone thinks it is online but the server is unreachable, so then just wait once more.
   waitOnline = () => (typeof navigator !== 'undefined' && navigator.onLine === false
     ? new Promise((r) => addEventListener('online', r, { once: true }))
     : sleep(delays[delays.length - 1])),
 }) {
-  let stopped = false, wake;
+  let stopped = false, wake, useBatch = batch > 1;
   const stopSignal = new Promise((r) => { wake = r; });
   const inflight = new Map(), again = new Set();
   const wait = (p) => Promise.race([p, stopSignal]);
 
-  const transient = (res) => !res || res.network || (res.success === false && TRANSIENT.test(res.error || ''));
+  // a batch answer with a passing trouble on one of its files is retried whole: the files already saved answer their ids again
+  const transient = (res) => !res || res.network || (res.success === false && TRANSIENT.test(res.error || '')) ||
+    (res.success && Array.isArray(res.results) && res.results.some((x) => x.error && TRANSIENT.test(x.error)));
 
   // Posts until it succeeds or is refused for good. Returns { res } or { error } (permanent), or null when stopped.
   async function send(body, progress) {
     for (let i = 0; ;) {
       let res = null;
       try { res = await post(body); } catch (e) { res = null; }
-      if (res && res.success) return { res };
+      if (res && res.success && !transient(res)) return { res };
       if (!transient(res)) return { error: (res && res.error) || 'Refused' };
       if (stopped) return null;
       progress('retrying');
@@ -81,19 +83,46 @@ export function createUploader({
       await store.patchRun(runId, { startSent: true });
     }
     // Files until none are left, then the end manifest if the run has ended by now (checked on a fresh read).
-    // `parallel` files at a time (6 Nov: one at a time ran ~3 frames a minute): the phone's upload and the server's sign-in check
-    // overlap; the Drive write itself still queues on the Roster's script lock. A refusal stops the others after their current file.
+    // Speed (6 Nov: one at a time ran ~1 frame per 20 s, all round trips): `parallel` requests at once, each a batch of up to
+    // `batch` files and under 2 MB (capturefiles). A Roster from before batches answers "Unknown action": then one file per request.
+    // A refusal stops the others after their current request.
+    const body = async (f) => ({ kind: f.kind, seq: f.seq, lat: f.lat, lng: f.lng, takenAt: f.takenAt, base64: await store.fileData(runId, f.kind, f.seq) });
+    const saved = async (f, fileId) => { await store.markSent(runId, f.kind, f.seq, fileId); sent++; progress('uploading'); };
+    const one = async (f) => { // undefined when saved, else {} (stopped) or {error, f}
+      const r = await send({ action: 'capturefile', reg: run.reg, runId, runKind: run.kind, ...(await body(f)) }, progress);
+      if (!r) return {};
+      if (r.error) return { error: r.error, f };
+      await saved(f, r.res.fileId);
+    };
     while (pending.length) {
       let next = 0, halt = null;
+      const take = () => { // the next batch: up to `batch` files and ~1.9 MB of base64 (older files: ~105 KB a frame)
+        const g = [];
+        for (let size = 0; next < pending.length && g.length < (useBatch ? batch : 1); next++) {
+          size += (pending[next].bytes || 105000) * 4 / 3;
+          if (g.length && size > 1.9e6) break; // under the 2 MB a request should carry
+          g.push(pending[next]);
+        }
+        return g;
+      };
       const worker = async () => {
         while (!halt && next < pending.length) {
-          const f = pending[next++];
-          const r = await send({ action: 'capturefile', reg: run.reg, runId, runKind: run.kind, kind: f.kind, seq: f.seq,
-            lat: f.lat, lng: f.lng, takenAt: f.takenAt, base64: await store.fileData(runId, f.kind, f.seq) }, progress);
-          if (!r) { halt = halt || {}; return; }
-          if (r.error) { halt = halt || { error: r.error, f }; return; }
-          await store.markSent(runId, f.kind, f.seq, r.res.fileId);
-          sent++; progress('uploading');
+          const g = take();
+          let out;
+          if (g.length > 1) {
+            const files = [];
+            for (const f of g) files.push(await body(f));
+            const r = await send({ action: 'capturefiles', reg: run.reg, runId, runKind: run.kind, files }, progress);
+            if (r && r.error && /unknown action/i.test(r.error)) { useBatch = false; for (const f of g) if ((out = await one(f))) break; }
+            else if (!r) out = {};
+            else if (r.error) out = { error: r.error, f: g[0] };
+            else for (const x of r.res.results) {
+              const f = g.find((y) => y.kind === x.kind && y.seq === x.seq);
+              if (!f) continue;
+              if (x.error) out = out || { error: x.error, f }; else await saved(f, x.fileId);
+            }
+          } else out = await one(g[0]);
+          if (out) { halt = halt || out; return; }
         }
       };
       await Promise.all(Array.from({ length: Math.min(parallel, pending.length) }, worker));

@@ -141,7 +141,7 @@ const JPG = Buffer.concat([Buffer.from('FFD8FFE0', 'hex'), Buffer.alloc(8)]).toS
 const files = [];
 ctx.Utilities.base64Decode = (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b));
 ctx.Utilities.newBlob = (bytes, mime, name) => ({ name });
-ctx.capFolder_ = () => ({ getFilesByName: () => ({ hasNext: () => false }),
+ctx.capFolder_ = () => ({ getId: () => 'DIR1', getFilesByName: () => ({ hasNext: () => false }),
   createFile: (b) => { const f = { name: b.name, desc: '', getId: () => 'FILE' + files.length, setDescription(d) { f.desc = d; } }; files.push(f); return f; } });
 caller = null; // no staff token in play
 const frame = (o) => call('captureFile_', Object.assign({ deviceToken: c2.token, reg: 'HP659511', runId: 'D1', runKind: 'timelapse', kind: 'frame', seq: 1, base64: JPG }, o));

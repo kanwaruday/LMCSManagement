@@ -11,7 +11,7 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
   const { distanceM, shouldCapture, FRAME_SPACING_M } = await import(dir + 'geo.js');
   const { createRunStore } = await import(dir + 'run-store.js');
   const { createUploader: createUp } = await import(dir + 'uploader.js');
-  const createUploader = (o) => createUp({ parallel: 1, ...o }); // the order checks below send one at a time; parallel sends have their own tests
+  const createUploader = (o) => createUp({ parallel: 1, batch: 1, ...o }); // the order checks below send one at a time; parallel sends have their own tests
 
   const clone = (e) => JSON.parse(JSON.stringify(e));
   const memStore = () => { const m = new Map(); return { m, reads: 0, put: async (e) => { m.set(e.id, clone(e)); }, get: async function (id) { this.reads++; return m.has(id) ? clone(m.get(id)) : undefined; }, getAll: async () => [...m.values()].map(clone), delete: async (id) => { m.delete(id); } }; };
@@ -386,7 +386,7 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
       inflight++; peak = Math.max(peak, inflight); await new Promise((r) => setTimeout(r, 2)); inflight--;
       return b.action === 'capturefile' ? { success: true, fileId: 'D' + b.seq } : { success: true };
     };
-    await createUp({ store, post, sleep: instant }).start(run.id);
+    await createUp({ store, post, sleep: instant, parallel: 3, batch: 1 }).start(run.id);
     assert.strictEqual(peak, 3);
     assert.deepStrictEqual([calls[0], calls[calls.length - 1]], ['capturerun', 'capturerun']);
     assert.deepStrictEqual(calls.filter((c) => c !== 'capturerun').sort(), [0, 1, 2, 3, 4, 5, 6].map((i) => 'capturefile' + i).sort());
@@ -395,12 +395,62 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
   await test('parallel: a refusal stops the run after the files already in flight; no end manifest; error recorded', async () => {
     const store = mkStore(); const run = await mkTimelapse(store, 8); await store.endRun(run.id);
     const srv = fakeServer((b) => (b.seq === 1 ? { success: false, error: 'This run was discarded. Record a new one.' } : null));
-    await createUp({ store, post: srv.post, sleep: instant }).start(run.id);
+    await createUp({ store, post: srv.post, sleep: instant, parallel: 3, batch: 1 }).start(run.id);
     const files = srv.calls.filter((c) => c.action === 'capturefile').length;
     assert.ok(files <= 4, 'stopped soon after the refusal: ' + files);
     assert.strictEqual(srv.calls.filter((c) => c.action === 'capturerun').length, 1, 'start manifest only');
     const r = await store.getRun(run.id);
     assert.deepStrictEqual([r.status, r.error], ['error', 'This run was discarded. Record a new one.']);
+  });
+  // batches (6 Nov speed): capturefiles, 8 files a request by default, 4 requests at once
+  const batchServer = (script = () => null) => {
+    const calls = [];
+    return { calls, post: async (b) => {
+      calls.push(b.action === 'capturefiles' ? 'B' + b.files.map((f) => f.seq).join(',') : b.action + (b.seq !== undefined ? b.seq : ''));
+      const o = script(b, calls.length); if (o) return o;
+      if (b.action === 'capturefiles') return { success: true, results: b.files.map((f) => ({ kind: f.kind, seq: f.seq, fileId: 'D' + f.seq })) };
+      return b.action === 'capturefile' ? { success: true, fileId: 'D' + b.seq } : { success: true };
+    } };
+  };
+  await test('batches: 20 frames go as 8 + 8 + 4 in capturefiles, every one marked sent with its id', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 20); await store.endRun(run.id);
+    const srv = batchServer();
+    await createUp({ store, post: srv.post, sleep: instant }).start(run.id);
+    const b = srv.calls.filter((c) => c[0] === 'B').map((c) => c.split(',').length).sort((x, y) => y - x);
+    assert.deepStrictEqual(b, [8, 8, 4]);
+    assert.strictEqual((await store.pending(run.id)).length, 0);
+    assert.strictEqual(Object.keys(await store.fileIds(run.id)).length, 20);
+    assert.strictEqual(srv.calls[srv.calls.length - 1], 'capturerun');
+  });
+  await test('batches: a batch stays under 2 MB', async () => {
+    const store = mkStore(); const run = await store.newRun({ reg: 'HP1', kind: 'timelapse' });
+    for (let i = 0; i < 6; i++) await store.addFrame(run.id, { lat: 0, lng: 0, takenAt: i, base64: 'A'.repeat(800000) }); // 600 KB each
+    await store.endRun(run.id);
+    const srv = batchServer();
+    await createUp({ store, post: srv.post, sleep: instant, parallel: 1 }).start(run.id);
+    assert.deepStrictEqual(srv.calls.filter((c) => c[0] === 'B'), ['B0,1', 'B2,3', 'B4,5']);
+  });
+  await test('batches: an old Roster ("Unknown action") gets one file per request from then on', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 5); await store.endRun(run.id);
+    const srv = batchServer((b) => (b.action === 'capturefiles' ? { success: false, error: 'Unknown action: capturefiles' } : null));
+    await createUp({ store, post: srv.post, sleep: instant, parallel: 1 }).start(run.id);
+    assert.deepStrictEqual(srv.calls, ['capturerun', 'B0,1,2,3,4', 'capturefile0', 'capturefile1', 'capturefile2', 'capturefile3', 'capturefile4', 'capturerun']);
+  });
+  await test('batches: a passing trouble on one file retries the batch; a refused file stops the run', async () => {
+    const store = mkStore(); const run = await mkTimelapse(store, 3); await store.endRun(run.id);
+    let first = true;
+    const srv = batchServer((b) => {
+      if (b.action !== 'capturefiles') return null;
+      if (first) { first = false; return { success: true, results: b.files.map((f) => (f.seq === 1 ? { kind: f.kind, seq: 1, error: 'Service error: Drive' } : { kind: f.kind, seq: f.seq, fileId: 'D' + f.seq })) }; }
+      return null;
+    });
+    await createUp({ store, post: srv.post, sleep: instant }).start(run.id);
+    assert.deepStrictEqual([srv.calls.filter((c) => c[0] === 'B').length, (await store.pending(run.id)).length], [2, 0], 'retried whole, then all saved');
+    const s2 = mkStore(); const r2 = await mkTimelapse(s2, 3); await s2.endRun(r2.id);
+    const srv2 = batchServer((b) => (b.action === 'capturefiles' ? { success: true, results: b.files.map((f) => (f.seq === 1 ? { kind: f.kind, seq: 1, error: 'Only photos (JPG, PNG, HEIC, WEBP) are accepted' } : { kind: f.kind, seq: f.seq, fileId: 'D' + f.seq })) } : null));
+    await createUp({ store: s2, post: srv2.post, sleep: instant }).start(r2.id);
+    const g = await s2.getRun(r2.id);
+    assert.deepStrictEqual([g.status, (await s2.pending(r2.id)).map((f) => f.seq), g.endSent], ['error', [1], false], 'the good ones saved, the bad one stops the run');
   });
   await test('each saved file records its size, for the "About N MB on mobile data" note', async () => {
     const store = mkStore(); const run = await mkTimelapse(store, 1);

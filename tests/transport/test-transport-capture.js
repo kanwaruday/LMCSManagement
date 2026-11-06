@@ -5,17 +5,18 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert'), path =
 const gs = (f) => fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var ');
 
 function folder(name) {
-  const kids = [], files = [];
-  const me = { name, kids, files, trashed: false, getName: () => name, setTrashed(v) { me.trashed = v; },
+  const kids = [], files = [], id = 'DIR' + (nextDir++);
+  const me = { name, kids, files, trashed: false, getName: () => name, getId: () => id, isTrashed: () => me.trashed, setTrashed(v) { me.trashed = v; },
     getFoldersByName(n) { const m = kids.filter((k) => k.name === n); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
     getFilesByName(n) { const m = files.filter((f) => f.name === n); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
-    createFolder(n) { const f = folder(n); kids.push(f); return f; },
+    createFolder(n) { const f = folder(n); kids.push(f); dirs[f.getId()] = f; return f; },
     getFiles() { let i = 0; return { hasNext: () => i < files.length, next: () => files[i++] }; },
-    setTrashed(v) { this.trashed = v; return this; },
+    setTrashed(v) { me.trashed = v; return me; },
     createFile(blob) { const id = 'FILE' + (nextId++) + 'x'.repeat(20); const f = { name: blob.name, blob, desc: '', getId: () => id, setDescription(d) { f.desc = d; } }; files.push(f); return f; } };
   return me;
 }
-let nextId = 1;
+let nextId = 1, nextDir = 1;
+const dirs = {};
 const root = folder('LMS Central Repository');
 const transport = root.createFolder('LMCS Repository').createFolder('Important Documents @ LMCS').createFolder('Important Documents Transport');
 transport.createFolder('Bus Wise Documents');
@@ -31,7 +32,7 @@ let caller = null;
 const cache = {};
 const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp,
   SpreadsheetApp: { openById: () => ss },
-  DriveApp: { getFolderById: () => root },
+  DriveApp: { getFolderById: (id) => { if (id === 'root') return root; if (!dirs[id]) throw new Error('No item with the given ID'); return dirs[id]; } },
   CacheService: { getScriptCache: () => ({ get: (k) => cache[k] || null, put: (k, v) => { cache[k] = v; } }) },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   Utilities: { base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),
@@ -319,6 +320,15 @@ assert.match(dd('dev1', { runId: 'R1' }).error, /Only the phone that recorded/, 
 assert.match(dd('dev1', { runId: 'BP1' }).error, /Only a route video/, 'a safety check stays on record');
 assert.match(dd('dev1', { runId: 'NOPE' }).error, /Unknown run/);
 assert.ok(!d4.trashed && rowOf('TR4')[12] !== 'closed', 'refusals change nothing');
+const dman = (tok, r) => run('captureRun_(' + JSON.stringify({ deviceToken: tok, run: Object.assign({ reg: 'HP659511', kind: 'timelapse', status: 'ended' }, r) }) + ')');
+assert.match(dman('dev3', { runId: 'TR4' }).error, /recorded on another phone/, 'review: another phone of the bus cannot take the run over');
+assert.strictEqual(rowOf('TR4')[6], 'driver:L1', 'By unchanged');
+caller = { email: 'c4@lms.org.in', campusId: 'LMS5', roles: ['Coordinator'], role: 'Coordinator' };
+assert.strictEqual(cr({ runId: 'TR4', reg: 'HP659511', kind: 'timelapse', status: 'ended' }).success, true, 'staff may still send it (the shared phone)');
+assert.deepStrictEqual([rowOf('TR4')[6], rowOf('TR4')[7]], ['driver:L1', 'Driver'], 'but By and Role stay the first sender\'s');
+assert.match(dd('dev3', { runId: 'TR4' }).error, /Only the phone that recorded/, 'so the other phone still cannot remove it');
+assert.match(dman('dev1', { runId: 'R1' }).error, /recorded on another phone/, "nor a driver phone a staff member's run");
+assert.match(dd('dev1', { runId: 'TR4', reg: 'hp 659511' }).error || 'ok', /ok|Unknown/, 'a spaced/lowercase reg is normalised, not refused as a bad run');
 assert.strictEqual(dd('dev1', { runId: 'TR4' }).success, true, 'the driver removes their own run');
 assert.deepStrictEqual([d4.trashed, d4.files.length > 0, rowOf('TR4')[12]], [true, true, 'closed'], 'binned (recoverable), Status closed');
 assert.strictEqual(dd('dev1', { runId: 'TR4' }).success, true, 'a retry after a lost reply is fine');
@@ -342,7 +352,7 @@ assert.strictEqual(cr({ runId: 'DV1', reg: 'HP659511', kind: 'timelapse', status
 assert.strictEqual(rowOf('DV1')[DV()], 'Fleet Driver', 'the driver at run time stands');
 assert.strictEqual(drv({ runId: 'DV2', reg: 'HP659511', kind: 'timelapse', status: 'running' }).success, true);
 assert.ok(!rowOf('DV2')[DV()], 'a driver phone\'s run leaves Driver blank');
-assert.strictEqual(drv({ runId: 'DV1', reg: 'HP659511', kind: 'timelapse', status: 'ended' }).success, true, 'a driver resending a staff run');
+assert.match(drv({ runId: 'DV1', reg: 'HP659511', kind: 'timelapse', status: 'ended' }).error, /recorded on another phone/, 'a driver phone cannot resend a staff run (review 6 Nov: no takeover)');
 assert.strictEqual(rowOf('DV1')[DV()], 'Fleet Driver', 'keeps the note');
 assert.strictEqual(cr({ runId: 'DV4', reg: 'HP665686', kind: 'profile', status: 'running' }).success, true);
 assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
@@ -356,7 +366,7 @@ assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
   const mem = () => { const m = new Map(); return { put: async (e) => { m.set(e.id, cp(e)); }, get: async (id) => (m.has(id) ? cp(m.get(id)) : undefined), getAll: async () => [...m.values()].map(cp), delete: async (id) => { m.delete(id); } }; };
   const store = createRunStore({ runs: mem(), files: mem(), data: mem() });
   const sent = [];
-  const post = async (body) => { sent.push(cp(body)); return run((body.action === 'capturefile' ? 'captureFile_(' : 'captureRun_(') + JSON.stringify(Object.assign({ idToken: 't' }, body)) + ')'); };
+  const post = async (body) => { sent.push(cp(body)); return run(({ capturefile: 'captureFile_(', capturefiles: 'captureFiles_(' }[body.action] || 'captureRun_(') + JSON.stringify(Object.assign({ idToken: 't' }, body)) + ')'); };
   const r0 = await store.newRun({ reg: 'HP659511', kind: 'inspection', campus: 'LMS 4', by: 'c4@lms.org.in', role: 'Coordinator' });
   const seq = await store.addFrame(r0.id, { takenAt: 1, base64: JPG });
   await store.endRun(r0.id, { inspection: { fire_extinguisher: { ok: true, date: '2026-09-01', seq }, cctv: { ok: false } } });
@@ -368,5 +378,32 @@ assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
   const row = rowOf(r0.id), fileId = runDirOf(r0.id).files[0].getId();
   assert.deepStrictEqual(JSON.parse(row[11]), { fire_extinguisher: { ok: true, date: '2026-09-01', fileId }, cctv: { ok: false } }, 'stored with the photo\'s Drive id');
   assert.deepStrictEqual([row[3], row[12], row[6], row[CB]], ['inspection', 'ended', 'f4@lms.org.in', 'c4@lms.org.in'], 'sent by the clerk, captured by the Coordinator');
+  // Speed (6 Nov): capturefiles takes a batch in one round trip; the run folder is found by its cached id
+  {
+    caller = { email: 'c4@lms.org.in', campusId: 'LMS5', roles: ['Coordinator'], role: 'Coordinator' };
+    assert.strictEqual(cr({ runId: 'SP1', reg: 'HP659511', kind: 'timelapse', status: 'running' }).success, true);
+    const batch = (files, o) => run('captureFiles_(' + JSON.stringify(Object.assign({ idToken: 't', reg: 'HP659511', runId: 'SP1', runKind: 'timelapse', files }, o)) + ')');
+    const fr = (seq, b) => ({ kind: 'frame', seq, lat: 31, lng: 76, takenAt: 'T' + seq, base64: b || JPG });
+    const r1 = batch([fr(0), fr(1), fr(2, PDF), fr(3)]);
+    assert.strictEqual(r1.success, true);
+    assert.deepStrictEqual(r1.results.map((x) => [x.seq, !!x.fileId, x.error || '']), [[0, true, ''], [1, true, ''], [2, false, 'Only photos (JPG, PNG, HEIC, WEBP) are accepted'], [3, true, '']], 'one bad file never sinks the batch');
+    const dir = runDirOf('SP1');
+    assert.strictEqual(dir.files.length, 3);
+    const r2 = batch([fr(0), fr(1)]);
+    assert.deepStrictEqual(r2.results.map((x) => x.fileId), [r1.results[0].fileId, r1.results[1].fileId], 'a resent batch answers the same ids, no new files');
+    assert.strictEqual(dir.files.length, 3);
+    assert.strictEqual(cache['capdir_HP659511_SP1'], dir.getId(), 'the run folder id is cached');
+    for (const k of Object.keys(cache)) if (/^cap_HP659511_SP1_/.test(k)) delete cache[k]; // file cache gone: the folder still dedupes by name
+    assert.strictEqual(batch([fr(1)]).results[0].fileId, r1.results[1].fileId);
+    assert.match(batch(Array.from({ length: 11 }, (_, i) => fr(i))).error, /1 to 10 files/);
+    assert.match(batch([fr(9)], { runKind: 'inspection' }).error, /does not match this run/, 'the run checks still apply');
+    assert.match(run('captureFiles_(' + JSON.stringify({ deviceToken: 'dev2', reg: 'HP659511', runId: 'SP1', runKind: 'timelapse', files: [fr(9)] }) + ')').error, /only send for bus/, 'and who may send');
+    rowOf('SP1')[12] = 'ended';
+    assert.strictEqual(run('captureDiscard_(' + JSON.stringify({ secret: 'S', reg: 'HP659511', runId: 'SP1' }) + ')').success, false, 'a real run is not binned by the shelf');
+    tabs['Capture Runs'][0].indexOf('Trial') !== -1 && (rowOf('SP1')[tabs['Capture Runs'][0].indexOf('Trial')] = 'yes'); // make it a trial so the shelf may bin it
+    assert.strictEqual(run('captureDiscard_(' + JSON.stringify({ secret: 'S', reg: 'HP659511', runId: 'SP1' }) + ')').success, true);
+    assert.match(batch([fr(7)]).error, /discarded/, 'a discard is seen at once, though the row was cached');
+    assert.ok(!dir.files.some((f) => f.name === 'frame-00007.jpg'), 'and nothing lands in the binned folder');
+  }
   console.log('transport capture: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

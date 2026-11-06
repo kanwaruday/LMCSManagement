@@ -759,11 +759,12 @@ async function removeRun(id) {
   if (S.sending) return toast('Wait until sending stops, then remove it.');
   const run = await store.getRun(id).catch(() => null);
   if (!run) return drawUpload();
-  if (run.startSent) { // the school already has part of it: bin it there first, so a resend can never bring it back
-    let r;
-    try { r = await post({ action: 'capturediscard', reg: run.reg, runId: run.id }); } catch (e) { r = { success: false, error: 'No connection' }; }
-    if (!r.success && !/discarded/i.test(r.error || '')) return toast('Not removed: ' + r.error + '. Try again.');
-  }
+  // bin the school's copy first, so a resend can never bring it back. A run whose first send never got an answer may still have
+  // a row there (review 6 Nov), so ask anyway; "Unknown run" (or no signal) for such a run means nothing is there to bin.
+  let r;
+  try { r = await post({ action: 'capturediscard', reg: run.reg, runId: run.id }); } catch (e) { r = { success: false, network: true, error: 'No connection' }; }
+  const gone = r.success || /discarded/i.test(r.error || '') || (!run.startSent && (r.network || /Unknown run/.test(r.error || '')));
+  if (!gone) return toast('Not removed: ' + r.error + '. Try again.');
   await store.discard(id);
   toast('Run removed.');
   drawUpload(); drawResume();

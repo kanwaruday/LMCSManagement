@@ -103,43 +103,87 @@ function capRunSheet_() {
   return sh;
 }
 
-function captureFile_(body) {
-  const fail = function (m) { return { success: false, error: m }; };
-  const a = capAuth_(body);
-  if (a.error) return fail(a.error);
-  const reg = a.v.reg, runId = String(body.runId || ''), kind = String(body.kind || ''), seq = Number(body.seq);
-  if (CAP_KINDS_.indexOf(kind) === -1) return fail('Unknown kind: ' + kind);
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId)) return fail('Bad runId');
-  const runKind = String(body.runKind || '');
-  if (CAP_RUN_KINDS_.indexOf(runKind) === -1) return fail('runKind is required (timelapse, count, inspection or profile)');
-  if (runKind === 'count') return fail('This is a count run: it takes no photos');
-  if (CAP_RUN_ACCEPTS_[runKind].indexOf(kind) === -1) return fail('A ' + runKind + ' run does not take ' + kind + ' photos');
-  if (!(seq >= 0 && seq <= 99999 && seq === Math.floor(seq))) return fail('Bad seq');
-  const bytes = Utilities.base64Decode(String(body.base64 || ''));
-  if (!bytes.length) return fail('Empty file');
-  if (bytes.length > CAP_MAX_BYTES_) return fail('Photo is larger than 2 MB');
-  const mime = tupSniff_(bytes);
-  if (mime.indexOf('image/') !== 0) return fail('Only photos (JPG, PNG, HEIC, WEBP) are accepted');
-
-  const name = kind + '-' + ('00000' + seq).slice(-5) + '.jpg', key = 'cap_' + reg + '_' + runId + '_' + kind + '_' + seq;
+// Speed (6 Nov: a driver's run went at ~1 frame per 20 s, all of it round trips and Drive calls, not bytes): the run's folder id and
+// its Capture Runs row are cached, the script lock is held only while a run's folder is first made, and capturefiles takes a
+// batch. Idempotent as before: a (runId, kind, seq) already saved answers its file id again.
+// Capture/<REG>/<runId>/ by its cached id (6 h). A binned folder (a discarded run) is never reused: the closed check runs first,
+// and a trashed hit walks the path again. Only the first frame of a run makes folders, so only that walk takes the lock.
+function capRunFolder_(reg, runId) {
+  const c = CacheService.getScriptCache(), key = 'capdir_' + reg + '_' + runId, id = c.get(key);
+  if (id) { try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) { /* gone: walk */ } }
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    const row = capRunSheet_().getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]) === runId; })[0];
-    if (row && String(row[1]) !== reg) return fail('This run belongs to another bus (' + row[1] + ')');
-    if (row && String(row[3]) !== runKind) return fail('runKind ' + runKind + ' does not match this run (' + row[3] + ')');
-    if (row && String(row[12]) === 'closed') return fail('This run was discarded. Record a new one.'); // no new folder for a binned run
-    const hit = CacheService.getScriptCache().get(key);
-    if (hit) return { success: true, fileId: hit };
-    const dir = capFolder_(reg, runId), it = dir.getFilesByName(name);
-    if (it.hasNext()) return { success: true, fileId: it.next().getId() };
-    const file = dir.createFile(Utilities.newBlob(bytes, mime, name));
-    file.setDescription(JSON.stringify({ lat: body.lat, lng: body.lng, takenAt: body.takenAt, by: a.caller.email }));
-    CacheService.getScriptCache().put(key, file.getId(), 21600);
-    return { success: true, fileId: file.getId() };
-  } finally {
-    lock.releaseLock();
-  }
+  lock.waitLock(30000); // two first frames at once must not make two run folders
+  try { const f = capFolder_(reg, runId); c.put(key, f.getId(), 21600); return f; } finally { lock.releaseLock(); }
+}
+// The run's row as {reg, kind, status}, or null: cached 10 min. captureRun_ and captureDiscard_ write it through, so a discard
+// is seen at once. ponytail: a Status edited by hand in the sheet shows up within 10 min.
+function capRunMeta_(runId) {
+  const c = CacheService.getScriptCache(), key = 'caprow_' + runId, hit = c.get(key);
+  if (hit) return hit === '-' ? null : JSON.parse(hit);
+  const row = capRunSheet_().getDataRange().getValues().slice(1).filter(function (r) { return String(r[0]) === runId; })[0];
+  const m = row ? { reg: String(row[1]), kind: String(row[3]), status: String(row[12]) } : null;
+  c.put(key, m ? JSON.stringify(m) : '-', 600);
+  return m;
+}
+function capPutMeta_(runId, reg, kind, status) { CacheService.getScriptCache().put('caprow_' + runId, JSON.stringify({ reg: reg, kind: kind, status: status }), 600); }
+
+// Who sends, and may this run take photos? Once per request. {error} or {a, reg, runId, runKind}
+function capFileCheck_(body) {
+  const a = capAuth_(body);
+  if (a.error) return a;
+  const reg = a.v.reg, runId = String(body.runId || ''), runKind = String(body.runKind || '');
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId)) return { error: 'Bad runId' };
+  if (CAP_RUN_KINDS_.indexOf(runKind) === -1) return { error: 'runKind is required (timelapse, count, inspection or profile)' };
+  if (runKind === 'count') return { error: 'This is a count run: it takes no photos' };
+  const row = capRunMeta_(runId);
+  if (row && row.reg !== reg) return { error: 'This run belongs to another bus (' + row.reg + ')' };
+  if (row && row.kind !== runKind) return { error: 'runKind ' + runKind + ' does not match this run (' + row.kind + ')' };
+  if (row && row.status === 'closed') return { error: 'This run was discarded. Record a new one.' }; // no new folder for a binned run
+  return { a: a, reg: reg, runId: runId, runKind: runKind };
+}
+// One photo into the run's folder: {fileId} or {error}. f: {kind, seq, base64, lat, lng, takenAt}
+function capFileSave_(ck, f) {
+  const kind = String(f.kind || ''), seq = Number(f.seq);
+  if (CAP_KINDS_.indexOf(kind) === -1) return { error: 'Unknown kind: ' + kind };
+  if (CAP_RUN_ACCEPTS_[ck.runKind].indexOf(kind) === -1) return { error: 'A ' + ck.runKind + ' run does not take ' + kind + ' photos' };
+  if (!(seq >= 0 && seq <= 99999 && seq === Math.floor(seq))) return { error: 'Bad seq' };
+  const bytes = Utilities.base64Decode(String(f.base64 || ''));
+  if (!bytes.length) return { error: 'Empty file' };
+  if (bytes.length > CAP_MAX_BYTES_) return { error: 'Photo is larger than 2 MB' };
+  const mime = tupSniff_(bytes);
+  if (mime.indexOf('image/') !== 0) return { error: 'Only photos (JPG, PNG, HEIC, WEBP) are accepted' };
+  const name = kind + '-' + ('00000' + seq).slice(-5) + '.jpg', key = 'cap_' + ck.reg + '_' + ck.runId + '_' + kind + '_' + seq;
+  const cache = CacheService.getScriptCache(), hit = cache.get(key);
+  if (hit) return { fileId: hit };
+  // ponytail: no lock here, so a retry racing its own first try can leave a second copy of one frame (same name); the Mac takes one
+  const dir = capRunFolder_(ck.reg, ck.runId), it = dir.getFilesByName(name);
+  if (it.hasNext()) return { fileId: it.next().getId() };
+  const file = dir.createFile(Utilities.newBlob(bytes, mime, name));
+  file.setDescription(JSON.stringify({ lat: f.lat, lng: f.lng, takenAt: f.takenAt, by: ck.a.caller.email }));
+  cache.put(key, file.getId(), 21600);
+  return { fileId: file.getId() };
+}
+
+function captureFile_(body) {
+  const ck = capFileCheck_(body);
+  if (ck.error) return { success: false, error: ck.error };
+  const r = capFileSave_(ck, body);
+  return r.error ? { success: false, error: r.error } : { success: true, fileId: r.fileId };
+}
+
+/** POST capturefiles {reg, runId, runKind, files: [{kind, seq, base64, lat, lng, takenAt}]} (1-10 files, 3 MB of base64 at most)
+ *  -> {success, results: [{kind, seq, fileId} | {kind, seq, error}]}: one round trip for a batch of frames. */
+function captureFiles_(body) {
+  const files = body.files;
+  if (!Array.isArray(files) || !files.length || files.length > 10) return { success: false, error: 'Send 1 to 10 files at a time' };
+  if (files.reduce(function (t, f) { return t + String((f && f.base64) || '').length; }, 0) > 3 * 1024 * 1024) return { success: false, error: 'This batch is larger than 3 MB' };
+  const ck = capFileCheck_(body);
+  if (ck.error) return { success: false, error: ck.error };
+  return { success: true, results: files.map(function (f) {
+    let r;
+    try { r = capFileSave_(ck, f || {}); } catch (e) { r = { error: String(e && e.message || e) }; } // one bad file never sinks the batch
+    return Object.assign({ kind: String((f && f.kind) || ''), seq: Number(f && f.seq) }, r);
+  }) };
 }
 
 /** '' if `insp` is a valid set of safety-check answers, else what is wrong with it. */
@@ -195,7 +239,7 @@ function captureRun_(body) {
     // a driver phone's photos (the bus setup chain) must be files of this run, so "photographed" can't be claimed with made-up ids
     const ids = Object.keys(run.inspection).map(function (k) { return run.inspection[k].fileId; }).filter(Boolean);
     if (ids.length && a.caller.role === 'Driver') {
-      const have = {}, it = capFolder_(a.v.reg, runId).getFiles();
+      const have = {}, it = capRunFolder_(a.v.reg, runId).getFiles();
       while (it.hasNext()) have[it.next().getId()] = true;
       if (!ids.every(function (id) { return have[id]; })) return fail('A photo of this check has not arrived yet. Send again.');
     }
@@ -232,6 +276,10 @@ function captureRun_(body) {
     const was = at && tc !== -1 && String(rows[at - 1][tc]) === 'yes';
     if (trialDenied && !was) return fail(CAP_TRIAL_DENIED_);
     if (at && was !== trial) return fail('A run cannot become a trial or stop being one');
+    // review 6 Nov: a driver phone sends only runs it started, and a driver's run stays that phone's (By, Role) whoever sends next,
+    // so a second phone of the same bus can't take a run over and then remove it. Staff rows keep By = the last sender (Ruling 41).
+    if (at && a.caller.role === 'Driver' && String(rows[at - 1][6]) !== a.caller.email) return fail('This run was recorded on another phone');
+    if (at && String(rows[at - 1][7]) === 'Driver') { row[6] = rows[at - 1][6]; row[7] = rows[at - 1][7]; }
     if (at && rows[at - 1][14]) row[14] = rows[at - 1][14]; // a run keeps its capturer, whoever sends the next manifest
     if (trial && tc === -1) tc = col(CAP_TRIAL_COL_);
     const dc = driver ? col(CAP_DRIVER_COL_) : head.indexOf(CAP_DRIVER_COL_);
@@ -239,6 +287,7 @@ function captureRun_(body) {
     if (tc !== -1) { pad(tc); row[tc] = trial ? 'yes' : ''; }
     if (dc !== -1) { pad(dc); if (driver && !row[dc]) row[dc] = driver; } // the first manifest's driver stands
     if (at) sh.getRange(at, 1, 1, row.length).setValues([row]); else sh.appendRow(row);
+    capPutMeta_(runId, a.v.reg, run.kind, status);
   } finally {
     lock.releaseLock();
   }
@@ -299,11 +348,12 @@ function authorizeDrive() { Logger.log(JSON.stringify(captureDriveCheck_())); }
  *  option to remove a run in case the driver is not satisfied") -- its own bus, a route video it recorded itself, never a safety
  *  check (its findings must stay on record). Closed is final: captureRun_ and captureFile_ refuse a closed run. */
 function captureDiscard_(body) {
-  const runId = String(body.runId || ''), reg = String(body.reg || '');
-  let driver = null;
+  const runId = String(body.runId || '');
+  let reg = String(body.reg || ''), driver = null;
   if (!body.secret && body.deviceToken) {
     driver = capAuth_({ deviceToken: body.deviceToken, reg: reg, runKind: 'timelapse' }); // linked phone, its own bus
     if (driver.error) return { success: false, error: driver.error };
+    reg = driver.v.reg; // the normalised reg, as the other driver calls use it
   } else {
     const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
     if (!secret || String(body.secret || '').trim() !== secret) return { success: false, error: 'Not authorized' };
@@ -329,6 +379,7 @@ function captureDiscard_(body) {
     const bus = f && capSub_(f, reg), dir = bus && capSub_(bus, runId);
     if (dir) dir.setTrashed(true); // the bin, never a hard delete: 30 days to change one's mind
     sh.getRange(at, 13).setValue('closed'); // Status: the pull lists only 'ended' runs
+    capPutMeta_(runId, reg, String(rows[at - 1][3]), 'closed'); // uploads see the discard at once
   } finally {
     lock.releaseLock();
   }
