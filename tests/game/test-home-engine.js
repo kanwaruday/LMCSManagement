@@ -118,4 +118,14 @@ assert(/gdDraw\(\); thDraw\(\);/.test(kjs) && /gdLoad\(\); thLoad\(\);/.test(kjs
 assert(/function idle\(\)/.test(hud) && /visibilitychange', idle/.test(hud) && /IntersectionObserver/.test(hud) && /'a-room-build-progress', !locked/.test(hud), 'Home idle loops pause off-screen');
 const dock = fs.readFileSync(__dirname + '/../../assets/game/buddy-dock.js', 'utf8');
 assert(/btn\.classList\.add\('a-buddy-bob'\)/.test(dock) && /v2-animations\.css' \+ V/.test(dock) && /shown\[t\.id\] !== line\.text/.test(dock), 'Buddy dock bob and speak');
+// K4: Buddy's advisor line is the Home's first buildable door; the Kingdom's level-up card pops with sparks (v2-animations.css on the page)
+const dctx = { console }; dctx.window = dctx; vm.createContext(dctx);
+vm.runInContext(dock, dctx); // no document: helpers only
+const D = dctx.LMCSDock;
+assert.strictEqual(D.homeStep({ home: { slots: [{ id: 'rooms', state: 'filled' }, { id: 'staff', state: 'building' }, { id: 'x', state: 'building' }] } }).id, 'staff');
+assert.strictEqual(D.homeStep({ home: { slots: [{ id: 'a', state: 'locked' }] } }), null);
+assert.strictEqual(D.homeStep({}), null);
+assert(/Build next/.test(dock), 'the dock names the next door');
+assert(/kg-cele a-level-up/.test(kjs) && /a-unlock-sparkle/.test(kjs), 'level-up card animates');
+assert(/<link rel="stylesheet" href="\.\.\/assets\/game\/v2-animations\.css(\?v=[0-9a-f]+)?" \/>/.test(fs.readFileSync(__dirname + '/../../owner/kingdom.html', 'utf8')), 'the Kingdom loads v2-animations.css');
 console.log('test-home-engine: ok');

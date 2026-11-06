@@ -404,7 +404,9 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     if (prev && typeof prev === 'object') Object.keys(snap).forEach(function (k) { var was = Number(prev[k]); if (isFinite(was) && was > snap[k]) snap[k] = was; });
     store(false, key, snap);
     if (!ups.length) return null;
-    var card = h('section', { class: 'kg-cele', role: 'status' }, [buddyImg('winter-formal-neutral'), h('div', { class: 'kg-celeb' }, [
+    // K4: the card pops (a-level-up) and sparks fly from Buddy (a-unlock-sparkle, six dots); both once, v2-animations.css
+    var spark = h('span', { class: 'kg-spark a-unlock-sparkle', 'aria-hidden': 'true' }, [h('i'), h('i'), h('i'), h('i'), h('i'), h('i')]);
+    var card = h('section', { class: 'kg-cele a-level-up', role: 'status' }, [h('span', { class: 'kg-celea' }, [buddyImg('winter-formal-neutral'), spark]), h('div', { class: 'kg-celeb' }, [
       h('h2', { class: 'kg-who' }, [ups.length === 1 ? 'Level up' : ups.length + ' level ups']),
       h('ul', {}, ups.slice(0, 4).map(function (u) { return h('li', {}, [levelUpText(u)]); })),
       h('button', { type: 'button', class: 'kg-btn', onclick: function () { card.remove(); } }, ['Got it'])])]);

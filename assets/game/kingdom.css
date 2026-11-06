@@ -277,3 +277,5 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
 .kg-th-row.is-locked { color:var(--muted); font-weight:400; }
 .kg-th-row .kg-quiet { margin:0; white-space:nowrap; }
 .kg-lvb.kg-th-mark { background:none; clip-path:none; font-size:20px; padding-bottom:0; }
+.kg-celea { position:relative; flex:none; display:block; }
+.kg-spark { position:absolute; inset:0; pointer-events:none; }

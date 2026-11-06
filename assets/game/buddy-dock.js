@@ -40,6 +40,8 @@ var LMCSDock = window.LMCSDock = (function () {
   }
 
   // ── Ask Buddy (Owner only): pure helpers; the UI is between the "Ask Buddy" markers in build()
+  // the Home's next door to build: the first buildable slot (home engine v2), or null
+  function homeStep(d) { return ((d && d.home && d.home.slots) || []).filter(function (x) { return x.state === 'building'; })[0] || null; }
   function deskState(desk) { return desk ? (desk.open ? 'open' : 'offline') : 'unknown'; }
   function threadLine(t, desk, name) { // name: the agent answering (Jarvis for the Owner)
     t = t || {}; name = name || 'Buddy';
@@ -59,7 +61,7 @@ var LMCSDock = window.LMCSDock = (function () {
     return open && (threads || []).some(function (t) { return t.state === 'queued' || t.state === 'working' || t.proposalState === 'confirmed'; }) ? 5000 : 0;
   }
 
-  var api = { deskState: deskState, threadLine: threadLine, proposalView: proposalView, pollDelay: pollDelay, avoid: '#lmcs-warm-chip, .bottom-nav', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep, open: open };
+  var api = { deskState: deskState, threadLine: threadLine, proposalView: proposalView, pollDelay: pollDelay, avoid: '#lmcs-warm-chip, .bottom-nav', pagePath: pagePath, rootFrom: rootFrom, tourId: tourId, search: search, setupStep: setupStep, homeStep: homeStep, open: open };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ UI ═══════════════════════════════════════════════════════════
@@ -272,11 +274,14 @@ var LMCSDock = window.LMCSDock = (function () {
       if (panel !== me || !d || d.notYet) return;
       if (d.agent && d.agent.mode === 'review' && !owner()) slot.appendChild(reviewSection(h, d.agent));
       var m = LMCSGame.nextMission(d), href = m && LMCSGame.safeHref(m.go, UP), s = setupStep(d), sHref = s && LMCSGame.safeHref(s.go, UP);
+      var b = homeStep(d), bHref = b && LMCSGame.safeHref(b.opens, UP); // K4 advisor line: the Home's next door to build (the slot engine)
       var rows = [
         href && h('div', { class: 'bd-row' }, [h('span', { class: 'bd-t' }, m.title), h('a', { class: 'lg-go', href: href, 'aria-label': 'Go: ' + m.title }, 'Go')]),
         s && h('div', { class: 'bd-row' }, [h('span', { class: 'bd-t' }, [h('small', {}, 'Setting up'), s.title]),
           s.guide && h('a', { class: 'lg-go lg-go-soft', href: GUIDE + '#' + encodeURIComponent(s.guide), 'aria-label': 'How to: ' + s.title }, 'How'),
           sHref && h('a', { class: 'lg-go', href: sHref, 'aria-label': 'Go: ' + s.title }, 'Go')]),
+        bHref && h('div', { class: 'bd-row' }, [h('span', { class: 'bd-t' }, [h('small', {}, 'Build next'), String(b.label || b.id)]),
+          h('a', { class: 'lg-go', href: bHref, 'aria-label': 'Build next: ' + String(b.label || b.id) }, 'Go')]),
       ].filter(Boolean);
       if (rows.length) slot.appendChild(h('section', { class: 'bd-part a-buddy-speak-bubble', 'aria-labelledby': 'bd-next-h' }, [h('h3', { id: 'bd-next-h' }, 'Next for you'), rows]));
     });
