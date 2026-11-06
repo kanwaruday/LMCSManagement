@@ -78,6 +78,11 @@ body.hh .gb-switch button { box-shadow:0 2px 6px rgba(0,0,0,.2); }
 .hh-slot-e { font-size:20px; pointer-events:none; }
 .hh-slot-n { font-size:12px; font-weight:600; }
 .hh-slot { z-index:2; } .hh-b { z-index:1; } /* a gold door sits on top; a greyed one never covers a live room door */
+.hh-slots { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; width:min(100%, 480px); }
+.hh-slots[hidden] { display:none; }
+.hh-hud .hh-slot { font-size:13px; font-weight:700; line-height:1.2; } /* over .hh-hud button's font:inherit */
+.hh-slot.is-docked { position:relative; transform:none; flex:1 1 0; max-width:none; display:grid; grid-template-columns:auto 1fr; column-gap:8px; align-items:center; text-align:left; } /* docked above the quest line: never over a room */
+.hh-slot.is-docked .hh-slot-e { grid-row:span 2; }
 .hh-slot.is-locked { z-index:0; border-color:var(--gb-line); background:var(--gb-paper); color:var(--gb-muted); box-shadow:none; cursor:default; }
 .hh-town { border:0; gap:4px; min-height:44px; padding:0 14px; pointer-events:auto; cursor:pointer; font:inherit; font-size:13px; font-weight:700; } /* the one tappable chip in .hh-top (44px target) */
 .hh-static.is-locked { color:var(--gb-muted); }

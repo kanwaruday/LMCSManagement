@@ -217,7 +217,8 @@ var LMCSHomeHud = (function () {
     // the bottom: one quest line, then the Town / World switch
     el.strip = h('button', { type: 'button', id: 'hh-strip', class: 'hh-strip', hidden: 'hidden' }, [emoji('quests'), h('span', { class: 'hh-strip-t' }), badge(0)]);
     el.strip.setAttribute('data-hh', 'strip'); el.strip.onclick = function () { openQuests(el.strip); };
-    var bottom = h('div', { class: 'hh-bottom' }, [el.strip, o.switchEl]);
+    el.slots = h('div', { class: 'hh-slots', hidden: 'hidden' }); // slots with no `at` in config: a row above the quest line, never on the rooms
+    var bottom = h('div', { class: 'hh-bottom' }, [el.slots, el.strip, o.switchEl]);
 
     // a rail item that opens the hub's Today panel opens the quest sheet here instead (Today lives in a sheet now)
     document.getElementById('game-rail') && document.getElementById('game-rail').addEventListener('click', function (e) {
@@ -287,7 +288,7 @@ var LMCSHomeHud = (function () {
   // to its room's own door. Kept by slot id in their own map (bubbles() prunes S.bm), updated in place so focus survives a reload.
   function play(el, id) { el.classList.remove('a-' + id); void el.offsetWidth; el.classList.add('a-' + id); el.addEventListener('animationend', function f() { el.classList.remove('a-' + id); el.removeEventListener('animationend', f); }); }
   function slots() {
-    var layer = S.layer, list = (S.today && S.today.home && S.today.home.slots) || [], by = {}, keep = {}, prev = S.slotPrev || {}, n = 0;
+    var layer = S.layer, row = S.el && S.el.slots, list = (S.today && S.today.home && S.today.home.slots) || [], by = {}, keep = {}, prev = S.slotPrev || {};
     if (!layer) return;
     S.sm = S.sm || {};
     list.forEach(function (s) { by[s.id] = s; });
@@ -298,15 +299,16 @@ var LMCSHomeHud = (function () {
         var cur = S.slotNow[s.id]; if (!cur || cur.state === 'locked') return; // a locked door only says what it waits on
         var href = LMCSGame.safeHref(cur.opens, S.o.root); if (href) location.href = href;
       }));
-      keep[s.id] = true; if (!b.parentNode) layer.appendChild(b); b.setAttribute('data-hh', 'slot-' + s.id);
+      var at = Array.isArray(s.at) && s.at.length === 2 ? s.at : null, home = at ? layer : row; // a configured spot on the scene, else the docked row
+      keep[s.id] = true; if (b.parentNode !== home) home.appendChild(b); b.setAttribute('data-hh', 'slot-' + s.id);
+      b.classList.toggle('is-docked', !at); b.style.left = at ? Math.max(0, Math.min(100, Number(at[0]) || 0)) + '%' : ''; b.style.top = at ? Math.max(0, Math.min(100, Number(at[1]) || 0)) + '%' : '';
       b.classList.toggle('is-locked', locked); b.setAttribute('aria-disabled', String(locked)); b.setAttribute('aria-label', label + ', ' + sub);
       var mark = LMCSEmoji.get(locked ? 'locked' : s.emoji) || LMCSEmoji.get('setupUp'); b.children[0].textContent = mark; // its own aria-hidden span, beside the label
       b.children[1].textContent = label; b.children[2].textContent = sub;
-      var at = Array.isArray(s.at) && s.at.length === 2 ? s.at : [14 + (n % 4) * 24, 84]; n++; // no spot in config: a row along the foot of the scene
-      b.style.left = Math.max(0, Math.min(100, Number(at[0]) || 0)) + '%'; b.style.top = Math.max(0, Math.min(100, Number(at[1]) || 0)) + '%';
       if (prev[s.id] === 'locked' && !locked) play(b, 'room-unlock'); // it just became buildable
     });
     Object.keys(S.sm).forEach(function (k) { if (!keep[k]) { S.sm[k].remove(); delete S.sm[k]; } });
+    if (row) row.hidden = !row.children.length;
     S.slotNow = by; S.slotPrev = {}; list.forEach(function (s) { S.slotPrev[s.id] = s.state; });
   }
   // the Townhall: one building for everyone, only this person's doors (today.townhall.rooms); a locked door says what opens it

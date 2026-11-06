@@ -98,4 +98,5 @@ assert(/parEls, townhallPanel\(\), days/.test(gjs) && /if \(opts\.only \|\| !Arr
 assert(/slots\(\); el\.townhall\.hidden = !t\.townhall;/.test(hud) && /play\(b, 'room-unlock'\)/.test(hud), 'the HUD draws the slots and the Townhall button after each Today');
 assert(/<link rel="stylesheet" href="\.\.\/assets\/game\/v2-animations\.css(\?v=[0-9a-f]+)?" \/>/.test(fs.readFileSync(__dirname + '/../../principal/index.html', 'utf8')), 'the Principal home loads v2-animations.css (room-unlock plays)');
 assert(!defaults.townhall.rooms.filter((r) => r.id === 'requests')[0].roles.includes('Owner'), 'no Requests door for the Owner (no one to ask)');
+assert(/home = at \? layer : row;/.test(hud) && /el\.slots = h\('div', \{ class: 'hh-slots'/.test(hud), 'a slot with no `at` docks above the quest line, never on the rooms (G2 nit)');
 console.log('test-home-engine: ok');
