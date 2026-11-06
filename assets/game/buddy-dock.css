@@ -24,6 +24,9 @@
   width: 44px; height: 44px; padding: 0; border: 2px solid var(--lg-red); border-radius: 50%; background: var(--lg-paper);
   box-shadow: 0 4px 14px rgba(40, 25, 10, .22); cursor: pointer; overflow: hidden; }
 .bd-btn .bd-av { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* base.css's `.gb :where(a)` link colour ties with game.css's .lg-go and lands later: dark red on red (1.44:1). White on --lg-red is 5.9:1 */
+.bd-panel .lg-go { color: #fff; }
+.bd-panel .lg-go.lg-go-soft { color: var(--lg-red-ink); }
 .bd-btn[aria-busy] { opacity: .7; }
 .bd-btn:focus-visible, .bd-x:focus-visible, .bd-ask:focus-visible, .bd-q:focus-visible, .bd-results a:focus-visible, .bd-guide:focus-visible, .bd-panel .lg-go:focus-visible,
 .bd-panel .lg-btn:focus-visible { outline: 3px solid var(--lg-focus); outline-offset: 2px; }
