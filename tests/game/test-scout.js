@@ -151,6 +151,30 @@ const lms1 = DAYS.concat('2026-11-06').map((d) => rep('LMS1', d, '16:00'));
   const C = { email: 'c@example.org', roles: ['Coordinator'], primaryRole: 'Coordinator', campusId: 'LMS2' };
   assert.ok(J(ctx.gameDispatch_(C, 'gamescout', { campus: 'LMS4' })).rank, 'Coordinators are network-wide and see the rank');
   assert.deepStrictEqual(writes, [], 'nothing written');
+
+  // ---- 7b. the quest (the entry point): cache-only counts, own school only, no score
+  const cache = {};
+  ctx.CacheService = { getScriptCache: () => ({ get: (k) => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; } }) };
+  const now = ctx.gameNow_();
+  const cold = J(ctx.scoutQuests_(P, {}, now));
+  assert.strictEqual(cold.length, 1);
+  assert.strictEqual(cold[0].title, ctx.SCOUT_EMOJI + ' Your Scout report', 'a cold cache: the link without counts');
+  assert.deepStrictEqual(cold[0].steps.map((s) => [s.go, s.done]), [['principal/scout.html', false]], 'one standing link step');
+  ctx.gameDispatch_(P, 'gamescout', {});
+  assert.deepStrictEqual(Object.keys(JSON.parse(cache['scout:sum:LMS4'])).sort(), ['day', 'judged', 'ontime'], 'the cache carries counts only, never a score or rank');
+  assert.strictEqual(J(ctx.scoutQuests_(P, {}, now))[0].title, ctx.SCOUT_EMOJI + ' Your Scout report: 6 of 6 on time');
+  assert.strictEqual(J(ctx.scoutQuests_(P, {}, new Date(at('2026-11-07', '09:00'))))[0].title, ctx.SCOUT_EMOJI + ' Your Scout report', "yesterday's counts never show");
+  for (const c of ['ALL', '', 'LMS1,LMS4']) assert.deepStrictEqual(J(ctx.scoutQuests_(Object.assign({}, P, { campusId: c }), {}, now)), [], 'a Principal with campus "' + c + '" gets no quest (fails closed)');
+  assert.deepStrictEqual(J(ctx.scoutQuests_(Object.assign({}, P, { primaryRole: 'Teacher' }), {}, now)), []);
+  ctx.gameDispatch_(O, 'gamescout', { campus: 'LMS1' });
+  for (const who of [O, C]) {
+    const q = J(ctx.scoutQuests_(who, {}, now))[0];
+    assert.strictEqual(q.title, ctx.SCOUT_EMOJI + ' Scout reports', 'Owner/Coordinator: no counts, no rank in the title');
+    assert.strictEqual(q.steps[0].go, 'principal/scout.html', 'the page has the school picker');
+  }
+  for (const r of ['Principal', 'Owner', 'Coordinator']) assert.ok([].concat(ctx.GAME_MODULE_QUESTS[r]).indexOf(ctx.scoutQuests_) !== -1, 'quest registered for ' + r);
+  assert.ok(new RegExp("dailyReport: '" + ctx.SCOUT_EMOJI + "'").test(fs.readFileSync(__dirname + '/../../assets/game/emoji.js', 'utf8')), 'the quest emoji is LMCSEmoji dailyReport');
+  assert.deepStrictEqual(writes, [], 'still nothing written to a sheet');
 }
 
 // ---- 8. scout-report.js helpers (no DOM)

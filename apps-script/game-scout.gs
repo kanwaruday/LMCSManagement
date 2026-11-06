@@ -8,6 +8,9 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //   gamescout&campus=LMSn  (GET) the last 7 school days of one school: regularity (filed? on time?), a 🔥 streak, compliance
 //                          bars, 3-5 insights worked out by rules (every line traces to a row), each day's report text, and for the
 //                          Owner and Coordinators only, the weekly rank of the 6 schools. A Principal gets only their own school.
+//   quest "Your Scout report"  the entry point to principal/scout.html on the Principal's (own school only), Owner's and Coordinators'
+//                          quests. Runs under the script lock, so it reads only the cache: the counts in its title are what gamescout
+//                          last worked out for that school today (no score, no rank); a cold cache is the same link without counts.
 //
 // READ ONLY. The PDR workbook (GAME_PDR_SHEET_ID: Daily Reports, PDR Issues / Issue Actions / Issue Merges, PDR Repeats, LM Studio Tags)
 // is opened and read; nothing in it is ever written, so the PDR backend's behaviour is untouched.
@@ -33,6 +36,9 @@ var SCOUT_DEFAULTS = {
 };
 var SCOUT_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 var SCOUT_ISSUES_GO = { Principal: 'principal/issues.html', other: 'coordinator/systems/index.html' };
+var SCOUT_GO = 'principal/scout.html';
+var SCOUT_EMOJI = '\ud83d\udcca'; // = LMCSEmoji.get('dailyReport'), the Scout report window's own title (tests/game/test-scout.js checks they match)
+var SCOUT_SUM_TTL = 21600;     // seconds: a school's counts for the quest title (the day is stored too, so yesterday's never shows)
 
 // Game Config rows (header first) -> the `scout` object over SCOUT_DEFAULTS; bad JSON or a wrong type keeps the default
 function scoutCfg_(rows) {
@@ -263,7 +269,28 @@ function scoutGet_(caller, p) {
     out.rank = { pos: board.map(function (b) { return b.campus; }).indexOf(campus) + 1, of: board.length };
   }
   delete out.score; // a Principal never sees a number that implies a ranking; the board carries scores for those allowed
+  try { // counts only, for the quest title: never the score or rank
+    CacheService.getScriptCache().put('scout:sum:' + campus, JSON.stringify({ day: today, ontime: out.tally.ontime, judged: out.judged }), SCOUT_SUM_TTL);
+  } catch (err) { /* the quest shows its link without counts */ }
   return out;
 }
 
+// The quest: one link step to the Scout report (never done: it is a standing entry point). Under the lock: one cache read at most.
+// A Principal gets their own school only and fails closed like gamescout (campus ALL, empty or a list: no quest).
+function scoutQuests_(caller, cfg, now) {
+  try {
+    const role = caller.primaryRole, step = { id: 'open', title: 'Open the last 7 school days', go: SCOUT_GO, done: false, locked: false };
+    if (role === 'Owner' || role === 'Coordinator') {
+      return [{ questId: 'scout', title: SCOUT_EMOJI + ' Scout reports', parallel: true, complete: false,
+        steps: [Object.assign(step, { title: "Open a school's last 7 school days" })] }];
+    }
+    if (role !== 'Principal' || SCOUT_CAMPUSES.indexOf(caller.campusId) === -1) return [];
+    let sum = null;
+    try { sum = JSON.parse(CacheService.getScriptCache().get('scout:sum:' + caller.campusId) || 'null'); } catch (err) { sum = null; }
+    const counts = sum && sum.day === gameDayKey_(now) && sum.judged > 0 ? ': ' + sum.ontime + ' of ' + sum.judged + ' on time' : '';
+    return [{ questId: 'scout', title: SCOUT_EMOJI + ' Your Scout report' + counts, parallel: true, complete: false, steps: [step] }];
+  } catch (err) { console.error('scout quest: ' + (err && err.message)); return []; }
+}
+
 GAME_MODULE_ACTIONS.gamescout = scoutGet_;
+['Principal', 'Owner', 'Coordinator'].forEach(function (r) { GAME_MODULE_QUESTS[r] = [].concat(GAME_MODULE_QUESTS[r] || [], scoutQuests_); });
