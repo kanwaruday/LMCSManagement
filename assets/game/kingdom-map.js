@@ -1,6 +1,7 @@
-// The Kingdom on a real map (assets/game/kingdom-map.js): LMCS HQ and LMS 1-6 pinned on OpenStreetMap, a full-screen pannable scene.
-//   LMCSKingdomMap.open({ bases, onPick, opener }) -> bases: the Kingdom's campuses ({id, name, level}); onPick(id) opens that base's sheet.
-// Positions come only from assets/game/places.js. Leaflet 1.9.4 (same cdnjs files and SRI as coordinator/route-map.js) loads here,
+// The Kingdom on a real map (assets/game/kingdom-map.js): LMCS HQ and LMS 1-6 pinned on OpenStreetMap, the Owner's Map view.
+//   LMCSKingdomMap.mount(host, { bases, onPick }) -> draws the map inside host (call again with fresh bases to update the levels);
+//   bases: the Kingdom's campuses ({id, name, level}); onPick(id, pin) opens that base's sheet.
+// Positions and the connection lines (each place's `links`) come only from assets/game/places.js. Leaflet 1.9.4 (same cdnjs files and SRI as coordinator/route-map.js) loads here,
 // the first time the map is opened, never on the Kingdom's first paint.
 window.LMCSKingdomMap = (function () {
   var LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
@@ -13,6 +14,19 @@ window.LMCSKingdomMap = (function () {
   function drawable(places) {
     return Object.keys(places || {}).filter(function (k) { return k !== 'CENTER'; }).filter(function (k) { var p = places[k]; return p && ok(p.lat, 31, 33) && ok(p.lng, 75.5, 78); })
       .map(function (k) { return { id: k, name: places[k].name, lat: places[k].lat, lng: places[k].lng }; });
+  }
+  // the connection lines: each pair of drawable places joined by either one's `links`, once
+  function links(places, pins) {
+    var at = {}, seen = {}, out = [];
+    (pins || []).forEach(function (p) { at[p.id] = p; });
+    (pins || []).forEach(function (p) {
+      var l = places[p.id].links;
+      (Array.isArray(l) ? l : []).forEach(function (q) {
+        var k = [p.id, q].sort().join('|');
+        if (q !== p.id && at[q] && !seen[k]) { seen[k] = true; out.push([p.id, q]); }
+      });
+    });
+    return out;
   }
   function missingText(n) { return n + (n === 1 ? ' place still needs a map pin' : ' places still need a map pin'); }
 
@@ -31,22 +45,14 @@ window.LMCSKingdomMap = (function () {
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
   function emoji(k) { return (window.LMCSEmoji && LMCSEmoji.tag(k)) || document.createTextNode(''); }
 
-  // one map for the page's life: closing hides it, opening shows it again and redraws the pins
-  var V; // { root, map, layer, note, release, opener, retrap }
-  function close() {
-    if (!V || V.root.hidden) return;
-    V.release(false); V.root.hidden = true;
-    var o = V.opener; V.opener = null;
-    if (o && o.isConnected) o.focus();
-  }
-  function build() {
+  // one map for the page's life, inside the page (not a dialog): the base sheet a pin opens traps focus itself
+  var V; // { root, mapEl, note }
+  function build(host) {
     var root = el('div', 'kgm'), mapEl = el('div', 'kgm-map'), note = el('p', 'kgm-note');
-    var x = el('button', 'kgm-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Close the map'); x.onclick = close;
-    root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', 'Kingdom on a real map');
-    mapEl.setAttribute('aria-label', 'Map of LMCS HQ and the schools');
-    root.appendChild(mapEl); root.appendChild(x); root.appendChild(note);
-    document.body.appendChild(root);
-    return (V = { root: root, mapEl: mapEl, note: note, x: x, release: function () {} });
+    root.setAttribute('role', 'region'); root.setAttribute('aria-label', 'Map of LMCS HQ and the schools');
+    root.appendChild(mapEl); root.appendChild(note);
+    host.textContent = ''; host.appendChild(root);
+    return (V = { root: root, mapEl: mapEl, note: note });
   }
   function short(p) { return p.id === 'HES' ? 'HQ' : p.name.split(' ').slice(0, 2).join(' '); } // "LMS 1": the full name is in the label
   // pins closer than gx by gy px on screen (a pin is wide and short) join one group, so labels never stack; tapping a group zooms in to split it
@@ -78,12 +84,7 @@ window.LMCSKingdomMap = (function () {
     if (!compact && level[p.id] !== undefined) b.appendChild(el('span', 'kgm-lv', 'Lv ' + level[p.id]));
     b.addEventListener('click', function (e) {
       L.DomEvent.stopPropagation(e);
-      if (!opts.onPick) return;
-      V.release(false); // the sheet that opens traps focus itself; take the trap back when it closes
-      opts.onPick(p.id, b);
-      var dlg = document.querySelector('dialog[open]');
-      if (dlg) dlg.addEventListener('close', function () { if (!V.root.hidden) { V.release = LMCSGame.ui.trap(V.root, close); b.focus(); } }, { once: true });
-      else V.release = LMCSGame.ui.trap(V.root, close);
+      if (opts.onPick) opts.onPick(p.id, b);
     });
     return b;
   }
@@ -118,23 +119,26 @@ window.LMCSKingdomMap = (function () {
       var c = places.CENTER || { lat: 31.8, lng: 77.0, zoom: 9 };
       V.map = L.map(V.mapEl, { zoomControl: true, attributionControl: true }).setView([c.lat, c.lng], c.zoom);
       L.tileLayer(TILES, { maxZoom: 19, attribution: ATTR }).addTo(V.map);
+      V.lines = L.layerGroup().addTo(V.map); // under the pins
       V.layer = L.layerGroup().addTo(V.map);
+      V.map.on('zoomend', render);
     }
     V.map.invalidateSize(); V.pins = pins; V.level = level; V.opts = opts;
-    if (!V.zoomed) { V.zoomed = true; V.map.on('zoomend', render); }
-    if (pins.length) V.map.fitBounds(pins.map(function (p) { return [p.lat, p.lng]; }), { padding: [70, 70], maxZoom: 14 });
+    var at = {}; pins.forEach(function (p) { at[p.id] = [p.lat, p.lng]; });
+    V.lines.clearLayers();
+    links(places, pins).forEach(function (l) { L.polyline([at[l[0]], at[l[1]]], { color: '#a10000', weight: 3, opacity: 0.55, dashArray: '6 8', interactive: false }).addTo(V.lines); });
+    if (pins.length && !V.fitted) { V.fitted = true; V.map.fitBounds(pins.map(function (p) { return [p.lat, p.lng]; }), { padding: [40, 40], maxZoom: 14 }); } // once: a refresh keeps where the Owner panned
     render(); // fitBounds without animation fires zoomend only when the zoom changes
     V.note.textContent = total - pins.length ? missingText(total - pins.length) : '';
     V.note.hidden = !V.note.textContent;
   }
-  function open(opts) {
-    var v = V || build(), opener = opts.opener || document.activeElement;
-    v.root.hidden = false; v.opener = opener;
-    v.release = LMCSGame.ui.trap(v.root, close);
-    v.x.focus();
-    v.note.hidden = false; v.note.textContent = 'Loading the map…';
-    loadLeaflet().then(function () { if (!v.root.hidden) draw(opts); }, function (e) { v.note.textContent = e.message; });
+  function mount(host, opts) {
+    if (!V || V.root.parentNode !== host) build(host);
+    V.opts = opts || {};
+    if (window.L) return draw(V.opts);
+    V.note.hidden = false; V.note.textContent = 'Loading the map…';
+    loadLeaflet().then(function () { draw(V.opts); }, function (e) { V.note.textContent = e.message; });
   }
-  return { drawable: drawable, missingText: missingText, group: group, cluster: cluster, short: short, tag: tag, open: open, close: close, TILES: TILES, ATTRIBUTION: ATTR };
+  return { drawable: drawable, links: links, missingText: missingText, group: group, cluster: cluster, short: short, tag: tag, mount: mount, TILES: TILES, ATTRIBUTION: ATTR };
 })();
 if (typeof module !== 'undefined') module.exports = window.LMCSKingdomMap;

@@ -37,10 +37,10 @@ assert.strictEqual(M.ATTRIBUTION, '&copy; OpenStreetMap contributors');
 assert.ok(/attribution: ATTR/.test(src) && M.TILES === 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
 ['leaflet/1.9.4/', ...(rm.match(/sha512-[\w+/=]+/g) || [])].forEach((s) => assert.ok(src.includes(s), 'same Leaflet pin: ' + s.slice(0, 20)));
 assert.ok(!/innerHTML/.test(src), 'no HTML from strings');
-assert.ok(/aria-modal/.test(src) && /LMCSGame\.ui\.trap/.test(src), 'modal, focus trapped');
+assert.ok(!/aria-modal/.test(src) && /role', 'region'/.test(src), 'the map is in the page, not a dialog: the base sheet it opens traps focus itself');
 assert.ok(!/KULLU/.test(src) && !/\[\s*31\./.test(src), 'no coordinates in the module');
 const page = read('owner/kingdom.html');
-assert.ok(page.includes('places.js') && page.includes('kingdom-map.js') && /LMCSKingdomMap\.open/.test(page));
+assert.ok(page.includes('places.js') && page.includes('kingdom-map.js') && /LMCSKingdomMap\.mount/.test(page) && /LMCSKingdom\.openBase\(id, el\)/.test(page), 'the Map view mounts the map; a place opens its base sheet');
 assert.ok(!/leaflet/i.test(page), 'Leaflet loads only when the map is opened');
 // close pins join one group so labels never stack; far ones stay apart
 const gs = (a) => M.cluster(a, 120, 52).map((g) => g.map((p) => p.id).join('+')).join();
@@ -49,5 +49,16 @@ assert.strictEqual(gs([{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 130, y: 0 }, { id:
 assert.strictEqual(gs([{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 100, y: 0 }, { id: 'C', x: 160, y: 0 }]), 'A+B+C', 'a group whose centre lands near a neighbour takes it in');
 assert.strictEqual(M.tag({ id: 'LMS4', name: 'LMS 4 Ner Chowk' }, true) + '|' + M.tag({ id: 'HES', name: 'LMCS HQ' }, true), '4|HQ');
 assert.strictEqual(M.short({ id: 'HES', name: 'LMCS HQ' }) + '|' + M.short({ id: 'LMS4', name: 'LMS 4 Ner Chowk' }), 'HQ|LMS 4');
-assert.ok(/aria-label="Real map" hidden>Map</.test(read('owner/kingdom.html')), 'a short header button that keeps its full name');
+// two Owner views only: Home | Map, on every Owner page; no Kingdom button left
+['owner/index.html', 'owner/kingdom.html', 'owner/people.html', 'owner/event-design.html'].forEach((f) => {
+  const nav = (read(f).match(/<nav class="gb-hsw" aria-label="Owner views">([\s\S]*?)<\/nav>/) || [])[1] || '';
+  assert.strictEqual(nav.replace(/<[^>]+>/g, '|').split('|').filter(Boolean).join(' | '), 'Home | Map', f + ': Home | Map');
+});
+assert.ok(page.indexOf('id="kg-realmap"') < page.indexOf('id="kingdom-root"'), 'the real map comes first');
+// connection lines come from places.js `links`, once per pair, only between pinned places
+const ln = (o) => M.links(o, M.drawable(o)).map((l) => l.join('-')).join();
+assert.strictEqual(ln(P), 'HES-LMS1,HES-LMS2,HES-LMS3,HES-LMS4,HES-LMS5,HES-LMS6', 'HQ links to every campus');
+const pt = (links, lat) => ({ name: 'x', lat: lat === undefined ? 31.9 : lat, lng: 77, links });
+assert.strictEqual(ln({ A: pt(['B', 'C', 'Z', 'A']), B: pt(['A', 'C']), C: pt(), D: pt(['A'], null) }), 'A-B,A-C,B-C', 'several links per place; both ways drawn once; unknown, unpinned and self links skipped');
+assert.strictEqual(ln({ A: pt('B'), B: pt() }), '', 'links must be a list');
 console.log('kingdom map: ok');

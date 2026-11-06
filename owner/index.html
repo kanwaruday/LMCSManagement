@@ -13,8 +13,8 @@
 <body class="gb gb-app">
 
   <!-- The screen skeleton (assets/game/base.css). HQ Home: four tiles (Approvals, Money today, People, Game settings), then Today
-       (game.js, which carries its own next step), and the All tools shelf in the panels. The header switches Home ⇄ Kingdom. -->
-  <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" aria-current="page" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="world">Kingdom</a></nav></div></header>
+       (game.js, which carries its own next step), and the All tools shelf in the panels. The header switches Home ⇄ Map. -->
+  <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" aria-current="page" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="realMap">Map</a></nav></div></header>
   <div class="gb-shell">
     <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
     <main class="gb-stage">
@@ -50,7 +50,7 @@
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
     const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
     const MODULES = [
-      { name: 'Kingdom', e: 'base', url: 'kingdom.html', desc: 'Your schools as a kingdom. Buddy shows your next step, and you hand out who sets up what.' },
+      { name: 'Map', e: 'realMap', url: 'kingdom.html', desc: 'HQ and your schools on the real map. Tap a school to see it, and hand out who sets up what.' },
       { name: 'People', e: 'heads', url: 'people.html', desc: 'Coordinators: add one, or change their school and functions.' },
       // Approvals points at the Coordinator systems page for now; Owner portal part A replaces it.
       { name: 'Approvals', e: 'requests', url: '../coordinator/systems/index.html#approvals', desc: 'Role requests and other items waiting for your decision.' },

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LMCS Portal — Kingdom</title>
+  <title>LMCS Portal — Map</title>
   <link rel="preconnect" href="https://script.google.com">
   <link rel="preconnect" href="https://accounts.google.com">
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
@@ -12,12 +12,19 @@
   <link rel="stylesheet" href="../assets/game/scout-report.css?v=9301c367" />
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
   <link rel="stylesheet" href="../assets/game/v2-animations.css?v=dd8b1609" />
+  <style>
+    /* the real map sits in the page, first, above the Kingdom (kingdom.css draws .kgm full screen for the old dialog) */
+    .kg-realmap { margin:0 0 16px; }
+    .kg-realmap .kgm { position:relative; inset:auto; z-index:0; height:min(62vh, 560px); border-radius:12px; overflow:hidden; border:1px solid #d9d4ca; }
+    .kg-realmap .kgm-note:empty { display:none; }
+    @media (max-width: 959px) { .gb-shell { grid-template-areas:"next" "stage" "panels"; } } /* phones: Buddy's one step, then the map, then the panels */
+  </style>
 </head>
 <body class="gb-app">
 
   <!-- The screen skeleton (assets/game/base.css): header, then the game bar, the next-step slot, the stage (the map) and the
        panels. The header's wrapper gives it the gb scope; the Kingdom itself keeps kingdom.css. -->
-  <div class="gb"><header class="gb-head"><div><div><h1>Owner's Kingdom</h1><p id="header-status">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" aria-current="page" data-emoji="world">Kingdom</a><button type="button" id="kg-realmap" data-emoji="realMap" aria-label="Real map" hidden>Map</button></nav></div></header></div>
+  <div class="gb"><header class="gb-head"><div><div><h1>Map</h1><p id="header-status">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" aria-current="page" data-emoji="realMap">Map</a></nav></div></header></div>
   <div class="gb-shell">
     <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
     <div class="gb-next-slot" id="kg-next"></div>
@@ -26,6 +33,7 @@
         <div id="gate-slot"></div>
       </section>
       <div id="app-root" style="display:none">
+        <div class="kg-realmap" id="kg-realmap"></div>
         <div class="kg" id="kingdom-root"></div>
       </div>
     </main>
@@ -50,8 +58,10 @@
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
       document.getElementById('panels').hidden = false;
-      const mb = document.getElementById('kg-realmap'); mb.hidden = false;
-      mb.onclick = function () { const d = LMCSKingdom.last(); LMCSKingdomMap.open({ bases: (d && d.kingdom && d.kingdom.campuses) || [], opener: mb, onPick: function (id, el) { LMCSKingdom.openBase(id, el); } }); };
+      // the real map first; every load of the Kingdom redraws its levels. A tapped place opens the same base sheet as the Kingdom's
+      const host = document.getElementById('kg-realmap'), pick = function (id, el) { LMCSKingdom.openBase(id, el); }, after = LMCSKingdom.hooks.after;
+      LMCSKingdomMap.mount(host, { bases: [], onPick: pick });
+      LMCSKingdom.hooks.after = function (d) { if (after) after(d); LMCSKingdomMap.mount(host, { bases: (d.kingdom && d.kingdom.campuses) || [], onPick: pick }); };
       LMCSKingdom.mount(document.getElementById('kingdom-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', next: document.getElementById('kg-next'), panels: document.getElementById('kg-panels') });
       LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' }); // Today (missions, quests) lives on Owner home
     }
