@@ -93,6 +93,17 @@ def fake(seed):
     for c in rnd.sample(codes, 15):
         sm_start = rnd.choice(['', D(2026, 9, 1), D(2026, 10, 1), '2027-01', D(2027, 3, 1), D(2026, 4, 1)])
         loans.append(['L%d' % len(loans), c, 'Salary Advance', '', 20000, rnd.choice([0, 2000, 5000, 15000]), sm_start, rnd.choice(['Active', 'Active', 'Closed', '']), '', '', 'x', ''])
+    for c in rnd.sample(codes, 8):  # RRF "Target Reached" markers (drawn last so earlier fixtures don't shift)
+        mm = D(2026, rnd.choice([3, 8, 12]), 1)
+        led.append([mm, mm, c, 'RRF', 'Target Reached', 0, '', '', 'x', ''])
+    # Raises that lift the target over a balance that already met it (the previous-pay stop), with service under 36
+    # months so RRF would otherwise continue; P2's raise shares its Effective From with the row it replaces (a tie).
+    for k, raise_eff in [('P1', D(2026, 9, 1)), ('P2', D(2024, 2, 1))]:
+        code = '%s/24/02/001' % k
+        base = [code, 'Person ' + k, 'LMS 1', 'PRT', D(2024, 2, 1), D(2024, 2, 1), 10000, 'Y', 'Y', 0, 'Bank', '', '', '', '', 'Active', '', '', 0]
+        sm += [base, base[:5] + [raise_eff, 15000] + base[7:]]
+        led.append([D(2026, 3, 1), D(2026, 3, 1), code, 'RRF', 'Opening', 60000, '', '', 'x', ''])
+        codes.append(code)
     return dict(data={'PayRoll Constants': consts, 'PayRoll Rates': rates, 'Salary Master': sm, 'Monthly Inputs': mi, 'Adjustments': adj,
                       'Ledger': led, 'Loans': loans, 'Payroll Register': []}, codes=codes)
 
@@ -109,11 +120,14 @@ FIELDS = [('paid', 'paidDays'), ('basic', 'basic'), ('adaAmt', 'ada'), ('daAmt',
 
 
 def recalc(src, outdir):
-    subprocess.run([SOFFICE, '--headless', '--calc', '--convert-to', 'xlsx', '--outdir', outdir, src], check=True, capture_output=True, timeout=600)
+    # own LibreOffice profile per run: a second soffice on the shared profile silently converts nothing
+    prof = 'file://' + os.path.join(outdir, 'lo-profile')
+    subprocess.run([SOFFICE, '-env:UserInstallation=' + prof, '--headless', '--calc', '--convert-to', 'xlsx', '--outdir', outdir, src], check=True, capture_output=True, timeout=600)
     return os.path.join(outdir, os.path.basename(src))
 
 
 ESI_PATHS = set()  # which ESI rules the fixtures reached: 'old' base (to Sep 2026), 'new' (Basic + DA), 'addback' (>50% rule)
+RRF_PATHS = set()  # RRF stop rules reached: 'cap' (short of target past the Until Month), 'marker' (Ledger Target Reached), 'prevpay'
 
 
 def run(seed):
@@ -129,6 +143,8 @@ def run(seed):
     backend = json.load(open(os.path.join(tmp, 'out.json')))
     bad = 0
     checked = 0
+    cs = dict((r[0], r[1]) for r in f['data']['PayRoll Constants'])
+    stop, until = cs.get('RRF Stop At Target (1=Yes)') == 1, cs.get('RRF Stop-At-Target Until Month', 42)
     for mo in MONTHS:
         wbp = os.path.join(tmp, 'wb_%s.xlsx' % mo)
         meta = B.build(wbp, f['data'], D(int(mo[:4]), int(mo[5:]), 1), 'test')
@@ -146,6 +162,13 @@ def run(seed):
             if be is None:
                 continue
             checked += 1
+            sv = lambda k: ws['%s%d' % (let[k], r)].value
+            if stop and sv('rrfMem') == 1:  # count a stop path only where it changed the result
+                below = sv('openRrf') < sv('rrfTarget')
+                would_pay = sv('months') < 36 or (below and (not until or sv('months') < until))
+                if would_pay and sv('rrfMarker') == 1: RRF_PATHS.add('marker')
+                elif would_pay and sv('rrfPrevHit') == 1: RRF_PATHS.add('prevpay')
+                elif until and sv('months') >= max(36, until) and below: RRF_PATHS.add('cap')
             ESI_PATHS.add('old' if mo < '2026-10' else 'addback' if be['esiWages'] > be['basic'] + be['da'] else 'new')
             for k, bk in FIELDS:
                 v = ws['%s%d' % (let[k], r)].value
@@ -161,7 +184,8 @@ if __name__ == '__main__':
     seeds = [int(x) for x in sys.argv[1:]] or [1, 2, 3]
     total = sum(run(s) for s in seeds)
     print('TOTAL MISMATCHES:', total)
-    missing = {'old', 'new', 'addback'} - ESI_PATHS
+    print('RRF paths reached:', sorted(RRF_PATHS))
+    missing = ({'old', 'new', 'addback'} - ESI_PATHS) | ({'cap', 'marker', 'prevpay'} - RRF_PATHS)
     if missing and set(seeds) >= {1, 2}:
-        print('ESI paths not exercised by these fixtures:', sorted(missing)); total += 1
+        print('ESI/RRF paths not exercised by these fixtures:', sorted(missing)); total += 1
     sys.exit(1 if total else 0)

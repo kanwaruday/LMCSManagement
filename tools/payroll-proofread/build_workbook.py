@@ -91,6 +91,7 @@ def up(x):  # round UP to the next rupee (EPF and ESI -- confirmed with Pawan Si
 # Calc-sheet column definitions.  Formulas use {key} for another column of the SAME row.
 # W(...) = "only for employees who are on this month's payroll".
 # ---------------------------------------------------------------------------------------------
+LAST = lambda key: 'LOOKUP(2,1/(%s=%s),ROW(%s))' % (rng('Salary Master', 'U'), key, rng('Salary Master', 'U'))  # last row with this key
 SM = lambda c: "INDEX(%s,{smrow})" % rng('Salary Master', c)
 RT = lambda c: "INDEX(%s,{rateRow})" % rng('PayRoll Rates', c)
 MI = lambda c: "INDEX(%s,{miRow})" % rng('Monthly Inputs', c)
@@ -107,9 +108,9 @@ def col(key, header, formula, group, fmt=None, desc='', src='', code='', width=1
 # --- who / which Salary Master row -----------------------------------------------------------
 col('code', 'Employee Code', None, 'who', None, 'Typed in. One row per code that has ever been on Salary Master -- add a row by copying one down and typing a code.',
     'You type it (copied from Salary Master › Employee Code).', 'payCompute_: Object.keys(master)', 16)
-col('smrow', 'Salary Master row used', '=IFERROR(MATCH({code}&"|"&TEXT(_xlfn.MAXIFS(%s,%s,{code},%s,"<="&ME),"yyyymmdd"),%s,0),"")' %
-    (rng('Salary Master', 'V'), rng('Salary Master', 'Y'), rng('Salary Master', 'V'), rng('Salary Master', 'U')), 'who', '0',
-    'Sheet row number on the Salary Master tab of the row in force this month: the latest row for this code whose Effective From is on or before the month end.',
+col('smrow', 'Salary Master row used', '=IFERROR(%s,"")' % LAST('{code}&"|"&TEXT(_xlfn.MAXIFS(%s,%s,{code},%s,"<="&ME),"yyyymmdd")' %
+    (rng('Salary Master', 'V'), rng('Salary Master', 'Y'), rng('Salary Master', 'V'))), 'who', '0',
+    'Sheet row number on the Salary Master tab of the row in force this month: the latest row for this code whose Effective From is on or before the month end (two rows with the same date: the lower one on the tab, as the portal).',
     'Salary Master › Employee Code + Effective From (helper cols U,V,Y)', 'payCompute_: master[code] = latest row with Effective From <= month end', 11)
 col('name', 'Name', '=IF({smrow}="","",TRIM(%s))' % SM('B'), 'master', None, 'Name from the Salary Master row in force.', 'Salary Master › Name (col B) at the row shown in "Salary Master row used"', 'payCompute_: r[\'Name\']', 24, ('Salary Master', 'B', 'Name'))
 col('entRaw', 'School (as written)', '=IF({smrow}="","",%s)' % SM('C'), 'master', None, 'Entity text as typed on Salary Master.', 'Salary Master › Entity (col C)', 'payCompute_: r[\'Entity\']', 10, ('Salary Master', 'C', 'Entity'))
@@ -172,7 +173,7 @@ col('esiEffMax', 'ESI: latest Salary Master date on/before period start', W('_xl
     'ESI coverage is fixed for the 6-month period (Apr-Sep / Oct-Mar) by the pay in force at its start. This is the Effective From of that row (0 = joined after the period began).', 'Salary Master › Effective From (helper col V)', 'payEsiCovered_', 12)
 col('esiEff', 'ESI: Salary Master date used', W('IF({esiEffMax}=0,_xlfn.MINIFS(%s,%s,{code}),{esiEffMax})' % (rng('Salary Master', 'V'), rng('Salary Master', 'Y'))), 'calc', 'dd-mmm-yyyy',
     'If joined after the period began, the first row they ever had.', 'Salary Master › Effective From', 'payEsiCovered_', 12)
-col('esiRow', 'ESI: Salary Master row used', W('IFERROR(MATCH({code}&"|"&TEXT({esiEff},"yyyymmdd"),%s,0),"")' % rng('Salary Master', 'U')), 'calc', '0', 'Sheet row on Salary Master used to decide ESI coverage.', 'Salary Master (helper col U)', 'payEsiCovered_', 9)
+col('esiRow', 'ESI: Salary Master row used', W('IFERROR(IF({esiEffMax}=0,MATCH({code}&"|"&TEXT({esiEff},"yyyymmdd"),%s,0),%s),"")' % (rng('Salary Master', 'U'), LAST('{code}&"|"&TEXT({esiEff},"yyyymmdd")'))), 'calc', '0', 'Sheet row on Salary Master used to decide ESI coverage.', 'Salary Master (helper col U)', 'payEsiCovered_', 9)
 col('esiRateRow', 'ESI: Rates row used', W('IF({esiRow}="","",IFERROR(MATCH(SUBSTITUTE(UPPER(INDEX(%s,{esiRow}))," ",""),%s,0),""))' % (rng('Salary Master', 'C'), rng('PayRoll Rates', 'F'))), 'calc', '0', "PayRoll Rates row for that old row's school.", 'PayRoll Rates', 'payEsiCovered_', 9)
 col('esiBasic', 'ESI: Full Basic then', W('IF({esiRow}="","",%s)' % num("INDEX(%s,{esiRow})" % rng('Salary Master', 'G'))), 'calc', '#,##0', 'Full Basic on that old row.', 'Salary Master › Full Basic (col G) at the ESI row', 'payEsiCovered_', 10)
 col('esiAdaThen', 'ESI: full-month ADA then', W('IF({esiRateRow}="","",%s)' % rnd('{esiBasic}*%s/100' % num("INDEX(%s,{esiRateRow})" % rng('PayRoll Rates', 'C')))), 'calc', '#,##0',
@@ -204,10 +205,36 @@ LG = lambda acct: 'SUMIFS(%s,%s,{code},%s,"%s",%s,"<"&MS)' % (rng('Ledger', 'F')
 col('months', 'Months of service', W('IF({doj}>ME,0,DATEDIF({doj},ME,"m"))'), 'calc', '0', 'Complete months from joining to month end.', 'Date of Joining', 'payMonthsBetween_', 9)
 col('openRrf', 'RRF balance at start of month', W(LG('RRF')), 'input', '#,##0', 'Sum of RRF ledger entries dated before this month.', 'Ledger › Amount (col F) where Account = RRF and Month is before this month', 'payLedgerBalances_(ss,\'RRF\',month)', 11, ('Ledger', 'F', 'Amount (RRF rows)'))
 col('rrfTarget', 'RRF target', W('RRF_TGT*{cti}'), 'calc', '#,##0', 'Target months (3) × CTI. Only matters when "RRF Stop At Target" = 1.', 'Settings: RRF Target Months', 'payCalc_: target', 10)
-col('rrfRate', 'RRF rate', W('IF({rrfMem}=1,IF({months}<12,RRF_Y1,IF({months}<24,RRF_Y2,IF(OR({months}<36,AND(RRF_STOP=1,{openRrf}<{rrfTarget})),RRF_Y3,0))),0)'), 'calc', '0%',
-    '12% in year 1, 9% year 2, 6% year 3; after 36 months 0%, unless "Stop At Target" is on and the balance is below target (then 6%).', 'Settings: RRF Y1/Y2/Y3 %', 'payCalc_: rrfRate', 8)
+col('rrfMarker', 'RRF target reached before (Ledger marker)', W('IF(COUNTIFS(%s,{code},%s,1,%s,"<"&MS)>0,1,0)' % (rng('Ledger', 'C'), rng('Ledger', 'L'), rng('Ledger', 'K'))), 'calc', '0',
+    '1 if the Ledger has a "Target Reached" entry for this person dated before this month (the portal writes it when RRF first hits the target).', 'Ledger › Type (col E) = Target Reached', 'payRrfFlags_', 9)
+col('rrfReached', 'RRF stopped for good (1/0)', W('IF(AND(RRF_STOP=1,OR({rrfMarker}=1,{rrfPrevHit}=1)),1,0)'), 'calc', '0',
+    'With "Stop At Target" on, once the target has been reached RRF never restarts -- not even when a raise lifts the target above the balance.', 'RRF target reached before / previous-pay check', 'payCalc_: reached (ctx.rrfReached)', 9)
+col('rrfRate', 'RRF rate', W('IF(AND({rrfMem}=1,{rrfReached}=0),IF({months}<12,RRF_Y1,IF({months}<24,RRF_Y2,IF(OR({months}<36,AND(RRF_STOP=1,OR(RRF_UNTIL=0,{months}<RRF_UNTIL),{openRrf}<{rrfTarget})),RRF_Y3,0))),0)'), 'calc', '0%',
+    '12% in year 1, 9% year 2, 6% year 3; after 36 months 0%, unless "Stop At Target" is on, the balance is below target and service is under the "Until Month" (42) -- then 6%. 0% once stopped for good.', 'Settings: RRF Y1/Y2/Y3 %, RRF Stop-At-Target Until Month', 'payCalc_: rrfRate', 8)
 col('rrf', 'RRF deduction', W('IF(AND({rrfRate}>0,RRF_STOP=1),MIN(%s,MAX(0,%s)),%s)' % (rnd('{rrfRate}*{cti}'), rnd('{rrfTarget}-{openRrf}'), rnd('{rrfRate}*{cti}'))), 'calc', '#,##0',
     'Rate × CTI; with "Stop At Target" on it is capped at the gap to target.', '', 'payCalc_: rrf', 10)
+
+# The portal also treats the target as reached when no marker exists yet but the balance already met the target
+# under the PREVIOUS Salary Master row (so the latest raise alone lifted the target). Recompute that row's CTI with
+# the same formulas as above, on the previous Full Basic (payRrfReachedBefore_).
+col('smEff', 'Salary Master date in force', W('INDEX(%s,{smrow})' % rng('Salary Master', 'V')), 'calc', 'dd-mmm-yyyy', 'Effective From of the row in force this month.', 'Salary Master (helper col V)', 'payRrfReachedBefore_', 11)
+col('prevSame', 'Previous row: same date, higher on the tab', W('IFERROR(LOOKUP(2,1/((%s={code}&"|"&TEXT({smEff},"yyyymmdd"))*(ROW(%s)<{smrow})),ROW(%s)),"")' % ((rng('Salary Master', 'U'),) * 3)), 'calc', '0',
+    'An increment row often has the same Effective From as the row it replaces: then the row above it (same code and date) is the previous pay.', 'Salary Master (helper col U)', 'payRrfReachedBefore_', 9)
+col('prevEff', 'Previous Salary Master date', W('_xlfn.MAXIFS(%s,%s,{code},%s,"<"&{smEff})' % (rng('Salary Master', 'V'), rng('Salary Master', 'Y'), rng('Salary Master', 'V'))), 'calc', 'dd-mmm-yyyy',
+    'Otherwise the latest earlier Effective From (0 = none).', 'Salary Master (helper col V)', 'payRrfReachedBefore_', 11)
+col('prevRow', 'Previous Salary Master row', W('IF({prevSame}<>"",{prevSame},IF({prevEff}=0,"",IFERROR(%s,"")))' % LAST('{code}&"|"&TEXT({prevEff},"yyyymmdd")')), 'calc', '0',
+    'Sheet row of the previous pay (blank = none).', 'Salary Master (helper col U)', 'payRrfReachedBefore_', 9)
+col('prevBasic', 'Previous Full Basic', W('IF({prevRow}="",0,%s)' % num('INDEX(%s,{prevRow})' % rng('Salary Master', 'G'))), 'calc', '#,##0',
+    'Full Basic on the previous row.', 'Salary Master › Full Basic (col G)', 'payRrfReachedBefore_', 10)
+PREV_CHAIN = ['basic', 'adaAmt', 'daAmt', 'wages', 'esiWages', 'epfMand', 'epf', 'esi', 'esiEr', 'clEnc', 'gross', 'cti']
+_byKey = {c['key']: c for c in COLS}
+for k in PREV_CHAIN:
+    f = _byKey[k]['formula'].replace('{fullBasic}', '{prevBasic}')
+    for k2 in PREV_CHAIN:
+        f = f.replace('{%s}' % k2, '{p_%s}' % k2)
+    col('p_' + k, 'Previous pay: ' + _byKey[k]['header'], f, 'calc', _byKey[k]['fmt'], 'Same as "%s", on the previous Full Basic.' % _byKey[k]['header'], '', 'payRrfReachedBefore_', 9)
+col('rrfPrevHit', 'RRF target already met on previous pay (1/0)', W('IF(AND({rrfMem}=1,RRF_STOP=1,{openRrf}>0,{prevBasic}>0,{prevBasic}<{fullBasic},{openRrf}>=RRF_TGT*{p_cti}),1,0)'), 'calc', '0',
+    '1 if the opening balance already met the target on the previous pay, and the latest row is a raise.', 'Previous pay: CTI', 'payRrfReachedBefore_', 9)
 
 # --- loans -------------------------------------------------------------------------------------
 col('loanSched', 'Loan: scheduled recovery', W('SUMIFS(%s,%s,{code},%s,"<>closed*",%s,"<="&MS)' % (rng('Loans', 'F'), rng('Loans', 'B'), rng('Loans', 'H'), rng('Loans', 'M'))), 'input', '#,##0',
@@ -322,8 +349,10 @@ def build(path, data, month, banner):
     inputs['Monthly Inputs']['Q1'].value = 'Key (month|code)'
     helpers('Adjustments', {'K': 'IF(C#="","",IF(ISNUMBER(B#),TEXT(B#,"yyyy-mm"),LEFT(TRIM(B#),7))&"|"&TRIM(C#))'})
     inputs['Adjustments']['K1'].value = 'Key (month|code)'
-    helpers('Ledger', {'K': 'IF(B#="","",IF(ISNUMBER(B#),DATE(YEAR(B#),MONTH(B#),1),IFERROR(DATEVALUE(LEFT(TRIM(B#),7)&"-01"),"")))'})
+    helpers('Ledger', {'K': 'IF(B#="","",IF(ISNUMBER(B#),DATE(YEAR(B#),MONTH(B#),1),IFERROR(DATEVALUE(LEFT(TRIM(B#),7)&"-01"),"")))',
+                       'L': 'IF(EXACT(TRIM(E#),"Target Reached"),1,0)'})
     inputs['Ledger']['K1'].value = 'Month (1st of month, date)'
+    inputs['Ledger']['L1'].value = 'Target Reached marker (1/0)'
     helpers('Loans', {'M': 'IF(B#="","",IF(G#="",0,IF(ISNUMBER(G#),DATE(YEAR(G#),MONTH(G#),1),IFERROR(DATEVALUE(LEFT(TRIM(G#),7)&"-01"),0))))'})
     inputs['Loans']['M1'].value = 'Start Month (1st of month, date)'
     helpers('Payroll Register', {'AI': 'IF(B#="","",IF(ISNUMBER(A#),TEXT(A#,"yyyy-mm"),LEFT(TRIM(A#),7))&"|"&TRIM(B#))'})
@@ -370,6 +399,7 @@ def build(path, data, month, banner):
         ('RRF_Y2', 'RRF year 2', '=%s/100' % pc('RRF Y2 %'), '0%', 'PayRoll Constants: "RRF Y2 %"', ['RRF Y2 %']),
         ('RRF_Y3', 'RRF year 3 (and after, if below target)', '=%s/100' % pc('RRF Y3 %'), '0%', 'PayRoll Constants: "RRF Y3 %"', ['RRF Y3 %']),
         ('RRF_TGT', 'RRF target (months of CTI)', '=' + pc('RRF Target Months', 3), '0', 'PayRoll Constants: "RRF Target Months" (3 if the row is absent -- the backend adds it)', ['RRF Target Months']),
+        ('RRF_UNTIL', 'RRF stop-at-target only until month (0 = no limit)', '=' + pc('RRF Stop-At-Target Until Month', 42), '0', 'PayRoll Constants: "RRF Stop-At-Target Until Month" (42 if the row is absent -- the backend adds it)', ['RRF Stop-At-Target Until Month']),
         ('RRF_STOP', 'RRF Stop At Target (1 = on)', '=IF(%s=1,1,0)' % pc('RRF Stop At Target (1=Yes)', 0), '0', 'PayRoll Constants: "RRF Stop At Target (1=Yes)" (only exactly 1 counts)', ['RRF Stop At Target (1=Yes)']),
         ('GRAT', 'Gratuity provision %', '=%s/100' % pc('Gratuity Provision %', 5), '0.0%', 'PayRoll Constants: "Gratuity Provision %"', ['Gratuity Provision %']),
         ('CL_DIV', 'CL encashment divisor', '=' + pc('CL Encashment Divisor', 30), '0', 'PayRoll Constants: "CL Encashment Divisor"', ['CL Encashment Divisor']),
@@ -572,8 +602,9 @@ def build(path, data, month, banner):
         ('EPF and ESI are both rounded UP to the next rupee (confirmed with Pawan Sir, 1 Oct 2026). ESI coverage for Apr-Sep / Oct-Mar is decided once, by the full-month wages in force on the 1st of the period (or on joining), and holds for the whole period even if pay later crosses ₹21,000.', None),
         ('Wages for EPF = Basic + ADA + DA only. ESI used the same until Sep 2026; from Oct 2026 ESI wages = Basic + DA, plus any part of (ADA + other earnings) above half of total pay, and coverage is judged on that too. Tuition and CL encashment never count for either.', None),
         ('A person is skipped if they left before the 1st of the month (Last Working Day, else Status = Left), or their school has no PayRoll Rates row, or they have no Date of Joining.', None),
-        ('If a code has several Salary Master rows (raises, transfers) the one with the latest Effective From on or before the month end is used. If two rows share the same Effective From the first one on the tab is picked (the portal prefers the later one) -- avoid duplicates.', None),
+        ('If a code has several Salary Master rows (raises, transfers) the one with the latest Effective From on or before the month end is used. If two rows share the same Effective From the lower one on the tab is used, as in the portal.', None),
         ('Held salary (F&F / grievance) does not change Net Pay; it only moves it out of Bank payable.', None),
+        ('RRF with "Stop At Target" on: after 36 months it continues at 6% only while the balance is below target and only until the "Until Month" (42). Once the target has been reached (a Ledger "Target Reached" entry, or the balance already met it on the previous pay) RRF stops for good, even after a raise.', None),
     ]
     for i, (t, kind) in enumerate(lines, 1):
         cc = ws_help.cell(i, 1, t)

@@ -11,3 +11,5 @@ tools/private/
 
 # Agent work notes (plan reports); local only
 .superpowers/
+__pycache__/
+*.pyc
