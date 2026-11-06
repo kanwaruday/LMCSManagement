@@ -143,10 +143,10 @@ function gameConfigDefaults_() {
     homes: {
       Principal: { scene: 'school-building', slots: [
         { id: 'rooms', label: 'Name your rooms', emoji: 'school', fills: { quest: 'rooms:{campus}:name' }, opens: 'principal/rooms.html' },
-        { id: 'staff', label: 'Put your staff in their rooms', emoji: 'staffRoom', after: 'rooms', fills: { quest: 'rooms:{campus}:staff' }, opens: 'principal/rooms.html#staff' } ] },
+        { id: 'staff', label: 'Put your staff in their rooms', emoji: 'staffPresent', after: 'rooms', fills: { quest: 'rooms:{campus}:staff' }, opens: 'principal/rooms.html#staff' } ] },
     },
     // The Townhall: one building on every World, each person sees only their doors. roles: missing or ['all'] = everyone;
-    // needs: a fills key or one of the person's slot ids (the door shows locked until it is filled).
+    // needs: a fills key or one of the person's slot ids (the door shows locked until it is filled); needsLabel: the words for a fills key.
     townhall: { rooms: [
       { id: 'requests', label: 'Requests & leave', emoji: 'requests', roles: ['all'], opens: 'teacher/index.html#panel-requests' },
       { id: 'evaluation', label: 'My evaluation', emoji: 'evaluate', roles: ['Teacher', 'Staff', 'Principal'], opens: 'teacher/index.html#panel-evals' },

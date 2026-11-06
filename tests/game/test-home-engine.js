@@ -63,7 +63,8 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.homeDoneMap_([{ questId: 'q
 // Townhall: only this role's doors; `needs` = a slot id or a fills key; a door without needs is open
 let th = ctx.homeTownhall_(clerk('LMS3'), cfg, new Date(), ctx.homeSlotStates_(clerk('LMS3'), cfg, new Date(), {}));
 assert.strictEqual(th.rooms.map((r) => r.id + ':' + r.state).join(' '), 'requests:open office:locked books:locked');
-assert.strictEqual(th.rooms[1].after, 'treasury');
+assert.strictEqual(th.rooms[1].after, 'Day Book', 'a locked door names the slot it waits on, by its label');
+assert.strictEqual(th.rooms[2].after, null, 'a fills key with no needsLabel: no words (the page says Not open yet)');
 th = ctx.homeTownhall_(clerk('LMS4'), cfg, new Date(), ctx.homeSlotStates_(clerk('LMS4'), cfg, new Date(), {}));
 assert.strictEqual(th.rooms.map((r) => r.id + ':' + r.state).join(' '), 'requests:open office:open books:open');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.homeTownhall_(clerk('LMS1'), {}, new Date(), null))), { rooms: [] });

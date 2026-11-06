@@ -73,6 +73,14 @@ body.hh .gb-switch button { box-shadow:0 2px 6px rgba(0,0,0,.2); }
 /* bubbles: a 44px round button on a room */
 .hh-b { position:absolute; transform:translate(-50%, -50%); width:44px; height:44px; padding:0; border:2px solid var(--gb-ink); border-radius:50%; background:var(--gb-paper); color:var(--gb-ink); font-size:21px; line-height:1; pointer-events:auto; box-shadow:0 2px 6px rgba(0,0,0,.3); }
 .hh-b-e { pointer-events:none; }
+/* Home engine v2: a slot to build (gold) or waiting on another (greyed); placed by % of the scene */
+.hh-slot { position:absolute; transform:translate(-50%, -50%); display:flex; flex-direction:column; align-items:center; gap:2px; max-width:140px; min-height:48px; padding:6px 10px; border:2px solid var(--gb-gold-ink); border-radius:14px; background:var(--gb-gold); color:var(--gb-ink); font-size:13px; font-weight:700; line-height:1.2; text-align:center; font-family:inherit; cursor:pointer; pointer-events:auto; box-shadow:0 2px 8px rgba(0,0,0,.3); }
+.hh-slot-e { font-size:20px; pointer-events:none; }
+.hh-slot-n { font-size:12px; font-weight:600; }
+.hh-slot { z-index:2; } .hh-b { z-index:1; } /* a gold door sits on top; a greyed one never covers a live room door */
+.hh-slot.is-locked { z-index:0; border-color:var(--gb-line); background:var(--gb-paper); color:var(--gb-muted); box-shadow:none; cursor:default; }
+.hh-town { border:0; gap:4px; min-height:44px; padding:0 14px; pointer-events:auto; cursor:pointer; font:inherit; font-size:13px; font-weight:700; } /* the one tappable chip in .hh-top (44px target) */
+.hh-static.is-locked { color:var(--gb-muted); }
 .hh-b-quest { background:var(--gb-gold); border-color:var(--gb-gold-ink); }
 .hh-b-setup { background:var(--gb-ok-soft); border-color:var(--gb-ok); }
 .hh-b-board { background:var(--gb-gold-soft); border-color:var(--gb-gold-ink); }

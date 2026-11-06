@@ -24,9 +24,10 @@ var LMCSHomeHud = (function () {
   var LABELS = { town: 'Town', wild: 'Wilderness', daily: 'Daily', tasks: 'Tasks', closeTasks: 'Close tasks', closeTab: '\u25c2 Close', open: 'open', close: 'Close',
     board: 'Quest board', quests: 'Quests', growth: 'Growth', profile: 'Your profile', name: 'Name', role: 'Role', campus: 'Campus', level: 'Level',
     points: 'Points', account: 'Account', appointments: 'Appointments', dataSources: 'Data sources', go: 'Go →', goAria: 'Go: ', waiting: 'waiting',
-    opened: 'opened', done: 'Done', todo: 'To do', questsLine: 'Quests', dayClosed: 'Day closed', closes: 'Closes' };
+    opened: 'opened', done: 'Done', todo: 'To do', questsLine: 'Quests', dayClosed: 'Day closed', closes: 'Closes',
+    townhall: 'Townhall', build: 'Build it now', buildsAfter: 'Builds after', opensAfter: 'Opens after', notOpen: 'Not open yet' };
   var COPY = { none: 'No quests yet. Your quests will appear here.', done: 'All done for now.', daily: 'No daily missions today.', growth: 'No setup quests open.',
-    appts: 'No appointments waiting.', today: 'Nothing is waiting today.', routes: 'Routes' };
+    appts: 'No appointments waiting.', today: 'Nothing is waiting today.', routes: 'Routes', townhall: 'No doors for you here yet.' };
 
   // a fixed "Closes 3:30 pm" (no countdown), or "Day closed" once 15:30 IST has passed
   function dayClock(now, closeMin, words) {
@@ -187,8 +188,9 @@ var LMCSHomeHud = (function () {
     el.rank = h('span', { class: 'hh-chip hh-rank', hidden: 'hidden' }); // shown only when a state response carries `rank` (see rankText)
     el.clock = h('span', { class: 'hh-chip hh-clock' });
     el.points = h('span', { class: 'hh-chip hh-points', hidden: 'hidden' });
+    el.townhall = btn('hh-chip hh-town', L.townhall, [emoji('hq'), h('span', {}, L.townhall)], openTownhall); el.townhall.hidden = true; el.townhall.setAttribute('data-hh', 'townhall'); // always there once Today has loaded (never locked)
     el.events = h('div', { class: 'hh-events' });
-    var tl = h('div', { class: 'hh-tl' }, [el.avatar, el.level, el.rank]), top = h('div', { class: 'hh-top' }, [el.clock, el.points]);
+    var tl = h('div', { class: 'hh-tl' }, [el.avatar, el.level, el.rank]), top = h('div', { class: 'hh-top' }, [el.clock, el.points, el.townhall]);
 
     // the task drawer: Town, Wilderness, Daily
     var panes = [h('div', { role: 'tabpanel' }), h('div', { role: 'tabpanel', hidden: 'hidden' }), h('div', { role: 'tabpanel', hidden: 'hidden' })];
@@ -258,6 +260,7 @@ var LMCSHomeHud = (function () {
     var nx = LMCSGame.nextMission(t), n = LMCSRail.counts(t), line = nx && nx.title ? nx.title : quests[0] ? String(quests[0].title || '') : (questLine === S.C.none && S.C.noneLine) || questLine, total = n.missions + n.quests;
     el.strip.hidden = false; el.strip.querySelector('.hh-strip-t').textContent = line;
     setBadge(el.strip.lastChild, total); setLabel(el.strip, S.L.questsLine + ': ' + line, total);
+    slots(); el.townhall.hidden = !t.townhall;
     bubbles();
   }
   function chip(el, key, text) { el.textContent = ''; var t = emoji(key); if (t) { t.style.marginRight = '.3em'; el.appendChild(t); } el.appendChild(document.createTextNode(text)); } // the emoji is an aria-hidden tag beside the number
@@ -277,6 +280,44 @@ var LMCSHomeHud = (function () {
     var hd = card.querySelector('h2'), name = hd && hd.lastChild ? hd.lastChild.textContent.trim() : 'Event', left = card.querySelectorAll('.ev-step:not(.ev-done)').length;
     if (!b) { b = btn('hh-evt', name, [emoji('events'), h('span', { class: 'hh-evt-t' }), badge(0)], function (x) { openEvent(x, S.evName); }); b.setAttribute('data-hh', 'evt'); box.appendChild(b); }
     S.evName = name; b.querySelector('.hh-evt-t').textContent = name; setBadge(b.lastChild, left); setLabel(b, name, left);
+  }
+
+  // ── Home engine v2 (today.home from game-home.gs): the slots this person builds, one at a time. The server works out each state;
+  // here a building slot is a gold door that opens its page, a locked one is greyed with "Builds after …", a filled one leaves the scene
+  // to its room's own door. Kept by slot id in their own map (bubbles() prunes S.bm), updated in place so focus survives a reload.
+  function play(el, id) { el.classList.remove('a-' + id); void el.offsetWidth; el.classList.add('a-' + id); el.addEventListener('animationend', function f() { el.classList.remove('a-' + id); el.removeEventListener('animationend', f); }); }
+  function slots() {
+    var layer = S.layer, list = (S.today && S.today.home && S.today.home.slots) || [], by = {}, keep = {}, prev = S.slotPrev || {}, n = 0;
+    if (!layer) return;
+    S.sm = S.sm || {};
+    list.forEach(function (s) { by[s.id] = s; });
+    list.forEach(function (s) {
+      if (s.state === 'filled') return;
+      var locked = s.state === 'locked', label = String(s.label || s.id), sub = locked ? S.L.buildsAfter + ' ' + String((by[s.after] && by[s.after].label) || s.after || '') : S.L.build;
+      var b = S.sm[s.id] || (S.sm[s.id] = btn('hh-slot', label, [h('span', { class: 'hh-slot-e', 'aria-hidden': 'true' }), h('span', { class: 'hh-slot-t' }), h('span', { class: 'hh-slot-n' })], function () {
+        var cur = S.slotNow[s.id]; if (!cur || cur.state === 'locked') return; // a locked door only says what it waits on
+        var href = LMCSGame.safeHref(cur.opens, S.o.root); if (href) location.href = href;
+      }));
+      keep[s.id] = true; if (!b.parentNode) layer.appendChild(b); b.setAttribute('data-hh', 'slot-' + s.id);
+      b.classList.toggle('is-locked', locked); b.setAttribute('aria-disabled', String(locked)); b.setAttribute('aria-label', label + ', ' + sub);
+      var mark = LMCSEmoji.get(locked ? 'locked' : s.emoji) || LMCSEmoji.get('setupUp'); b.children[0].textContent = mark; // its own aria-hidden span, beside the label
+      b.children[1].textContent = label; b.children[2].textContent = sub;
+      var at = Array.isArray(s.at) && s.at.length === 2 ? s.at : [14 + (n % 4) * 24, 84]; n++; // no spot in config: a row along the foot of the scene
+      b.style.left = Math.max(0, Math.min(100, Number(at[0]) || 0)) + '%'; b.style.top = Math.max(0, Math.min(100, Number(at[1]) || 0)) + '%';
+      if (prev[s.id] === 'locked' && !locked) play(b, 'room-unlock'); // it just became buildable
+    });
+    Object.keys(S.sm).forEach(function (k) { if (!keep[k]) { S.sm[k].remove(); delete S.sm[k]; } });
+    S.slotNow = by; S.slotPrev = {}; list.forEach(function (s) { S.slotPrev[s.id] = s.state; });
+  }
+  // the Townhall: one building for everyone, only this person's doors (today.townhall.rooms); a locked door says what opens it
+  function openTownhall(opener) {
+    var rooms = (S.today && S.today.townhall && S.today.townhall.rooms) || [], root = S.o.root;
+    var rows = rooms.map(function (r) {
+      var label = String(r.label || r.id), href = r.state === 'open' ? LMCSGame.safeHref(r.opens, root) : null, e = h('span', { class: 'hh-mark', 'aria-hidden': 'true' }, LMCSEmoji.get(r.state === 'open' ? r.emoji : 'locked'));
+      if (href) return h('a', { class: 'hh-row', href: href }, [e, h('span', { class: 'hh-row-t' }, label), h('span', { class: 'hh-go', 'aria-hidden': 'true' }, S.L.go)]);
+      return h('div', { class: 'hh-row hh-static is-locked' }, [e, h('span', { class: 'hh-row-t' }, label), h('span', { class: 'hh-slot-n' }, r.state === 'open' ? '' : r.after ? S.L.opensAfter + ' ' + String(r.after) : S.L.notOpen)]);
+    });
+    open({ title: S.L.townhall, nodes: [list(rows, S.C.townhall)], opener: opener });
   }
 
   // ── bubbles pinned to rooms ──

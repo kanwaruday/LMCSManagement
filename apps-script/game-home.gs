@@ -1,6 +1,6 @@
 // game-home.gs -- Home engine v2: the progressive unlock (engine-contract.md B and C; design: work/Role Screens Drafts, approved 1 Nov).
 // Config, not code: Game Config `homes.<Role>` = { scene, slots: [{ id, label, emoji, at, after, fills: { quest, data }, opens }],
-// schools: { <LMSn>: { scene, slots (added, or replace by id), hide: [slotId] } } } and `townhall.rooms[]` = { id, label, emoji, roles, needs, opens }.
+// schools: { <LMSn>: { scene, slots (added, or replace by id), hide: [slotId] } } } and `townhall.rooms[]` = { id, label, emoji, roles, needs, needsLabel, opens }.
 // The server works out each state; the page only draws. A role with no `homes` row gets no `home` field (the page keeps today's look).
 // Locked only hides or greys a door: nothing here blocks a page or an action.
 var GAME_MODULE_FILLS = GAME_MODULE_FILLS || {}; // { 'rooms.named': fn(caller, cfg, now) -> bool }: reads only, cheap, under the lock; a throw counts as false
@@ -58,11 +58,12 @@ function homeSlotStates_(caller, cfg, now, done) {
 // slot ids) shows locked until that is filled. The building itself is never locked or hidden.
 function homeTownhall_(caller, cfg, now, home) {
   const rooms = (cfg && cfg.townhall && Array.isArray(cfg.townhall.rooms)) ? cfg.townhall.rooms : [], role = caller.primaryRole;
-  const slotState = {};
-  ((home && home.slots) || []).forEach(function (s) { slotState[s.id] = s.state; });
+  const slotState = {}, slotLabel = {};
+  ((home && home.slots) || []).forEach(function (s) { slotState[s.id] = s.state; slotLabel[s.id] = s.label; });
   return { rooms: rooms.filter(function (r) { return !r.roles || r.roles.indexOf('all') !== -1 || r.roles.indexOf(role) !== -1; }).map(function (r) {
     const open = !r.needs || (Object.prototype.hasOwnProperty.call(slotState, r.needs) ? slotState[r.needs] === 'filled' : homeFillsData_(r.needs, caller, cfg, now));
-    return { id: r.id, label: r.label, emoji: r.emoji || null, state: open ? 'open' : 'locked', after: open ? null : r.needs, opens: r.opens || null };
+    // after: what the person reads ("Opens after Name your rooms"): the slot's label, or the room's own needsLabel for a fills key
+    return { id: r.id, label: r.label, emoji: r.emoji || null, state: open ? 'open' : 'locked', after: open ? null : (slotLabel[r.needs] || r.needsLabel || null), opens: r.opens || null };
   }) };
 }
 
