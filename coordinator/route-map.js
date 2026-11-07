@@ -172,14 +172,14 @@ window.LMCSRouteMap = (function () {
     const map = L.map(el.querySelector('.rr-map'), { dragging: !L.Browser.mobile });
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
     const whole = L.polyline(ll, { color: '#8a939c', weight: 4, opacity: 0.6 }).addTo(map), done = L.polyline([], { color: '#1a1a1a', weight: 5 }).addTo(map);
-    const here = L.circleMarker(ll[0] || [31.85, 77.15], { radius: 8, color: '#fff', weight: 3, fillColor: '#CE0000', fillOpacity: 1 }).addTo(map);
+    const here = ll.length ? L.circleMarker(ll[0], { radius: 8, color: '#fff', weight: 3, fillColor: '#CE0000', fillOpacity: 1 }).addTo(map) : null; // no path: no "the bus is here" dot
     f.chapters.forEach((c, i) => { if (c.ll) L.circleMarker(c.ll, { radius: 6, color: '#fff', weight: 2, fillColor: '#00798c', fillOpacity: 1 }).addTo(map).bindTooltip(String(i + 1)); });
     if (ll.length) map.fitBounds(whole.getBounds(), { padding: [16, 16] }); else map.setView([31.85, 77.15], 9);
     if (!ll.length) el.querySelector('.rr-map').insertAdjacentHTML('afterend', '<p class="note">' + esc(pathR && pathR.error ? pathR.error : 'This run has no GPS points on record.') + '</p>');
     const show = (i) => {
       let j = Math.max(0, Math.min(points.length - 1, i));
       while (j > 0 && !points[j]) j--; // a frame with no position: the last known one
-      if (!points[j]) return;
+      if (!points[j] || !here) return;
       here.setLatLng([points[j][0], points[j][1]]);
       done.setLatLngs(points.slice(0, j + 1).filter(Boolean).map((p) => [p[0], p[1]]));
     };
