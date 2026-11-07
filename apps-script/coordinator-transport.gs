@@ -106,6 +106,14 @@ function coordTransportPushCheck_(body) {
 }
 
 /** POST action=transportpush {secret, payload:{syncedAt, warnings, fleet:[...]}} from transport/export_fleet.py. No ID token: the shared secret is the gate. */
+/** Every bus scan file id the AI Coordinator has read (clears "waiting to be read") as Sync rows 'seen', 'seen 2', ...: a cell holds
+ *  at most 50,000 characters, so 1,000 ids (about 34 characters each) a row. */
+function coordTransportSeenRows_(ids) {
+  const out = [], list = (Array.isArray(ids) ? ids : []).map(String);
+  for (let i = 0; i < list.length; i += 1000) out.push([out.length ? 'seen ' + (out.length + 1) : 'seen', list.slice(i, i + 1000).join(',')]);
+  return out.length ? out : [['seen', '']];
+}
+
 function coordTransportPush_(body) {
   if (!coordTransportSecretOk_(body.secret)) return { success: false, error: 'Not authorized' };
   const p = body.payload;
@@ -162,8 +170,7 @@ function coordTransportPush_(body) {
     }
     coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_SYNC, ['Key', 'Value'], [
       ['syncedAt', p.syncedAt], ['pushedAt', new Date().toISOString()], ['vehicles', String(fleet.length)],
-      ['documents', String(docs.length)], ['warnings', (p.warnings || []).join(' | ')],
-      ['seen', (p.seen || []).join(',')]]); // every bus scan file id the AI Coordinator has read: clears "waiting to be read". ponytail: one cell (50k chars) holds ~1,400 ids; split it when the bus scans pass ~1,200
+      ['documents', String(docs.length)], ['warnings', String((p.warnings || []).join(' | ')).slice(0, 49000)]].concat(coordTransportSeenRows_(p.seen)));
   } finally { lock.releaseLock(); }
   const cache = CacheService.getScriptCache();
   ['coord_transport_base'].forEach(function (k) { cache.remove(k); });
@@ -210,7 +217,8 @@ function coordTransportBase_() {
   const people = peopleSheet ? peopleSheet.getDataRange().getValues().slice(1).map(function (r) {
     return { name: String(r[0]), campus: String(r[1]), designation: String(r[2]), code: String(r[3]), status: String(r[4]), rosterName: String(r[5]), rosterCampus: String(r[6]), vehicles: String(r[7]).split(', ').filter(String) };
   }) : [];
-  const seen = meta.seen ? meta.seen.split(',') : [];
+  const seen = [];
+  syncRows.forEach(function (r) { if (/^seen( \d+)?$/.test(String(r[0])) && String(r[1])) seen.push.apply(seen, String(r[1]).split(',')); }); // coordTransportSeenRows_
   docRows.forEach(function (r) { const id = (String(r[6]).match(/[-\w]{25,}/) || [''])[0]; if (id) seen.push(id); }); // pushes from before the seen list
   const base = { syncedAt: meta.syncedAt || '', warnings: meta.warnings ? meta.warnings.split(' | ') : [], fleet: fleet, pnl: pnl, people: people, seen: seen };
   coordCachePutBig_('coord_transport_base', base, COORD_TRANSPORT_LIVE_CACHE_SECONDS);

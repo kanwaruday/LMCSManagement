@@ -78,6 +78,15 @@ assert.deepStrictEqual(p1.pollution.pending, { at: '2026-10-21T05:00:00.000Z', b
 assert.strictEqual(p2.fitness.pending, undefined, 'an upload the push has seen is no longer pending');
 assert.strictEqual(p2.insurance.pending, undefined, 'a withdrawn upload is not pending');
 assert.strictEqual(p1.fitness.pending, undefined);
+// a long seen list (7 Nov: 'more than the maximum of 50000 characters in a single cell') splits across Sync rows, read back whole
+payload.seen = Array.from({ length: 2500 }, (x, i) => 'F'.repeat(28) + String(i).padStart(5, '0'));
+payload.seen[2400] = 'SEENUP';
+assert.strictEqual(run('coordTransportPush_({secret:"S3CRET",payload:payload})').success, true);
+const syncTab = JSON.parse(JSON.stringify(sheets.find(s => s.name === 'LM Studio Sync').getDataRange().getValues()));
+assert.deepStrictEqual(syncTab.filter(r => /^seen/.test(r[0])).map(r => r[0]), ['seen', 'seen 2', 'seen 3'], 'three seen rows');
+assert.ok(syncTab.every(r => String(r[1]).length < 50000), 'no cell over the 50,000-character limit');
+assert.strictEqual(JSON.parse(JSON.stringify(run('coordTransport_({})'))).fleet.find(b => b.reg === 'HP2').docs.fitness.pending, undefined, 'an id in the third row still counts as seen');
+payload.seen = ['SEENUP', 'OLDUP'];
 const fc = JSON.parse(JSON.stringify(run('coordTransport_({feeClerkOnly:true})')));
 assert.ok(fc.fleet.length && !fc.pnl.length && !fc.people.length, 'Fee Clerks get the papers but no bus money or staff list');
 assert.strictEqual(fc.fleet.find(b => b.reg === 'HP1').seats, 40, 'Fee Clerks get the seats (the capture page\'s count-run summary needs them)');
