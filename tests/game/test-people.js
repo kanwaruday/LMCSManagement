@@ -242,12 +242,81 @@ test('pages: HQ Home tiles and switch; People room confirms before every write',
   assert.ok(home.includes('id="modules"'), 'the tools shelf stays');
   for (const [page, cur] of [[home, 'index.html'], [kg, 'kingdom.html']]) assert.ok(page.includes('<nav class="gb-hsw" aria-label="Owner views">') && page.includes('href="' + cur + '" aria-current="page"'), 'header switch, ' + cur + ' current');
   assert.ok(/value: '', selected: true \}, \['Choose a school'\]/.test(pp) && /DATA\.campuses\.indexOf\(campus\.value\) === -1\) \{ err\.textContent = 'Choose a school\.'/.test(pp), 'an unknown campus starts on Choose a school; Next refuses until one is picked');
-  assert.ok(/LMCS\.canViewOwnerPortal\(session\)/.test(pp) && /action=peoplelist/.test(pp) && /action: 'peoplecoordinator'/.test(pp), 'People: Owner gate, read, write');
+  assert.ok(/LMCS\.canViewOwnerPortal\(session\)/.test(pp) && /action=peoplelist/.test(pp) && /action: action \|\| 'peoplecoordinator'/.test(pp), 'People: Owner gate, read, write');
   assert.strictEqual((pp.match(/method: 'POST'/g) || []).length, 1, 'one write path');
   assert.ok(/go\.onclick = function \(\) \{\s*if \(BUSY\) return;/.test(pp) && /\['Confirm'\]/.test(pp), 'the write runs only from Confirm');
   assert.ok(!/innerHTML/.test(pp), 'People: text nodes only');
   assert.ok(read('tools/stamp-assets.mjs').includes("'owner/people.html'") && read('assets/game/guide.js').includes("'owner/people.html'") && read('tests/datasrc/test-datasrc.js').includes("'owner/people.html'"), 'stamped, guided, exempt');
   assert.ok(/baseOfGo\(location\.hash\)/.test(read('assets/game/kingdom.js')), 'the Kingdom opens #base-HES from HQ Home');
+});
+
+// ── Principals (peopleprincipal): the Campus cell of a Principal's row, nothing else ──
+const princ = (c, b) => J(ctx.peoplePrincipal_(c, b));
+test('peoplelist: Principals too, with their other roles; an Owner+Principal row is not editable', () => {
+  go();
+  A.push(['pc@example.org', 'Princ Coord', 'LMS2', 'Principal, Coordinator', '', 'HR'], ['op@example.org', 'Owner Princ', 'ALL', 'Owner, Principal', '', '']);
+  const r = J(ctx.peopleList_(OWN, {}));
+  assert.deepStrictEqual(r.principals.map((p) => [p.email, p.campus, p.roles.join('+'), p.editable]),
+    [['p4@example.org', 'LMS4', 'Principal', true], ['pc@example.org', 'LMS2', 'Principal+Coordinator', true], ['op@example.org', 'ALL', 'Owner+Principal', false]]);
+});
+test('principal: campus cell only; roles, name and functions stay; audited; unchanged is a no-op', () => {
+  go();
+  A.push(['pc@example.org', 'Princ Coord', 'LMS2', 'Principal, Coordinator', '', 'HR']);
+  const r = princ(OWN, { email: ' P4@Example.org ', campus: 'lms2' });
+  assert.strictEqual(r.success, true, JSON.stringify(r));
+  assert.deepStrictEqual(rowOf('p4@example.org'), ['p4@example.org', 'Principal Four', 'LMS2', 'Principal', '', '']);
+  assert.deepStrictEqual(audit().map((x) => [col(x, 'Action'), col(x, 'Phase'), col(x, 'Result'), col(x, 'Code')]), [['people_principal', 'requested', '', ''], ['people_principal', 'done', 'ok', 'changed']]);
+  assert.strictEqual(princ(OWN, { email: 'p4@example.org', campus: 'LMS2' }).unchanged, true);
+  assert.strictEqual(princ(OWN, { email: 'pc@example.org', campus: 'LMS5' }).success, true, 'a dual-role Principal');
+  assert.deepStrictEqual(rowOf('pc@example.org'), ['pc@example.org', 'Princ Coord', 'LMS5', 'Principal, Coordinator', '', 'HR']);
+  assert.ok(!logs.concat(warns).some((m) => /@example/.test(m)), 'no people in logs');
+});
+test('principal: refusals (not the Owner, not a Principal, Owner row, bad input, duplicate, a row that changed meanwhile, lock busy)', () => {
+  go();
+  const before = JSON.stringify(A);
+  for (const c of [COORD, P4]) assert.strictEqual(princ(c, { email: 'p4@example.org', campus: 'LMS1' }).code, 'KINGDOM_NO_RIGHT');
+  assert.strictEqual(princ(OWN, { email: 'c1@example.org', campus: 'LMS1' }).code, 'PEOPLE_NOT_PRINCIPAL');
+  assert.strictEqual(princ(OWN, { email: 'nobody@example.org', campus: 'LMS1' }).code, 'PEOPLE_NOT_PRINCIPAL');
+  assert.strictEqual(princ(OWN, { email: 'p4@example.org', campus: 'LMS9' }).code, 'KINGDOM_BAD_INPUT');
+  assert.strictEqual(princ(OWN, { email: 'not-an-email', campus: 'LMS1' }).code, 'PEOPLE_BAD_EMAIL');
+  assert.strictEqual(princ(OWN, { email: 'p4@example.org', campus: ['LMS1'] }).code, 'KINGDOM_BAD_INPUT');
+  A.push(['op@example.org', 'Owner Princ', 'ALL', 'Owner, Principal', '', '']);
+  assert.strictEqual(princ(OWN, { email: 'op@example.org', campus: 'LMS1' }).code, 'PEOPLE_OWNER_ROW');
+  A.pop(); A.push(['p4@example.org', 'Again', 'LMS1', 'Principal', '', '']);
+  assert.strictEqual(princ(OWN, { email: 'p4@example.org', campus: 'LMS1' }).code, 'PEOPLE_DUPLICATE');
+  A.pop();
+  onReadRow = () => { rowOf('p4@example.org')[3] = 'Teacher'; };
+  assert.strictEqual(princ(OWN, { email: 'p4@example.org', campus: 'LMS1' }).code, 'PEOPLE_CHANGED');
+  onReadRow = null; rowOf('p4@example.org')[3] = 'Principal';
+  assert.strictEqual(JSON.stringify(A), before, 'nothing written');
+  lockFails = true;
+  assert.strictEqual(princ(OWN, { email: 'p4@example.org', campus: 'LMS1' }).success, false);
+  lockFails = false;
+  assert.strictEqual(rowOf('p4@example.org')[2], 'LMS4');
+});
+test('principal: POST dispatch only; the page posts it behind Confirm', () => {
+  go();
+  const g = fs.readFileSync(dir + 'game.gs', 'utf8');
+  assert.ok(/if \(action === 'peopleprincipal'\) return gameJson_\(peoplePrincipal_\(caller, body\)\);/.test(g) && !('peopleprincipal' in ctx.GAME_MODULE_ACTIONS));
+  const pp = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
+  assert.ok(/\{ email: p\.email, campus: campus\.value \}, 'peopleprincipal'\)/.test(pp) && /id="pp-plist"/.test(pp));
+});
+// the proof that a People edit reaches sign-in within ~10 min: sign-in (auth.js) reads allowlist_list from principal-allowlist.gs, which
+// reads this same sheet's Campus column through a 600 s cache. Same rows, cache older than 10 min -> the new campus.
+test('principal: the sign-in allowlist read shows the new campus once its 10-minute cache expires', () => {
+  go();
+  const pa = fs.readFileSync(dir + 'principal-allowlist.gs', 'utf8');
+  let clock = 0; const cache = new Map();
+  const c2 = { CacheService: { getScriptCache: () => ({ get: (k) => { const e = cache.get(k); return e && clock < e.until ? e.v : null; }, put: (k, v, ttl) => cache.set(k, { v, until: clock + ttl * 1000 }), remove: (k) => cache.delete(k) }) },
+    SpreadsheetApp: { openById: () => ({ getSheets: () => [allowSheet] }) }, JSON };
+  vm.createContext(c2); vm.runInContext(pa, c2);
+  const campusOf = () => c2.readEntries().find((e) => e.email === 'p4@example.org').campusId;
+  assert.strictEqual(vm.runInContext('CACHE_TTL_SECONDS', c2), 600);
+  assert.strictEqual(campusOf(), 'LMS4');
+  assert.strictEqual(princ(OWN, { email: 'p4@example.org', campus: 'LMS6' }).success, true);
+  clock = 9 * 60 * 1000; assert.strictEqual(campusOf(), 'LMS4', 'still cached at 9 min');
+  clock = 10 * 60 * 1000 + 1; assert.strictEqual(campusOf(), 'LMS6', 'the new campus by 10 min');
+  assert.ok(/campusId: match\.campusId/.test(fs.readFileSync(__dirname + '/../../assets/auth.js', 'utf8')), 'sign-in takes the campus from that read');
 });
 
 let fail = 0;
