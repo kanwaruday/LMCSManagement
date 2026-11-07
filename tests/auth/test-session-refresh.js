@@ -24,6 +24,7 @@ function page(store, reply) {
   };
   ctx.window = ctx; ctx.addEventListener = () => {};
   vm.createContext(ctx); vm.runInContext(src, ctx);
+  ctx.window.__lmcsClearFetchCache = () => { calls.cleared = (calls.cleared || 0) + 1; }; // spy (the refresh runs after load)
   return { calls, LMCS: ctx.window.LMCS };
 }
 const tick = (ms = 60) => new Promise((r) => setTimeout(r, ms));
@@ -35,6 +36,7 @@ const stored = (store) => JSON.parse(store.lmcs_session);
   let p = page(store, list({ email: 'p4@example.org', name: 'P', campusId: 'LMS6', role: 'Principal' }));
   await tick();
   assert.strictEqual(p.calls.allowlist, 1, 'one background re-check');
+  assert.strictEqual(p.calls.cleared, 1, 'a changed campus clears the fetch cache (cached reads are keyed by email, not campus)');
   assert.deepStrictEqual([stored(store).campusId, stored(store).role, stored(store).idToken], ['LMS6', 'Principal', 'tok']);
   assert.strictEqual(stored(store).campusName, p.LMCS.campusLabel('LMS6'));
   // requireSession hands back the refreshed session, not the stale one it started with
@@ -71,8 +73,9 @@ const stored = (store) => JSON.parse(store.lmcs_session);
   // 6. nothing changed: the stored session is not rewritten
   store = { lmcs_session: sess({ email: 'o@example.org', campusId: 'ALL', role: 'Owner' }) };
   const before = store.lmcs_session;
-  page(store, list({ email: 'o@example.org', campusId: 'ALL', role: 'Owner' }));
+  p = page(store, list({ email: 'o@example.org', campusId: 'ALL', role: 'Owner' }));
   await tick();
   assert.strictEqual(store.lmcs_session, before);
+  assert.strictEqual(p.calls.cleared, undefined, 'nothing changed: the cache stays');
   console.log('session refresh: ok');
 })().catch((e) => { console.error(e); process.exit(1); });

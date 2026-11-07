@@ -198,6 +198,7 @@ window.LMCS = (function () {
     if (!m || (m.campusId === s.campusId && (m.role || '') === (s.role || ''))) return;
     s.campusId = m.campusId; s.campusName = campusLabel(m.campusId); s.role = m.role || '';
     setSession(s);
+    if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache(); // as a fresh sign-in: cached reads are keyed by email, not campus
   }
   let allowlistPromise = null;
   function loadAllowlist() {
