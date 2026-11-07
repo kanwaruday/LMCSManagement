@@ -969,14 +969,15 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   };
 
   // Owner Home: the setup list only (gamekingdom for the HQ steps and their date pickers, peoplelist for the People step).
-  // opts.onData(d) gets the gamekingdom response too, so the page's own tiles need no second read.
+  // opts.onData(d, people) gets the gamekingdom and peoplelist responses too, so the page's own tiles need no second read.
   function homeLoad() {
     var q = function (a) { return fetch(S.url + (S.url.indexOf('?') === -1 ? '?' : '&') + 'action=' + a + '&idToken=' + encodeURIComponent((S.session || {}).idToken || ''), { cache: 'no-store' }).then(function (r) { return r.json(); }); };
     return Promise.all([q('gamekingdom'), q('peoplelist').catch(function () { return null; })]).then(function (r) {
       var d = r[0];
       if (!d || !d.success) throw new Error((d && d.error) || LOAD_ERR);
-      S.data = d; homeDraw(d, r[1] && r[1].success ? r[1] : null);
-      if (S.onData) S.onData(d);
+      var p = r[1] && r[1].success ? r[1] : null;
+      S.data = d; homeDraw(d, p);
+      if (S.onData) S.onData(d, p);
     }).catch(function (e) {
       if (S.data) return; // keep the last good list when a refresh fails
       S.el.textContent = ''; S.el.appendChild(message((e && e.message) || LOAD_ERR, true));

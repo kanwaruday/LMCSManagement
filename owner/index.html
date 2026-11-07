@@ -79,10 +79,8 @@
 
     // HQ Home's four tiles. Counts come only from what an existing read already returns: gamekingdom's `cards` (approved requests
     // waiting for a follow-up) and the HQ "Set up the game" steps (setupSteps_); Money today is a link only. k = null while loading.
-    function hqTiles(k) {
-      const hq = k && k.kingdom && (k.kingdom.campuses || []).filter(function (c) { return c.darbar; })[0];
-      let steps = null;
-      ((hq && hq.buildings) || []).forEach(function (b) { (b.tiers || []).forEach(function (t) { if (t.steps && t.steps.length) steps = t.steps; }); });
+    function hqTiles(k, people) {
+      const all = k ? LMCSKingdom.homeSteps(k, people) : [], steps = all.length ? all : null; // the same steps as the Set up list
       const cards = k && Array.isArray(k.cards) ? k.cards.length : null, done = steps ? steps.filter(function (s) { return s.done; }).length : 0;
       return [
         { e: 'requests', name: 'Approvals', url: '../coordinator/systems/index.html#approvals', count: cards || null,
@@ -93,10 +91,10 @@
           small: steps ? 'Set up the game: ' + done + ' of ' + steps.length + ' done' : 'Set up the game' },
       ];
     }
-    function renderTiles(k) {
+    function renderTiles(k, people) {
       const ul = document.getElementById('hq-tiles');
       ul.textContent = '';
-      hqTiles(k).forEach(function (t) {
+      hqTiles(k, people).forEach(function (t) {
         const a = el('a', 'gb-go'), span = el('span'), li = el('li'), ic = window.LMCSEmoji && LMCSEmoji.tag(t.e);
         if (ic) span.appendChild(ic);
         span.appendChild(document.createTextNode(t.name));
