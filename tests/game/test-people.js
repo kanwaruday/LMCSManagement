@@ -39,7 +39,7 @@ const ctx = {
   ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ setMimeType: () => ({ body: s }) }) },
 };
 vm.createContext(ctx);
-['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-confirm.gs', 'game-office.gs', 'game-buddy.gs', 'game-kingdom.gs', 'game-people.gs'].forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
+['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-confirm.gs', 'game-office.gs', 'game-buddy.gs', 'game-kingdom.gs', 'game-people.gs', 'supporting-charge.gs'].forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
 ctx.SpreadsheetApp = { openById: (id) => (id === vm.runInContext('GAME_ALLOWLIST_SHEET_ID', ctx) ? allowBook : book) };
 const J = (x) => JSON.parse(JSON.stringify(x));
 const NOW = new Date('2026-10-29T05:00:00Z');
@@ -312,7 +312,7 @@ test('principal: the sign-in allowlist read shows the new campus once its 10-min
   let clock = 0; const cache = new Map();
   const c2 = { CacheService: { getScriptCache: () => ({ get: (k) => { const e = cache.get(k); return e && clock < e.until ? e.v : null; }, put: (k, v, ttl) => cache.set(k, { v, until: clock + ttl * 1000 }), remove: (k) => cache.delete(k) }) },
     SpreadsheetApp: { openById: () => ({ getSheets: () => [allowSheet] }) }, JSON };
-  vm.createContext(c2); vm.runInContext(pa, c2);
+  vm.createContext(c2); vm.runInContext(fs.readFileSync(dir + 'supporting-charge.gs', 'utf8'), c2); vm.runInContext(pa, c2);
   const campusOf = () => c2.readEntries().find((e) => e.email === 'p4@example.org').campusId;
   assert.strictEqual(vm.runInContext('CACHE_TTL_SECONDS', c2), 600);
   assert.strictEqual(campusOf(), 'LMS4');
@@ -373,6 +373,54 @@ test('office: POST dispatch only; the page posts it behind Confirm and offers Al
   assert.ok(/action === 'peopleoffice'\) return gameJson_\(peopleOffice_\(caller, body\)\)/.test(g));
   assert.ok(!/peopleoffice/.test(g.slice(0, g.indexOf('function doPost'))), 'never a GET');
   assert.ok(/'peopleoffice'\)/.test(page) && /confirmStep\(/.test(page) && /p\.mayAll \? DATA\.campuses : /.test(page));
+});
+
+// a Principal's supporting charge (Uday, 7 Nov): the Owner sets other schools; LMS1-6 only, never ALL, never their own school
+const support = (c, b) => J(ctx.peopleSupport_(c, b));
+test('support: adds the Supporting column once, writes the cell only, lists it back; [] clears; unchanged is a no-op', () => {
+  go();
+  let r = support(OWN, { email: 'p4@example.org', schools: ['lms3', 'LMS1', 'LMS3'] });
+  assert.strictEqual(r.success, true, JSON.stringify(r));
+  assert.deepStrictEqual(r.principal.supporting, ['LMS1', 'LMS3']);
+  assert.strictEqual(A[0][6], 'Supporting', 'the column, added at the end');
+  assert.deepStrictEqual(rowOf('p4@example.org'), ['p4@example.org', 'Principal Four', 'LMS4', 'Principal', '', '', 'LMS1, LMS3'], 'campus, roles and name stay');
+  assert.strictEqual(support(OWN, { email: 'p4@example.org', schools: ['LMS3', 'LMS1'] }).unchanged, true);
+  const d = J(ctx.peopleList_(OWN, {})), p4 = d.principals.find((p) => p.email === 'p4@example.org');
+  assert.deepStrictEqual([p4.supporting, p4.canSupport], [['LMS1', 'LMS3'], true]);
+  r = support(OWN, { email: 'p4@example.org', schools: [] });
+  assert.strictEqual(r.success, true);
+  assert.strictEqual(rowOf('p4@example.org')[6], '');
+  assert.strictEqual(A[0].filter((h) => h === 'Supporting').length, 1, 'never a second column');
+  assert.ok(audit().every((x) => col(x, 'Action') === 'people_support'));
+  assert.ok(!logs.concat(warns).some((m) => /@example/.test(m)), 'no people in logs');
+});
+test('support: never ALL or a non-school, never their own school, never a network-wide or Owner row; refusals audited, nothing written', () => {
+  go();
+  const before = JSON.stringify(A);
+  for (const schools of [['ALL'], ['all'], ['LMS3', 'ALL'], ['LMS9'], 'LMS3', [['LMS3']], ['LMS1', 'LMS2', 'LMS3', 'LMS5', 'LMS6', 'LMS1', 'LMS2']]) {
+    assert.strictEqual(support(OWN, { email: 'p4@example.org', schools }).code, 'KINGDOM_BAD_INPUT', JSON.stringify(schools));
+  }
+  assert.ok(audit().some((x) => col(x, 'Action') === 'people_support' && col(x, 'Code') === 'KINGDOM_BAD_INPUT'), 'ALL refusal audited');
+  assert.strictEqual(support(OWN, { email: 'p4@example.org', schools: ['LMS4'] }).code, 'PEOPLE_OWN_SCHOOL');
+  A.push(['pc@example.org', 'Princ Coord', 'LMS2', 'Principal, Coordinator', '', '']);
+  assert.strictEqual(support(OWN, { email: 'pc@example.org', schools: ['LMS3'] }).code, 'PEOPLE_CANT_SUPPORT', 'a Coordinator is network-wide already');
+  A.pop(); A.push(['pa@example.org', 'Princ All', 'ALL', 'Principal', '', '']);
+  assert.strictEqual(support(OWN, { email: 'pa@example.org', schools: ['LMS3'] }).code, 'PEOPLE_CANT_SUPPORT', 'a Principal without one school');
+  A.pop(); A.push(['op@example.org', 'Owner Princ', 'ALL', 'Owner, Principal', '', '']);
+  assert.strictEqual(support(OWN, { email: 'op@example.org', schools: ['LMS3'] }).code, 'PEOPLE_OWNER_ROW');
+  A.pop();
+  assert.strictEqual(support(OWN, { email: 'c1@example.org', schools: ['LMS3'] }).code, 'PEOPLE_NOT_PRINCIPAL');
+  for (const c of [COORD, P4]) assert.strictEqual(support(c, { email: 'p4@example.org', schools: ['LMS3'] }).code, 'KINGDOM_NO_RIGHT');
+  onReadRow = () => { rowOf('p4@example.org')[2] = 'LMS3'; }; // moved to LMS3 by hand meanwhile: LMS3 would now be their own school
+  assert.strictEqual(support(OWN, { email: 'p4@example.org', schools: ['LMS3'] }).code, 'PEOPLE_CHANGED');
+  onReadRow = null; rowOf('p4@example.org')[2] = 'LMS4';
+  assert.strictEqual(JSON.stringify(A), before, 'nothing written');
+});
+test('support: POST dispatch only; the page offers other schools only, behind Confirm', () => {
+  const g = fs.readFileSync(dir + 'game.gs', 'utf8'), page = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
+  assert.ok(/action === 'peoplesupport'\) return gameJson_\(peopleSupport_\(caller, body\)\)/.test(g));
+  assert.ok(!/peoplesupport/.test(g.slice(0, g.indexOf('function doPost'))), 'never a GET');
+  assert.ok(/c !== 'ALL' && c !== p\.campus/.test(page) && /'peoplesupport'\)/.test(page) && /p\.canSupport \?/.test(page));
 });
 
 let fail = 0;

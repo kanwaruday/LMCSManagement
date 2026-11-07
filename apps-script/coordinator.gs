@@ -142,7 +142,7 @@ function coordJson_(obj) {
 function doGet(e) {
   try {
     const action = String(e.parameter.action || '').toLowerCase();
-    if (action === 'principalissues') return coordJson_(coordPrincipalIssuesGet_(e.parameter.idToken)); // its own gates (coordinator-principal.gs)
+    if (action === 'principalissues') return coordJson_(coordPrincipalIssuesGet_(e.parameter.idToken, e.parameter.actAs)); // its own gates (coordinator-principal.gs)
     if (action === 'transportworld') return coordJson_(coordWorld_(coordWorldCaller_(e.parameter.idToken))); // its own gate: transport staff or a Principal (coordinator-world.gs)
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
@@ -183,7 +183,7 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'transportcapturepull') return coordJson_(coordCapturePull_(body)); // capture.py on the Mac
     if (String(body.action || '').toLowerCase() === 'transportcapturepush') return coordJson_(coordCapturePush_(body));
     if (String(body.action || '').toLowerCase() === 'transportcatalogpush') return coordJson_(coordCatalogPush_(body)); // agency_import.py on the Mac
-    if (String(body.action || '').toLowerCase() === 'principalissueresolve') return coordJson_(coordPrincipalResolve_(coordVerifyPrincipal_(body.idToken), body)); // Principal gate only
+    if (String(body.action || '').toLowerCase() === 'principalissueresolve') return coordJson_(body.actAs ? SUPPORT_READ_ONLY : coordPrincipalResolve_(coordVerifyPrincipal_(body.idToken), body)); // Principal gate only; never from a supported school (supporting-charge.gs)
     const caller = coordVerifyCaller_(body.idToken);
     if (caller && String(body.action || '').toLowerCase() === 'transportclerkcheck') return coordJson_(coordGpsClerkAnswer_(caller, body)); // Fee Clerks too
     if (caller && String(body.action || '').toLowerCase() === 'coordinatortransportfleetsave') return coordJson_(coordFleetSave_(caller, body)); // Fee Clerks too (own campus, checked inside)

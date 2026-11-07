@@ -84,7 +84,9 @@
         const other = p.roles.filter(function (r) { return r !== 'Principal'; });
         pl.appendChild(h('li', { class: 'gb-card pp-row' }, [h('b', {}, [p.name || p.email]), h('small', {}, [p.email]),
           h('small', {}, [place(p.campus) + (other.length ? ' · also ' + other.join(', ') : '')]),
-          DATA.canEdit && p.editable ? h('div', { class: 'pp-acts' }, [h('button', { type: 'button', class: 'gb-btn', onclick: function (e) { editPrincipal(p, e.currentTarget); } }, ['Change school'])]) : null]));
+          (p.supporting || []).length ? h('small', {}, ['Supporting ' + p.supporting.map(place).join(', ')]) : null,
+          DATA.canEdit && p.editable ? h('div', { class: 'pp-acts' }, [h('button', { type: 'button', class: 'gb-btn', onclick: function (e) { editPrincipal(p, e.currentTarget); } }, ['Change school']),
+            p.canSupport ? h('button', { type: 'button', class: 'gb-btn', onclick: function (e) { editSupport(p, e.currentTarget); } }, ['Supporting schools']) : null]) : null]));
       });
     }
     // Fee Clerks and Accounts: one card each, Change school (All schools for a plain Fee Clerk only, the server checks it again)
@@ -200,6 +202,24 @@
       next.onclick = function () {
         if (schools.indexOf(campus.value) === -1) { err.textContent = 'Choose a school.'; campus.focus(); return; }
         confirmStep(s, 'Make ' + (p.name || p.email) + ' the Principal for ' + place(campus.value) + '? Their roles stay the same.', { email: p.email, campus: campus.value }, 'peopleprincipal');
+      };
+    }
+    // a supporting charge: other schools this Principal can read and advise at; approvals there stay with that school's Principal
+    function editSupport(p, opener) {
+      const s = sheet((p.name || p.email) + ' also supports', [], opener);
+      const others = DATA.campuses.filter(function (c) { return c !== 'ALL' && c !== p.campus; }); // one school at a time, never all, never their own
+      const box = h('fieldset', { class: 'pp-fns' }, [h('legend', {}, ['Schools they support'])].concat(others.map(function (c, i) {
+        return h('label', { for: 'pp-s' + i }, [h('input', { type: 'checkbox', id: 'pp-s' + i, value: c, checked: (p.supporting || []).indexOf(c) !== -1 ? true : null }), place(c)]);
+      })));
+      const next = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Next']);
+      s.dlg.appendChild(h('div', {}, [h('p', { class: 'gb-muted' }, ['They can open these schools to read everything and comment. Approvals stay with each school\'s own Principal.']), box,
+        h('div', { class: 'pp-acts' }, [next, h('button', { type: 'button', class: 'gb-btn', onclick: s.close }, ['Cancel'])])]));
+      box.querySelector('input').focus();
+      next.onclick = function () {
+        const picked = [].map.call(box.querySelectorAll('input:checked'), function (i) { return i.value; });
+        const text = picked.length ? 'Let ' + (p.name || p.email) + ' support ' + picked.map(place).join(', ') + '? They can read and advise there; approvals stay with each school\'s Principal.'
+          : 'Remove ' + (p.name || p.email) + "'s supporting charge? They keep their own school.";
+        confirmStep(s, text, { email: p.email, schools: picked }, 'peoplesupport');
       };
     }
     function remove(p, opener) {

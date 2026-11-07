@@ -27,7 +27,7 @@ function coordVerifyPrincipal_(idToken) {
       const roles = String(rows[i][3] || '').split(',').map(function (r) { return r.trim(); });
       const campusId = String(rows[i][2] || '').trim().toUpperCase();
       if (roles.indexOf('Principal') === -1 || !/^LMS[1-6]$/.test(campusId)) return null;
-      const principal = { email: email, campusId: campusId, principal: true };
+      const principal = { email: email, campusId: campusId, principal: true, supporting: supportSchools_(rows[0], rows[i]) }; // supporting-charge.gs
       cache.put(key, JSON.stringify(principal), 300);
       return principal;
     }
@@ -73,13 +73,15 @@ function coordPrincipalTab_(ss, name) {
 }
 
 /** GET action=principalissues: the Coordinator / Owner gate first (their visible campuses, campus 'ALL'), then the Principal gate (own campus). */
-function coordPrincipalIssuesGet_(idToken) {
+// actAs: a supporting Principal reads the issues of a school they support (supporting-charge.gs); resolving stays with that school's
+// Principal (principalissueresolve takes no actAs, so it is checked against the caller's own school)
+function coordPrincipalIssuesGet_(idToken, actAs) {
   const caller = coordVerifyCaller_(idToken);
   let visible = null, campus = null, viewer = null;
   if (caller && !caller.feeClerkOnly) visible = coordVisibleCampuses_(caller);
   else {
-    const principal = coordVerifyPrincipal_(idToken);
-    if (!principal) return { success: false, error: 'Not authorized' };
+    const principal = supportActAs_(coordVerifyPrincipal_(idToken), actAs);
+    if (!principal) return actAs ? SUPPORT_NOT_YOURS : { success: false, error: 'Not authorized' };
     campus = principal.campusId;
     viewer = principal.email;
   }

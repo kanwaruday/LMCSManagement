@@ -184,7 +184,7 @@ window.LMCS = (function () {
         if (!data.success || !Array.isArray(data.entries)) throw new Error('bad response');
         const map = {};
         data.entries.forEach((e) => {
-          map[e.email.toLowerCase()] = { campusId: e.campusId, name: e.name, role: e.role || '' };
+          map[e.email.toLowerCase()] = { campusId: e.campusId, name: e.name, role: e.role || '', supporting: supportingOf_(e) };
         });
         return map;
       })
@@ -193,10 +193,17 @@ window.LMCS = (function () {
   // A campus or role changed in the allowlist (the Owner's People room) reaches a session that is already signed in: the live list's
   // values replace the session's, exactly what a fresh sign-in would store. Never signs anyone out (requireSession decides that), and an
   // Employee Master sign-in (autoSignIn) was never on the list, so it is left alone.
+  // A supporting charge (Owner's People room, 7 Nov) rides along: a switched session keeps the school it switched to only while the list
+  // still names it; otherwise it goes back to its own school.
   function refreshSession_(map) {
     const s = getSession(), m = s && !s.autoSignIn && map[s.email];
-    if (!m || (m.campusId === s.campusId && (m.role || '') === (s.role || ''))) return;
-    s.campusId = m.campusId; s.campusName = campusLabel(m.campusId); s.role = m.role || '';
+    if (!m) return;
+    const home = s.actAs ? s.homeCampusId : s.campusId, sup = m.supporting || [];
+    if (m.campusId === home && (m.role || '') === (s.role || '') && sup.join() === (s.supporting || []).join()) return;
+    s.role = m.role || '';
+    if (sup.length) s.supporting = sup; else delete s.supporting;
+    if (s.actAs && m.campusId === home && sup.indexOf(s.actAs) !== -1) s.homeCampusId = m.campusId;
+    else { s.campusId = m.campusId; s.campusName = campusLabel(m.campusId); delete s.actAs; delete s.homeCampusId; }
     setSession(s);
     if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache(); // as a fresh sign-in: cached reads are keyed by email, not campus
   }
@@ -225,6 +232,26 @@ window.LMCS = (function () {
     return allowlistPromise;
   }
 
+  // an allowlist entry's supporting schools (principal-allowlist.gs: only set for a Principal who has some), LMS1-6 only
+  function supportingOf_(e) { return Array.isArray(e && e.supporting) ? e.supporting.filter(function (c) { return /^LMS[1-6]$/.test(c); }) : []; }
+  // A supporting Principal switches to a school they support (null = back to their own). Each backend re-checks the school against the
+  // allowlist (supporting-charge.gs) and allows only reading and advice there; this only says which school the pages ask about.
+  function supportSwitch(campus) {
+    const s = getSession();
+    if (!s) return false;
+    if (campus) {
+      if ((s.supporting || []).indexOf(campus) === -1) return false;
+      s.homeCampusId = s.actAs ? s.homeCampusId : s.campusId; s.actAs = campus; s.campusId = campus;
+    } else {
+      if (!s.actAs) return false;
+      s.campusId = s.homeCampusId; delete s.actAs; delete s.homeCampusId;
+    }
+    s.campusName = campusLabel(s.campusId);
+    setSession(s);
+    if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache(); // cached reads are keyed by email, not school
+    window.location.reload();
+    return true;
+  }
   function getSession() {
     try {
       const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
@@ -424,6 +451,7 @@ window.LMCS = (function () {
             expiresAt: nextSixPM(now),
             idToken: response.credential,
           };
+          if ((match.supporting || []).length) session.supporting = match.supporting;
           if (match.autoSignIn) { session.autoSignIn = true; session.employeeCode = match.employeeCode; if (match.department) session.department = match.department; }
           setSession(session);
           if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache(); // fresh login starts from clean data
@@ -548,7 +576,24 @@ window.LMCS = (function () {
     if (!fresh) setTimeout(function () { loadAllowlist().catch(function () { /* offline: keep the session as it is */ }); }, 5000); // after the page's own first reads
   }
 
-  return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewPrincipalPortal, showNotForRole, roleLabel, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
+  // while switched to a school they support: one line at the top of every page saying so, and the way back
+  function supportBanner_() {
+    const s = getSession();
+    if (!s || !s.actAs || !document.body || document.getElementById('lmcs-support-banner')) return;
+    const bar = document.createElement('div');
+    bar.id = 'lmcs-support-banner'; bar.setAttribute('role', 'status');
+    bar.style.cssText = 'position:sticky;top:0;z-index:99998;background:#7a5200;color:#fff;font:600 14px/1.4 system-ui,sans-serif;padding:8px 16px;text-align:center;';
+    bar.appendChild(document.createTextNode('Supporting ' + campusLabel(s.actAs) + ': you can read and advise. Decisions stay with its Principal. '));
+    const back = document.createElement('button');
+    back.type = 'button'; back.textContent = 'Back to ' + campusLabel(s.homeCampusId);
+    back.style.cssText = 'margin-left:8px;min-height:36px;background:#fff;color:#7a5200;border:none;border-radius:6px;padding:4px 12px;font:700 13px/1 system-ui,sans-serif;cursor:pointer;';
+    back.onclick = function () { supportSwitch(null); };
+    bar.appendChild(back);
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', supportBanner_); else supportBanner_();
+
+  return { requireSession, getSession, supportSwitch, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewPrincipalPortal, showNotForRole, roleLabel, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
 })();
 
 
@@ -704,11 +749,20 @@ window.LMCS = (function () {
     return p;
   }
 
+  // a supporting Principal's switch (LMCS.supportSwitch): every backend call says which school it is about; the backend re-checks it
+  function actAs() { try { return (JSON.parse(localStorage.getItem('lmcs_session')) || {}).actAs || ''; } catch (_) { return ''; } }
   window.fetch = function (input, init) {
     const u = parseUrl(input);
     const sid = u && scriptId(u);
     if (!sid) return origFetch(input, init);
     const method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+    const act = actAs();
+    if (act && typeof input === 'string') {
+      if (method === 'GET') { u.searchParams.set('actAs', act); input = u.toString(); }
+      else if (init && typeof init.body === 'string') {
+        try { const b = JSON.parse(init.body); if (b && typeof b === 'object' && !Array.isArray(b)) { b.actAs = act; init = Object.assign({}, init, { body: JSON.stringify(b) }); } } catch (_) { /* not JSON: sent as it is */ }
+      }
+    }
     const action = u.searchParams.get('action') || '';
     if (method !== 'GET' || WRITE_GET.test(action)) {
       bust(sid);

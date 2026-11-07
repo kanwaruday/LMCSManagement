@@ -114,12 +114,15 @@ function readEntries() {
   for (let i = 1; i < rows.length; i++) {
     const [email, name, campusId, role] = rows[i];
     if (email) {
-      entries.push({
+      const entry = {
         email: String(email).trim().toLowerCase(),
         name: String(name || '').trim(),
         campusId: String(campusId || '').trim().toUpperCase(),
         role: String(role || '').trim(),
-      });
+      };
+      const supporting = supportSchools_(rows[0], rows[i]); // 2026-11-07: a Principal's supporting charge (supporting-charge.gs), only when set
+      if (supporting.length) entry.supporting = supporting;
+      entries.push(entry);
     }
   }
   cache.put(CACHE_KEY, JSON.stringify(entries), CACHE_TTL_SECONDS);

@@ -56,7 +56,7 @@ const ctx = { console,
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   ContentService: { createTextOutput: (s) => ({ setMimeType: () => JSON.parse(s) }), MimeType: { JSON: 'json' } } };
 vm.createContext(ctx);
-['coordinator', 'coordinator-pdr', 'coordinator-principal'].forEach((f) =>
+['coordinator', 'coordinator-pdr', 'coordinator-principal', 'supporting-charge'].forEach((f) =>
   vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f + '.gs', 'utf8'), ctx));
 const books = {}, k = (c) => vm.runInContext(c, ctx); // top-level consts are not ctx properties
 books[k('COORD_ALLOWLIST_SHEET_ID')] = book(allowTabs); books[k('COORD_PDR_SHEET_ID')] = book(pdrTabs); books[k('COORD_SHEET_ID')] = book(taskTabs);
@@ -110,11 +110,11 @@ assert.strictEqual(g.g1.note, '');                                              
 assert.strictEqual(i2.raisedAgain, false);
 
 // ── the gate ──
-assert.deepStrictEqual(plain(ctx.coordVerifyPrincipal_('tok-p4')), { email: 'p4@lms.org.in', campusId: 'LMS4', principal: true });
+assert.deepStrictEqual(plain(ctx.coordVerifyPrincipal_('tok-p4')), { email: 'p4@lms.org.in', campusId: 'LMS4', principal: true, supporting: [] });
 const before = fetches;
-assert.deepStrictEqual(plain(ctx.coordVerifyPrincipal_('tok-p4')), { email: 'p4@lms.org.in', campusId: 'LMS4', principal: true });
+assert.deepStrictEqual(plain(ctx.coordVerifyPrincipal_('tok-p4')), { email: 'p4@lms.org.in', campusId: 'LMS4', principal: true, supporting: [] });
 assert.strictEqual(fetches, before);                                     // cached
-assert.deepStrictEqual(plain(ctx.coordVerifyPrincipal_('tok-p2')), { email: 'p2@lms.org.in', campusId: 'LMS2', principal: true }); // trimmed, upper-cased
+assert.deepStrictEqual(plain(ctx.coordVerifyPrincipal_('tok-p2')), { email: 'p2@lms.org.in', campusId: 'LMS2', principal: true, supporting: [] }); // trimmed, upper-cased
 ['tok-pall', 'tok-plist', 'tok-fc', 'tok-c', 'tok-c4', 'tok-t', 'tok-nobody', 'tok-badaud', 'tok-unverified', 'tok-missing', '', undefined].forEach((t) =>
   assert.strictEqual(ctx.coordVerifyPrincipal_(t), null, String(t)));
 // the Principal cache never feeds the Coordinator gate, and that gate is unchanged
@@ -233,4 +233,8 @@ assert.deepStrictEqual([mView().status, mView().raisedAgain], ['open', true]);
 assert.strictEqual(ctx.coordPdrMergedLast_('i2', issueRows, mergeRows), '2026-10-12'); // no merges: the row's own last seen
 assert.strictEqual(ctx.coordPdrMergedLast_('i1', issueRows, mergeRows), '2026-10-10'); // i3 (10-08) merged in, earlier
 books[pdrId] = pdrSaved;
+// supporting charge (supporting-charge.gs): a school not on the Principal's row is refused; resolving is never done from a supported school
+const sup = (act) => ctx.doGet({ parameter: { action: 'principalissues', idToken: 'tok-p4', actAs: act } });
+for (const act of ['ALL', 'LMS3', 'LMS4']) assert.strictEqual(sup(act).code, 'SUPPORT_NOT_YOURS', 'no charge on the row: ' + act);
+assert.strictEqual(post({ action: 'principalissueresolve', idToken: 'tok-p4', actAs: 'LMS3', id: 'i1' }).code, 'SUPPORT_READ_ONLY');
 console.log('coordinator principal issues: ok');

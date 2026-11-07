@@ -33,7 +33,7 @@ function makeGas(flag, deptCell) {
     MailApp: {},
   };
   vm.createContext(gas);
-  for (const f of ['main.gs', 'teacher-portal.gs', 'approvals.gs']) {
+  for (const f of ['main.gs', 'teacher-portal.gs', 'approvals.gs', 'supporting-charge.gs']) {
     try { vm.runInContext(fs.readFileSync(path.join(root, 'apps-script', f), 'utf8'), gas); }
     catch (e) { console.error(f + ' failed to load in the sandbox:', e.message); process.exit(1); }
   }

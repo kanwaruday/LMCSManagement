@@ -147,8 +147,10 @@ const PDR_FEECLERK_POST_ACTIONS = ['hiringaddapplicant', 'apptpropose', 'apptcan
 function doGet(e) {
   aprResetRequestMemo_(); // 2026-10-01: per-request Approvals-values memo, see approvals.gs's aprValues_
   try {
-    const caller = verifyCallerToken_(e.parameter.idToken);
-    if (!caller) return jsonOut_({ success: false, error: 'Not authorized' });
+    const verified = verifyCallerToken_(e.parameter.idToken);
+    if (!verified) return jsonOut_({ success: false, error: 'Not authorized' });
+    const caller = supportActAs_(verified, e.parameter.actAs); // a supporting Principal reading the school they support (supporting-charge.gs)
+    if (!caller) return jsonOut_(SUPPORT_NOT_YOURS);
 
     const action = (e.parameter.action || 'teacherstats').toLowerCase();
     // assets/auth.js asks this after an allowlist miss, to open a Teacher/Staff session. Only a caller that came from the
@@ -216,10 +218,14 @@ function doPost(e) {
   aprResetRequestMemo_(); // 2026-10-01: per-request Approvals-values memo, see approvals.gs's aprValues_
   try {
     const body = JSON.parse(e.postData.contents);
-    const caller = verifyCallerToken_(body.idToken);
-    if (!caller) return jsonOut_({ success: false, error: 'Not authorized' });
+    const verified = verifyCallerToken_(body.idToken);
+    if (!verified) return jsonOut_({ success: false, error: 'Not authorized' });
+    const caller = supportActAs_(verified, body.actAs);
+    if (!caller) return jsonOut_(SUPPORT_NOT_YOURS);
 
     const action = String(body.action || '').toLowerCase();
+    // at a school they support, a Principal advises only: comments, nothing a decision or the school's own Principal owns
+    if (caller.supportingAt && PDR_SUPPORT_POST_ACTIONS.indexOf(action) === -1) return jsonOut_(SUPPORT_READ_ONLY);
     if (!pdrIsElevated_(caller) && !pdrLimitedAllows_(caller, action, true)) {
       return jsonOut_({ success: false, error: 'Not authorized' });
     }
@@ -281,6 +287,8 @@ function doPost(e) {
 // internal ~6-school admin tool; shorten PDR_AUTH_CACHE_SECONDS if that
 // ever needs tightening.
 const PDR_AUTH_CACHE_SECONDS = 300;
+// the only writes a supporting Principal may make at the school they support (supporting-charge.gs): advice on a request
+const PDR_SUPPORT_POST_ACTIONS = ['addapprovalcomment', 'deleteapprovalcomment'];
 
 function verifyCallerToken_(idToken) {
   if (!idToken) return null;
@@ -334,7 +342,8 @@ function verifyCallerToken_(idToken) {
       // (including every pre-existing row before this column existed)
       // is "not delegated" -- fails safe.
       const canApprove = String(rows[i][4] || '').trim().toUpperCase() === 'TRUE';
-      const caller = { email: email, campusId: campusId, role: role, roles: roles, name: name, canApprove: canApprove };
+      // supporting (2026-11-07): the schools this Principal supports (supporting-charge.gs); actAs in doGet/doPost switches to one, read-only
+      const caller = { email: email, campusId: campusId, role: role, roles: roles, name: name, canApprove: canApprove, supporting: supportSchools_(rows[0], rows[i]) };
       cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
       return caller;
     }

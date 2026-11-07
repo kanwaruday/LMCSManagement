@@ -16,7 +16,8 @@ function page(store, reply) {
     atob: (s) => Buffer.from(s, 'base64').toString('binary'), navigator: {}, performance: { getEntriesByType: () => [] },
     location: { href: 'https://portal.test/', reload() {} },
     document: { readyState: 'complete', hidden: false, body: null, addEventListener() {}, querySelector: () => ({ innerHTML: '' }), getElementById: () => ({ style: {} }), createElement: () => ({}), head: { appendChild() {} } },
-    fetch: async (url) => {
+    fetch: async (url, init) => {
+      calls.sent = (calls.sent || []).concat([[String(url), init && init.body]]);
       if (!String(url).includes('allowlist_list')) return new Response('{"success":true}');
       calls.allowlist++;
       return new Response(JSON.stringify(reply), { status: 200 });
@@ -25,7 +26,7 @@ function page(store, reply) {
   ctx.window = ctx; ctx.addEventListener = () => {};
   vm.createContext(ctx); vm.runInContext(src, ctx);
   ctx.window.__lmcsClearFetchCache = () => { calls.cleared = (calls.cleared || 0) + 1; }; // spy (the refresh runs after load)
-  return { calls, LMCS: ctx.window.LMCS };
+  return { calls, LMCS: ctx.window.LMCS, ctx };
 }
 const tick = (ms = 60) => new Promise((r) => setTimeout(r, ms));
 const stored = (store) => JSON.parse(store.lmcs_session);
@@ -77,5 +78,34 @@ const stored = (store) => JSON.parse(store.lmcs_session);
   await tick();
   assert.strictEqual(store.lmcs_session, before);
   assert.strictEqual(p.calls.cleared, undefined, 'nothing changed: the cache stays');
+  // 7. a supporting charge (Owner's People room): carried from the list; the switch reads the supported school, read-only by the backends
+  store = { lmcs_session: sess({ email: 'p4@example.org', campusId: 'LMS4', role: 'Principal', idToken: 't' }) };
+  p = page(store, list({ email: 'p4@example.org', campusId: 'LMS4', role: 'Principal', supporting: ['LMS3', 'ALL', 'x'] }));
+  await tick();
+  assert.deepStrictEqual(Array.from(stored(store).supporting), ['LMS3'], 'LMS1-6 only: ALL never reaches a session');
+  assert.strictEqual(p.LMCS.supportSwitch('ALL'), false);
+  assert.strictEqual(p.LMCS.supportSwitch('LMS5'), false, 'not one of theirs');
+  assert.strictEqual(p.LMCS.supportSwitch('LMS3'), true);
+  assert.deepStrictEqual([stored(store).campusId, stored(store).actAs, stored(store).homeCampusId, stored(store).role], ['LMS3', 'LMS3', 'LMS4', 'Principal']);
+  const GAS = 'https://script.google.com/macros/s/AKfycbTEST/exec';
+  p.calls.sent = [];
+  await p.ctx.window.fetch(GAS + '?action=approvalslist&idToken=t');
+  await p.ctx.window.fetch(GAS, { method: 'POST', body: JSON.stringify({ action: 'decideapproval', idToken: 't' }) });
+  assert.ok(new URL(p.calls.sent[0][0]).searchParams.get('actAs') === 'LMS3', 'GET says which school');
+  assert.strictEqual(JSON.parse(p.calls.sent[1][1]).actAs, 'LMS3', 'POST says which school (the backend refuses a decision there)');
+  // the list still names LMS3: the switch stays; the charge removed: back to their own school
+  p = page(store, list({ email: 'p4@example.org', campusId: 'LMS4', role: 'Principal', supporting: ['LMS3', 'LMS1'] }));
+  store.lmcs_allowlist_v1 = undefined; delete store.lmcs_allowlist_v1;
+  await p.LMCS.requireSession('#gate'); await tick();
+  assert.deepStrictEqual([stored(store).campusId, stored(store).actAs], ['LMS3', 'LMS3']);
+  p = page(store, list({ email: 'p4@example.org', campusId: 'LMS4', role: 'Principal' }));
+  await p.LMCS.requireSession('#gate'); await tick();
+  const back = stored(store);
+  assert.deepStrictEqual([back.campusId, back.actAs, back.homeCampusId, back.supporting], ['LMS4', undefined, undefined, undefined], 'charge removed: home again');
+  // switching back by hand
+  store.lmcs_session = sess({ email: 'p4@example.org', campusId: 'LMS3', actAs: 'LMS3', homeCampusId: 'LMS4', supporting: ['LMS3'], role: 'Principal' });
+  p = page(store, list({ email: 'p4@example.org', campusId: 'LMS4', role: 'Principal', supporting: ['LMS3'] }));
+  assert.strictEqual(p.LMCS.supportSwitch(null), true);
+  assert.deepStrictEqual([stored(store).campusId, stored(store).actAs], ['LMS4', undefined]);
   console.log('session refresh: ok');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -14,6 +14,11 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //   peopleoffice       POST only: change a Fee Clerk's or Accounts person's campus (any row holding FeeClerk or Accounts), same rights,
 //                      order and Campus-cell-only write. Uday's answer "A" (7 Nov), the same rule as auth.js onlyFeeClerk: a row whose
 //                      only role is FeeClerk may be LMS1-6 or ALL; Accounts and any mixed row get one school only (ALL refused).
+//   peoplesupport      POST only: a Principal's supporting charge (Uday, 7 Nov: "can see everything and advise while approvals stay with the
+//                      School's Principal"). Writes the allowlist column headed "Supporting" (added at the end of the header row, under the
+//                      lock, when missing): a comma list of LMS1-6, never ALL, never their own school; [] clears it. Only a row holding
+//                      Principal with no Owner or Coordinator role and its own school LMS1-6 (supporting-charge.gs supportEligible_). Same
+//                      rights and order as peopleprincipal. What a supporting Principal may do there is decided by each backend (supportActAs_).
 // What peoplecoordinator may touch, and nothing else: the Coordinator role, that row's campus and its functions from PEOPLE_FUNCTIONS (any other
 // function already in the cell is kept). It never edits or removes a row holding Owner, never grants Owner, and leaves a row that holds
 // any other role (Principal, Accounts, ...) to the sheet. One row per email (two rows for one email: refused). A new row is plain text.
@@ -28,6 +33,7 @@ var PEOPLE_NOT_YOURS = { success: false, code: 'PEOPLE_NOT_YOURS', error: 'The P
 var PEOPLE_CODES = { PEOPLE_BAD_EMAIL: 'That email does not look right.', PEOPLE_BAD_NAME: 'Add their name (letters, up to 80).',
   PEOPLE_OWNER_ROW: "The Owner's own row can't be changed here.", PEOPLE_OTHER_ROLES: 'This person has other roles too. Change them in the allowlist sheet.',
   PEOPLE_NOT_FOUND: 'That person is not a Coordinator.', PEOPLE_NOT_PRINCIPAL: 'That person is not a Principal.', PEOPLE_NOT_OFFICE: 'That person is not a Fee Clerk or Accounts.',
+  PEOPLE_CANT_SUPPORT: 'Only a Principal at one school (not an Owner or Coordinator) can support another school.', PEOPLE_OWN_SCHOOL: "A Principal can't support their own school.",
   PEOPLE_ONE_SCHOOL: 'Only a plain Fee Clerk can cover all schools. Choose one school.', PEOPLE_NO_FUNCTIONS_COLUMN: 'The allowlist has no Functions column yet, so functions cannot be saved.',
   PEOPLE_DUPLICATE: 'That email is on the allowlist more than once. Fix the sheet first.', PEOPLE_CHANGED: 'The allowlist changed just now. Nothing was removed; please try again.', PEOPLE_ERROR: 'Something went wrong. Nothing was changed.' };
 
@@ -48,7 +54,9 @@ function peopleList_(caller, params) {
     const list = v.slice(1).filter(function (r) { return gameLower_(r[0]) && peopleRoles_(r[3]).indexOf('Coordinator') !== -1; }).map(function (r) { return peopleOut_(header, r); });
     const principals = v.slice(1).filter(function (r) { return gameLower_(r[0]) && peopleRoles_(r[3]).indexOf('Principal') !== -1; }).map(function (r) {
       const roles = peopleRoles_(r[3]);
-      return { email: gameLower_(r[0]), name: String(r[1] || '').trim(), campus: String(r[2] || '').trim().toUpperCase(), roles: roles, editable: roles.indexOf('Owner') === -1 };
+      const campus = String(r[2] || '').trim().toUpperCase();
+      return { email: gameLower_(r[0]), name: String(r[1] || '').trim(), campus: campus, roles: roles, editable: roles.indexOf('Owner') === -1,
+        supporting: supportSchools_(header, r), canSupport: supportEligible_(roles, campus) };
     });
     const office = v.slice(1).filter(function (r) { return gameLower_(r[0]) && peopleOfficeHolds_(peopleRoles_(r[3])); }).map(function (r) {
       const roles = peopleRoles_(r[3]);
@@ -198,6 +206,58 @@ function peopleSetCampus_(caller, body, kind) {
     });
   } catch (err) {
     console.error(kind.audit + ': ' + (err && err.message));
+    return peopleFail_('PEOPLE_ERROR');
+  }
+}
+
+// POST {email, schools: ['LMS1'..'LMS6'] (may be [])} -> {success, principal: {email, name, campus, supporting}, unchanged?}
+function peopleSupport_(caller, body) {
+  try {
+    const noRight = function (why) {
+      console.warn('people_support refused: ' + why);
+      kingdomAuditRefusal_([gameNow_().toISOString(), gameLower_(caller && caller.email), 'people_support', 'allowlist', '', '', '', '', '', 'done', 'refused', 'KINGDOM_NO_RIGHT']);
+      return peopleFail_('KINGDOM_NO_RIGHT');
+    };
+    if (!caller || (caller.roles || []).indexOf('Owner') === -1) return noRight('not the Owner');
+    if (!kingdomCan_(caller, 'allocate', cqLoadCfg_())) return noRight('no allocate right');
+    body = body && typeof body === 'object' ? body : {};
+    const by = gameLower_(caller.email), at = gameNow_().toISOString();
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const said = Array.isArray(body.schools) && body.schools.length <= SUPPORT_SCHOOLS.length && body.schools.every(function (c) { return typeof c === 'string'; })
+      ? body.schools.map(function (c) { return c.trim().toUpperCase(); }) : null;
+    const want = said ? SUPPORT_SCHOOLS.filter(function (c) { return said.indexOf(c) !== -1; }) : []; // LMS1-6 order, no repeats
+    const row = function (phase, result, code) {
+      return [at, by, 'people_support', 'allowlist', kingdomCell_(email, 200), kingdomCell_(want.join(','), 40), kingdomCell_(email, 200), '', '', phase, result, kingdomCell_(String(code), 200)];
+    };
+    const refuse = function (code) { kingdomAuditRefusal_(row('done', 'refused', code)); return peopleFail_(code); };
+    if (!PEOPLE_EMAIL.test(email) || email.length > 254) return refuse('PEOPLE_BAD_EMAIL');
+    if (!said || said.some(function (c) { return SUPPORT_SCHOOLS.indexOf(c) === -1; })) return refuse('KINGDOM_BAD_INPUT'); // ALL or anything else: never
+    return kingdomLocked_(function () {
+      kingdomAudit_(row('requested', '', ''), true);
+      const refuseHeld = function (code) { kingdomAudit_(row('done', 'refused', code), true); return peopleFail_(code); };
+      const sh = peopleSheet_(), v = sh.getDataRange().getValues(), header = v[0] || [], at_ = []; // read under the lock
+      for (let i = 1; i < v.length; i++) if (gameLower_(v[i][0]) === email) at_.push(i);
+      if (at_.length > 1) return refuseHeld('PEOPLE_DUPLICATE');
+      if (!at_.length) return refuseHeld('PEOPLE_NOT_PRINCIPAL');
+      const i = at_[0], roles = peopleRoles_(v[i][3]), campus = String(v[i][2] || '').trim().toUpperCase();
+      if (roles.indexOf('Owner') !== -1) return refuseHeld('PEOPLE_OWNER_ROW');
+      if (roles.indexOf('Principal') === -1) return refuseHeld('PEOPLE_NOT_PRINCIPAL');
+      if (!supportEligible_(roles, campus)) return refuseHeld('PEOPLE_CANT_SUPPORT');
+      if (want.indexOf(campus) !== -1) return refuseHeld('PEOPLE_OWN_SCHOOL');
+      const now = sh.getRange(i + 1, 1, 1, 4).getValues()[0]; // the row as it is this instant (hand edits don't take our lock)
+      if (gameLower_(now[0]) !== email || String(now[3]) !== String(v[i][3]) || String(now[2]) !== String(v[i][2])) return refuseHeld('PEOPLE_CHANGED');
+      let col = supportColumn_(header);
+      const out = { email: email, name: String(now[1] || '').trim(), campus: campus, supporting: want };
+      if (col !== -1 && String(v[i][col] || '').trim() === want.join(', ')) {
+        kingdomAudit_(row('done', 'ok', 'unchanged'), true); return { success: true, unchanged: true, principal: out };
+      }
+      if (col === -1) { col = header.length; sh.getRange(1, col + 1).setNumberFormat('@').setValue('Supporting'); } // the column, once
+      sh.getRange(i + 1, col + 1).setNumberFormat('@').setValue(want.join(', '));
+      kingdomAudit_(row('done', 'ok', 'changed'), true);
+      return { success: true, principal: out };
+    });
+  } catch (err) {
+    console.error('people_support: ' + (err && err.message));
     return peopleFail_('PEOPLE_ERROR');
   }
 }

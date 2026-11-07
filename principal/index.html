@@ -35,6 +35,8 @@
       </section>
       <div id="app-root" style="display:none">
         <p class="gb-viewbar" id="view-bar" role="status" hidden><span id="view-bar-t"></span><button type="button" id="view-leave">Leave</button></p>
+        <!-- a supporting charge (owner/people.html): open a school this Principal supports, to read and advise (auth.js LMCS.supportSwitch) -->
+        <p class="gb-viewbar" id="support-bar" hidden><span>You also support</span></p>
         <!-- The home is a picture (assets/game/home-hud.js): the building fills the scene, the HUD hugs its edges. What used to be lists
              (Today, the event card, appointments, sign out) waits in the stash and is moved into the HUD's one sheet when opened. -->
         <div id="hh-stash" hidden>
@@ -270,6 +272,13 @@
 
       document.getElementById('hub-hello').textContent = VIEW ? 'Principal · ' + session.campusName : hello(session.name) + ' · ' + LMCS.roleLabel(session) + ' · ' + session.campusName; // the real role(s); in the Owner's view-as it reads Principal (a preview)
       LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' });
+      const sup = !VIEW && !session.actAs ? (session.supporting || []) : [], bar = document.getElementById('support-bar');
+      sup.forEach(function (c) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Open ' + LMCS.campusLabel(c);
+        b.addEventListener('click', function () { LMCS.supportSwitch(c); });
+        bar.appendChild(b);
+      });
+      bar.hidden = !sup.length;
 
       document.getElementById('signout-link').addEventListener('click', function (e) {
         e.preventDefault();

@@ -2,7 +2,8 @@
   "_note": "One entry per Apps Script project. scriptId = Apps Script editor > Project Settings > Script ID (fill in once). deploymentId = the AKfycb... id inside the live /exec URL, so redeploys keep the URL the HTML pages hardcode. See README.md and deploy.mjs.",
   "shared": [
     "acad-episodes",
-    "driver-token"
+    "driver-token",
+    "supporting-charge"
   ],
   "pdr": {
     "name": "LMCS Principal's Daily Reporting Backend",
@@ -22,7 +23,8 @@
       "hiring-audit",
       "hiring-form",
       "compliance-report",
-      "salary"
+      "salary",
+      "supporting-charge"
     ]
   },
   "roster": {
@@ -43,7 +45,8 @@
       "driver-link",
       "driver-google",
       "driver-fuel",
-      "../assets/game/bus-chain.js"
+      "../assets/game/bus-chain.js",
+      "supporting-charge"
     ]
   },
   "payroll": {
@@ -71,7 +74,10 @@
       "coordinator-world",
       "coordinator-driverbus",
       "driver-token",
-      "../coordinator/capture/fleet-quests.js", "../coordinator/transport-rank.js", "../assets/game/bus-chain.js"
+      "../coordinator/capture/fleet-quests.js",
+      "../coordinator/transport-rank.js",
+      "../assets/game/bus-chain.js",
+      "supporting-charge"
     ]
   },
   "chapter": {
@@ -148,7 +154,8 @@
       "game-erp",
       "game-erp-sheets",
       "driver-token",
-      "../assets/game/bus-chain.js"
+      "../assets/game/bus-chain.js",
+      "supporting-charge"
     ]
   }
 }
