@@ -78,6 +78,20 @@ def test_stitch_builds_a_3_frame_mp4_at_30_fps():
         assert [c["tags"]["title"] for c in probe["chapters"]] == ["Stop A"]
 
 
+def test_web_copies_make_a_360_px_phone_copy_once_for_every_processed_run():
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "HP66A1234" / "HP66A1234-20261025-071500-ab12" / "processed"
+        out.mkdir(parents=True)
+        C.stitch([jpeg(Path(d) / f"f{i}.jpg", (40 * i, 80, 120), (1280, 720)) for i in range(3)], "", out / "route.mp4")
+        assert C.web_copies(d, dry_run=True) == ["HP66A1234-20261025-071500-ab12"] and not (out / "route-web.mp4").exists(), "a dry run writes nothing"
+        assert C.web_copies(d) == ["HP66A1234-20261025-071500-ab12"]
+        probe = json.loads(subprocess.run([C.FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "json",
+                                           str(out / "route-web.mp4")], capture_output=True, text=True, check=True).stdout)
+        assert probe["streams"][0]["height"] == 360
+        assert C.web_copies(d) == [], "made once"
+        assert not list(out.glob("*.partial.mp4")), "no partial file left behind"
+
+
 def make_run(root, reg="HP66A1234", run_id="HP66A1234-20261025-071500-ab12", frames=3, stop_seq=1):
     d = Path(root) / reg / run_id
     d.mkdir(parents=True)

@@ -12,7 +12,13 @@ function folder(name) {
     createFolder(n) { const f = folder(n); kids.push(f); dirs[f.getId()] = f; return f; },
     getFiles() { let i = 0; return { hasNext: () => i < files.length, next: () => files[i++] }; },
     setTrashed(v) { me.trashed = v; return me; },
-    createFile(blob) { const id = 'FILE' + (nextId++) + 'x'.repeat(20); const f = { name: blob.name, blob, desc: '', getId: () => id, setDescription(d) { f.desc = d; } }; files.push(f); return f; } };
+    createFile(blob, text, mime) { // (blob) as uploads do, or (name, text, mime) as capturerun's path.json
+      if (typeof blob === 'string') blob = { name: blob, bytes: Array.from(Buffer.from(text || '')), mime };
+      const id = 'FILE' + (nextId++) + 'x'.repeat(20);
+      const f = { name: blob.name, blob, desc: '', getId: () => id, getName: () => f.name, getDescription: () => f.desc, setDescription(d) { f.desc = d; },
+        getBlob: () => ({ getBytes: () => blob.bytes || [], getDataAsString: () => Buffer.from(blob.bytes || []).toString() }) };
+      files.push(f); return f;
+    } };
   return me;
 }
 let nextId = 1, nextDir = 1;
@@ -36,7 +42,9 @@ const ctx = { console, Date, Object, String, Math, JSON, Array, Number, RegExp,
   CacheService: { getScriptCache: () => ({ get: (k) => cache[k] || null, put: (k, v) => { cache[k] = v; } }) },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   Utilities: { base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),
-    newBlob: (bytes, mime, name) => ({ bytes, mime, name }), formatDate: () => 'x' },
+    newBlob: (bytes, mime, name) => ({ bytes, mime, name }), formatDate: () => 'x',
+    computeHmacSha256Signature: (v, k) => require('crypto').createHmac('sha256', k).update(v).digest(),
+    base64EncodeWebSafe: (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'), base64Encode: (b) => Buffer.from(b).toString('base64') },
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'TRANSPORT_PUSH_SECRET' ? 'S' : null) }) },
   verifyStaffManagerToken_: () => caller, CENTRAL_REPO_FOLDER_ID_: 'root',
   getSubfolder_: (p, n) => { const it = p.getFoldersByName(n); return it.hasNext() ? it.next() : null; } };
@@ -411,6 +419,33 @@ assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
     const late = batch([fr(8), fr(9)]);
     assert.deepStrictEqual(late.results.map((x) => x.error), ['This run was discarded. Record a new one.', 'This run was discarded. Record a new one.'], 'each file refused');
     assert.strictEqual(busDir.kids.filter((k) => k.name === 'SP1').length, before, 'no fresh run folder outside the bin');
+  }
+  { // the route view's Drive side (capturerun): only a run the Coordinator backend signed a ticket for, only blurred output
+    const runDir = bus.createFolder('HP659511-20261101-071500-rv01'), out = runDir.createFolder('processed');
+    const fr = (seq, d, name) => { const f = runDir.createFile({ name: name || 'frame-' + String(seq).padStart(5, '0') + '.jpg' }); if (d !== undefined) f.setDescription(JSON.stringify(d)); return f; };
+    fr(2, { lat: 31.3, lng: 77.3, takenAt: 3000 }); fr(0, { lat: 31.1, lng: 77.1, takenAt: 1000 }); fr(1); // seq 1: no position on record
+    fr(2, { lat: 9, lng: 9, takenAt: 9 }, 'frame-00002 (1).jpg'); // a Drive conflict copy: the original wins
+    runDir.createFile({ name: 'stop-00004.jpg', bytes: [1, 2, 3] }); // the phone's unblurred stop photo
+    out.createFile({ name: 'route.mp4', bytes: [9, 9, 9, 9] }); out.createFile({ name: 'stop-00004.jpg', bytes: [7, 7] });
+    const sign = (reg, runId, exp, key) => ({ reg, runId, exp, sig: ctx.Utilities.base64EncodeWebSafe(ctx.Utilities.computeHmacSha256Signature(reg + '|' + runId + '|' + exp, key || 'S')) });
+    const t = sign('HP659511', 'HP659511-20261101-071500-rv01', Date.now() + 60000);
+    const rv = (b) => run('captureRunView_(' + JSON.stringify(b) + ')');
+    assert.strictEqual(rv({ part: 'path' }).error, 'Not authorized', 'no ticket, nothing');
+    assert.strictEqual(rv({ ticket: sign(t.reg, t.runId, t.exp, 'X'), part: 'path' }).error, 'Not authorized', 'a ticket signed with another key is refused');
+    assert.strictEqual(rv({ ticket: Object.assign({}, t, { runId: 'HP659511-20261025-071500-ab12' }), part: 'path' }).error, 'Not authorized', 'a ticket opens its own run only');
+    assert.strictEqual(rv({ ticket: sign(t.reg, t.runId, Date.now() - 1), part: 'path' }).error, 'Not authorized', 'an expired ticket is refused');
+    assert.strictEqual(rv({ ticket: sign('HP659511/..', t.runId, t.exp), part: 'path' }).error, 'Not authorized', 'an unsafe reg is refused even when signed');
+    const p1 = rv({ ticket: t, part: 'path' });
+    assert.deepStrictEqual(p1.points, [[31.1, 77.1, 1000], null, [31.3, 77.3, 3000]], 'one point per frame in seq order (the video\'s order), null where none, the original over its copy');
+    assert.ok(out.files.some((f) => f.name === 'path.json'), 'the path is kept beside the video, for after the originals go');
+    runDir.files.forEach((f) => { if (/^frame-/.test(f.name)) f.setDescription(''); });
+    assert.deepStrictEqual(rv({ ticket: t, part: 'path' }).points, p1.points, 'read back from path.json, not the originals');
+    assert.ok(/not made yet/.test(rv({ ticket: t, part: 'video' }).error), 'no phone copy: refused, never the full route.mp4');
+    out.createFile({ name: 'route-web.mp4', bytes: [5, 6] });
+    assert.deepStrictEqual([rv({ ticket: t, part: 'video' }).base64, rv({ ticket: t, part: 'video' }).mime], [Buffer.from([5, 6]).toString('base64'), 'video/mp4'], 'the blurred phone copy');
+    assert.strictEqual(rv({ ticket: t, part: 'photo', seq: 4 }).base64, Buffer.from([7, 7]).toString('base64'), 'the blurred stop photo, never the original');
+    assert.strictEqual(rv({ ticket: t, part: 'photo', seq: '4/../x' }).error, 'Bad stop');
+    assert.strictEqual(rv({ ticket: sign('HP659511', 'HP659511-20261026-071500-cd34', t.exp), part: 'path' }).error, 'This run has no processed video yet');
   }
   console.log('transport capture: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

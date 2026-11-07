@@ -191,6 +191,31 @@ def stitch(frames, chapters_text, out_mp4):
             raise RuntimeError(f"ffmpeg failed: {r.stderr.strip()[-300:]}")
 
 
+def web_copy(src, dst):
+    """The blurred route.mp4 -> a small copy for a phone (the portal's route view sends it as base64 through Apps Script, which
+    cannot carry the full one): 360 px high, no chapters. Built beside dst, renamed when complete."""
+    tmp = Path(dst).with_name(Path(dst).stem + ".partial.mp4")
+    r = subprocess.run([FFMPEG, "-v", "error", "-y", "-i", str(src), "-map", "0:v", "-vf", "scale=-2:360", "-c:v", "libx264", "-preset", "veryfast",
+                        "-crf", "32", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(tmp)], capture_output=True, text=True)
+    if r.returncode:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(f"ffmpeg failed: {r.stderr.strip()[-300:]}")
+    os.rename(tmp, dst)
+
+
+def web_copies(root, dry_run=False):
+    """Every processed run without a phone copy gets one (also runs processed before web_copy existed). Returns the runs done."""
+    done = []
+    for mp4 in sorted(Path(root).glob("*/*/processed/route.mp4")):
+        web = mp4.with_name("route-web.mp4")
+        if web.exists():
+            continue
+        if not dry_run:
+            web_copy(mp4, web)
+        done.append(mp4.parent.parent.name)
+    return done
+
+
 def process_run(run_dir, run, detectors):
     """Blurs every frame and stop photo of one run into processed/ and stitches route.mp4 there. All or nothing: built in
     processed.partial/, renamed only when complete. Raises NotReady while Drive is still bringing the frames or a stop photo
@@ -334,6 +359,13 @@ def main(argv=None):
         except Exception as e:
             failed += 1
             log(f"{r['runId']}: failed, nothing published ({type(e).__name__}: {e})")
+    try:
+        webs = web_copies(root, a.dry_run) if root.is_dir() else []
+        if webs:
+            log(f"{'would make' if a.dry_run else 'made'} the phone copy of {len(webs)} route videos")
+    except Exception as e:
+        failed += 1
+        log(f"phone copies failed ({type(e).__name__}: {e})")
     gone = purge(root, time.time(), a.dry_run) if root.is_dir() else []
     if gone:
         log(f"{'would delete' if a.dry_run else 'deleted'} {len(gone)} originals of runs processed {KEEP_DAYS}+ days ago")

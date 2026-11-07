@@ -31,6 +31,7 @@ const COORD_TRANSPORT_TAB_DOCS = 'LM Studio Documents';
 const COORD_TRANSPORT_TAB_SYNC = 'LM Studio Sync';
 const COORD_TRANSPORT_TAB_PEOPLE = 'Transport Staff'; // every person on the transport Man Power sheet, linked to the staff master by employee code
 const COORD_TRANSPORT_TAB_PNL = 'Transport P&L'; // per bus per month money, from the transport workbook (push)
+const COORD_TRANSPORT_TAB_PLAN = 'Transport Plan'; // each bus's planned stops (km from school, children as counts), from the workbook's Routes and Stops tabs (push)
 const COORD_TRANSPORT_TAB_PAPERS = 'LM Studio Vehicle Papers'; // what LM Studio read off each bus's RC / fitness / other scans, to pre-fill the Vehicle papers quest (push)
 const COORD_PAPERS_SCAN_FIELDS = ['make', 'modelAndVariant', 'chassisNo', 'engineNo', 'fuel', 'emissionNorm', 'seatingCapacityAsPerRc', 'dateOfRegistration', 'mfgYear']; // papers quest field ids; mfgYear is shown only
 const COORD_TRANSPORT_MIN_FLEET = 15; // a push with fewer vehicles is a read gone wrong; never overwrite good data with it
@@ -150,6 +151,14 @@ function coordTransportPush_(body) {
     if (Array.isArray(p.pnl) && p.pnl.length) {
       coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PNL, ['Reg', 'Campus', 'Month', 'Fee collected', 'Fuel', 'Loan interest', 'Fixed costs', 'Driver and helper pay', 'Note'],
         p.pnl.map(function (r) { return [r.reg, r.campus, r.month, r.fee, r.fuel, r.loan, r.fixed, r.pay, r.note || '']; }));
+    }
+    if (Array.isArray(p.plan) && p.plan.length) {
+      const planRows = [];
+      p.plan.forEach(function (b) {
+        (Array.isArray(b.stops) ? b.stops : []).forEach(function (s, i) { const n = function (v) { return typeof v === 'number' && isFinite(v) ? v : ''; };
+          planRows.push([txt(b.reg), txt(b.campus), txt(b.route), n(b.kmDay), n(b.rounds), i + 1, txt(s.name).slice(0, 80), n(s.km), n(s.children)]);  });
+      });
+      coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PLAN, ['Reg', 'Campus', 'Route', 'Km a day', 'Rounds', 'Seq', 'Stop', 'Km from school', 'Children'], planRows);
     }
     coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_SYNC, ['Key', 'Value'], [
       ['syncedAt', p.syncedAt], ['pushedAt', new Date().toISOString()], ['vehicles', String(fleet.length)],

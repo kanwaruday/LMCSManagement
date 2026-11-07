@@ -35,6 +35,14 @@
 //   phone's run never writes it (Captured By already names the driver).
 // POST {action:'capturediscard', secret, reg, runId} -> {success}. The Coordinator's Discard on that shelf: Capture/<REG>/<runId>/
 //   goes to the Drive bin (recoverable 30 days) and the run's Status becomes 'closed', so the Mac's pull never lists it again.
+// POST {action:'capturerun', ticket:{reg, runId, exp, sig}, part:'path'|'video'|'photo', seq?} -> the route view's Drive side
+//   (Uday, 7 Nov). The Coordinator backend's transportrun signs the ticket after its own Owner / Coordinator district check
+//   (coordinator-world.gs); nothing here decides who may see a bus, and a ticket opens one run for 30 minutes.
+//   path  {points:[[lat, lng, takenAt] | null]}: one per timelapse frame in seq order, the order of route.mp4's frames (capture.py),
+//         so a video frame's index is its point. Read once from the original frames' descriptions and kept as processed/path.json,
+//         because the originals are deleted 30 days after processing. null: a frame with no position on record.
+//   video {base64, mime}: the BLURRED processed/route-web.mp4 (capture.py's 360 px phone copy); photo {base64, mime}: the BLURRED
+//         processed/stop-<seq>.jpg. Never an original frame or photo.
 // ═══════════════════════════════════════════════════════════════════
 
 const CAP_TAB_ = 'Capture Runs';
@@ -302,6 +310,51 @@ function captureRun_(body) {
     lock.releaseLock();
   }
   return { success: true };
+}
+
+/** The route view's ticket (coordinator-world.gs coordRunTicket_): signed with TRANSPORT_PUSH_SECRET, not expired, a safe reg and runId. */
+function capTicketOk_(t) {
+  const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
+  if (!secret || !t || !/^[A-Z0-9]{1,16}$/.test(String(t.reg || '')) || !/^[A-Za-z0-9_-]{1,64}$/.test(String(t.runId || ''))) return false;
+  if (!(Number(t.exp) > Date.now())) return false;
+  const want = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(t.reg + '|' + t.runId + '|' + t.exp, secret));
+  return want === String(t.sig || '');
+}
+
+/** POST capturerun (see the header). */
+function captureRunView_(body) {
+  const t = body.ticket;
+  if (!capTicketOk_(t)) return { success: false, error: 'Not authorized' };
+  let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
+  capPath_().concat([t.reg, t.runId]).forEach(function (n) { f = f && capSub_(f, n); });
+  const out = f && capSub_(f, 'processed');
+  if (!out) return { success: false, error: 'This run has no processed video yet' };
+  const first = function (name) { const it = out.getFilesByName(name); return it.hasNext() ? it.next() : null; };
+  const send = function (file, mime) { return { success: true, mime: mime, base64: Utilities.base64Encode(file.getBlob().getBytes()) }; };
+  if (body.part === 'video') {
+    const v = first('route-web.mp4'); // never route.mp4: too big to send through here
+    return v ? send(v, 'video/mp4') : { success: false, error: 'The phone copy of this video is not made yet. It is made on the next daily run.' };
+  }
+  if (body.part === 'photo') {
+    const n = Number(body.seq);
+    if (!(n >= 0 && n <= 99999 && n === Math.floor(n))) return { success: false, error: 'Bad stop' };
+    const p = first('stop-' + ('00000' + n).slice(-5) + '.jpg');
+    return p ? send(p, 'image/jpeg') : { success: false, error: 'No photo for this stop' };
+  }
+  if (body.part !== 'path') return { success: false, error: 'Unknown part' };
+  const kept = first('path.json');
+  if (kept) return { success: true, points: JSON.parse(kept.getBlob().getDataAsString()) };
+  const bySeq = {}, files = f.getFiles(); // the run folder's originals; a Drive conflict copy " (1)" stands in only where the original is missing, as in capture.py
+  while (files.hasNext()) {
+    const file = files.next(), m = /^frame-(\d{5})( \(\d+\))?\.jpg$/.exec(file.getName());
+    if (!m || (m[2] && m[1] in bySeq)) continue; // an original found after its copy replaces it
+    let d = null;
+    try { d = JSON.parse(file.getDescription() || 'null'); } catch (e) { d = null; }
+    bySeq[m[1]] = d && isFinite(Number(d.lat)) && isFinite(Number(d.lng)) && d.lat !== '' && d.lng !== '' ? [Number(d.lat), Number(d.lng), Number(d.takenAt) || null] : null;
+  }
+  const points = Object.keys(bySeq).sort().map(function (k) { return bySeq[k]; });
+  if (points.length) out.createFile('path.json', JSON.stringify(points), 'application/json'); // ponytail: two first opens at once may both write it; the first one found is used
+  return { success: true, points: points };
 }
 
 /** POST captureprocessed (see the header): ids of the processed (blurred) files, looked up by path; creates nothing. */

@@ -299,6 +299,29 @@ def pnl(wb, mapping):
     return rows
 
 
+def plan(wb, mapping):
+    """Each bus's planned route from the workbook (the route view's plan beside the actual run): the Routes tab (rounds, km a day)
+    and the Stops tab (stop name, km from school, children at the stop: counts only; Student Data, which names children, is
+    never read here). A route maps to its bus through Transport Mapping. A route with no bus is left out."""
+    routes = {str(r["Route No."] or "").strip(): r for r in sheet(wb, "Routes") if r.get("Route No.")}
+    stops = {}
+    for r in sheet(wb, "Stops"):  # the tab has a second summary table to its right; only its first columns are read
+        route, name = str(r.get("Route No.") or "").strip(), " ".join(str(r.get("Stop Name") or "").split())
+        if route and name:
+            num = lambda v: v if isinstance(v, (int, float)) else ""
+            stops.setdefault(route, []).append({"name": name, "km": num(r.get("Distance")), "children": num(r.get("Students per stop"))})
+    out = []
+    for reg, m in sorted(mapping.items()):
+        route = str(m.get("Route") or "").strip()
+        if not reg or route not in routes and route not in stops:
+            continue
+        rt = routes.get(route, {})
+        num = lambda v: v if isinstance(v, (int, float)) else ""
+        out.append({"reg": reg, "campus": str(m.get("School") or rt.get("School") or "").strip(), "route": route,
+                    "kmDay": num(rt.get("Dist. Per Day")), "rounds": num(rt.get("No. of Routes")), "stops": stops.get(route, [])})
+    return out
+
+
 ROSTER_CACHE = Path(__file__).parent.parent / "drive-index" / "staff_roster_cache.json"  # last good copy of the roster
 ROSTER_TRIES, ROSTER_WAIT, ROSTER_CACHE_DAYS = 3, 4, 7
 
@@ -428,6 +451,30 @@ def selftest():
         subprocess.run = real
     print("export_fleet selftest: 4 checks passed")
     selftest_papers()
+    selftest_plan()
+
+
+def selftest_plan():
+    """plan() on a SYNTHETIC workbook (made-up routes and places: the repo is public)."""
+    class Ws:
+        def __init__(self, rows): self.rows = rows
+        def iter_rows(self, values_only=True): return iter(self.rows)
+    wb = {"Routes": Ws([("Route No.", "School", "No. of Routes", "Dist. Per Day"), ("Route 07", "LMS 9", 2, 40), ("Route 08", "LMS 9", 1, 12)]),
+          "Stops": Ws([("Route No.", "School", "Stop Name", "Distance", "Students per stop", None, "School"),
+                       ("Route 07", "LMS 9", "  Upper   Village ", 1.5, 3, None, None), ("Route 07", "LMS 9", "Lower Village", 4, "#N/A", None, None),
+                       (None, None, None, None, None, None, "LMS 9")])}
+    mapping = {"HP00AA0001": {"Route": "Route 07", "School": "LMS 9"}, "HP00AA0002": {"Route": "", "School": "LMS 9"}}
+    p = plan(wb, mapping)
+    checks = [
+        (len(p) == 1 and p[0]["reg"] == "HP00AA0001", "a bus with no route is left out"),
+        ((p[0]["route"], p[0]["kmDay"], p[0]["rounds"], p[0]["campus"]) == ("Route 07", 40, 2, "LMS 9"), "rounds and km a day from Routes"),
+        ([x["name"] for x in p[0]["stops"]] == ["Upper Village", "Lower Village"], "stop names tidied, in workbook order"),
+        (p[0]["stops"][1]["children"] == "" and p[0]["stops"][0]["children"] == 3, "a broken count is blank, not a guess"),
+        (set(p[0]["stops"][0]) == {"name", "km", "children"}, "counts only: no child is named"),
+    ]
+    for ok, msg in checks:
+        assert ok, msg
+    print(f"plan selftest: {len(checks)} checks passed")
 
 
 def selftest_papers():
@@ -562,7 +609,7 @@ def main():
     if bad:
         print("warning:", bad, file=sys.stderr)
     body = json.dumps({"syncedAt": a.synced_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                       "source": "transport workbook + drive-index/records.db and descriptions + vault overrides note", "warnings": warnings, "pnl": pnl(wb, mapping), "people": people, "seen": seen_ids(), "fleet": fleet}, separators=(",", ":"))
+                       "source": "transport workbook + drive-index/records.db and descriptions + vault overrides note", "warnings": warnings, "pnl": pnl(wb, mapping), "plan": plan(wb, mapping), "people": people, "seen": seen_ids(), "fleet": fleet}, separators=(",", ":"))
     if a.out:
         Path(a.out).write_text(body)
         dest = a.out

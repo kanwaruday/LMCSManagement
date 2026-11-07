@@ -453,4 +453,35 @@ assert.strictEqual(rej({ models: [], vehicles: [], history: [{ chassis: 'C', dat
 assert.strictEqual(rej({ models: [], vehicles: [{ chassis: 'C', warrantyDate: 'soon' }], history: [] }).success, false, 'so must a warranty date');
 assert.strictEqual(rej({ models: [{ model: 'M', parts: { tyre: part({ asOf: 'yesterday' }) } }], vehicles: [], history: [] }).success, false, 'and asOf an ISO stamp');
 assert.deepStrictEqual(J(run('gpsRows_("Parts Catalog")')).filter(r => r.model === 'M'), [], 'a refused payload stores nothing');
+// ── the route view (transportrun): one bus's run, plan and metadata; Owner and Coordinators of its district only; a signed ticket ──
+{
+  ctx.coordVisibleCampuses_ = realVisible;
+  ctx.Utilities.computeHmacSha256Signature = (v, k) => require('crypto').createHmac('sha256', k).update(v).digest();
+  ctx.Utilities.base64EncodeWebSafe = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+  ctx.coordTransportBase_ = () => ({ fleet: [{ reg: 'HP1', campus: 'LMS 4', operational: true, route: 'Route 07', start: 'Village A', seats: 15, driver: 'Driver One' }, { reg: 'HP7', campus: 'LMS 1', operational: true, seats: 41, driver: 'Driver Seven' }] });
+  // the plan arrives with the fleet push (export_fleet.py plan())
+  const fleetPush = { syncedAt: '2026-11-07T00:00:00Z', fleet: Array.from({ length: run('COORD_TRANSPORT_MIN_FLEET') }, (x, i) => ({ reg: 'HPF' + i, campus: 'LMS 4' })), plan: [{ reg: 'HP1', campus: 'LMS 4', route: 'Route 07', kmDay: 40, rounds: 2, stops: [{ name: 'Village A', km: 1.5, children: 3 }, { name: 'Village C', km: 4, children: '' }] }, { reg: 'HP8', route: 'R', stops: [{ name: '=HYPERLINK("x")', km: 'far' }] }] };
+  run('coordTransportPush_(' + JSON.stringify({ secret: 'S', payload: fleetPush }) + ')');
+  assert.deepStrictEqual(J(run('gpsRows_(COORD_TRANSPORT_TAB_PLAN)')).filter(r => r.Reg === 'HP1').map(r => [r.Reg, String(r.Seq), r.Stop, String(r.Children)]), [['HP1', '1', 'Village A', '3'], ['HP1', '2', 'Village C', '']], 'the plan tab: one row per planned stop, children as counts');
+  assert.deepStrictEqual(J(run('gpsRows_(COORD_TRANSPORT_TAB_PLAN)')).filter(r => r.Reg === 'HP8').map(r => [r.Stop, String(r['Km from school'])]), [['HYPERLINK("x")', '']], 'never a formula, never a non-number');
+  run('gpsWrite_(GPS_TAB_CAPTURE, GPS_CAPTURE_COLS, [{runId:"HP1-20261030-150452-rv01", reg:"HP1", campus:"LMS4", videoFileId:"V".repeat(20), stops: JSON.stringify([{seq:5, name:"Village A", lat:31.6, lng:76.9, at:"2026-10-30T09:40:00Z", photoFileId:"P".repeat(20), boardOn:4, boardOff:0}]), pushedAt:"x", capturedBy:"d"}, {runId:"HP1-20261029-150452-old1", reg:"HP1", videoFileId:"W".repeat(20), stops:"[]"}])');
+  book(run('COORD_TRANSPORT_FORM_ID')).getSheetByName('Capture Runs')._rows().push(['HP1-20261030-150452-rv01', 'HP1', 'LMS4', 'timelapse', 1761815092000, 1761818692000, 'driver:L1', 'Driver', 1471, '[]', '[]', '', 'ended', '', 'Driver One']);
+  const tr = (c, reg) => J(run('coordWorldRun_(' + JSON.stringify(c) + ',' + JSON.stringify(reg) + ')'));
+  const o = tr({ email: 'o@x.org', campusId: 'ALL', roles: ['Owner'] }, 'hp-1');
+  assert.deepStrictEqual([o.bus.reg, o.bus.driver, o.run.runId, o.run.frames, o.run.startedAt, o.run.stops[0].boardOn, o.run.stops[0].photo], ['HP1', 'Driver One', 'HP1-20261030-150452-rv01', 1471, 1761815092000, 4, true], 'the Owner: the newest run, its frames, times and boarding counts');
+  assert.ok(!('photoFileId' in o.run.stops[0]), 'no Drive ids: photos come through the ticket');
+  assert.deepStrictEqual([o.plan.length, o.plan[0].name, o.plan[1].children, o.plan[0].kmDay], [2, 'Village A', null, 40], 'and the plan, a broken count as null');
+  assert.deepStrictEqual([o.ticket.reg, o.ticket.runId], ['HP1', 'HP1-20261030-150452-rv01']);
+  assert.ok(o.ticket.exp > Date.now() && o.ticket.exp <= Date.now() + 30 * 60000, 'a ticket for 30 minutes');
+  assert.strictEqual(o.ticket.sig, ctx.Utilities.base64EncodeWebSafe(ctx.Utilities.computeHmacSha256Signature('HP1|HP1-20261030-150452-rv01|' + o.ticket.exp, 'S')), 'signed as the Roster checks it (capTicketOk_)');
+  assert.strictEqual(tr({ email: 'c@x.org', campusId: 'LMS5', roles: ['Coordinator'] }, 'HP1').bus.reg, 'HP1', 'a Coordinator of the district');
+  assert.strictEqual(tr({ email: 'c@x.org', campusId: 'LMS2', roles: ['Coordinator'] }, 'HP1').error, 'No such bus in your schools', 'another district: refused');
+  assert.strictEqual(tr({ email: 'c@x.org', campusId: 'LMS2', roles: ['Coordinator'] }, 'HP99').error, 'No such bus in your schools', 'an unknown bus reads the same');
+  assert.strictEqual(tr({ email: 'k@x.org', campusId: 'LMS4', roles: ['FeeClerk'], feeClerkOnly: true }, 'HP1').error, 'Not authorized', 'never a Fee Clerk');
+  assert.strictEqual(tr({ email: 'p@x.org', campusId: 'LMS4', principal: true }, 'HP1').error, 'Not authorized', 'never a Principal');
+  assert.strictEqual(tr(null, 'HP1').error, 'Not authorized');
+  const none = tr({ email: 'o@x.org', campusId: 'ALL', roles: ['Owner'] }, 'HP7');
+  assert.deepStrictEqual([none.run, 'ticket' in none, none.plan], [null, false, []], 'a bus with no processed run: no run, no ticket');
+  ctx.coordVisibleCampuses_ = stubVisible;
+}
 console.log('transport gps: all checks passed');
