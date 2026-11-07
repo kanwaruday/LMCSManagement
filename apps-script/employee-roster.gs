@@ -186,8 +186,11 @@ function empSubjectLabel(code) {
 const STAFF_ACTIONS_ = ['nextcode', 'list', 'detail', 'addnewhire', 'starthire', 'joinhire', 'transfer', 'markinactive', 'documentstatus', 'uploadstatus', 'verificationqueue', 'reassigncertificate', 'autoresolvequeue', 'salaryfullrecord', 'installjobrolesync', 'bumpincrement', 'docrules', 'savedocrules'];
 const ALLOWLIST_ACTIONS_ = ['allowlist_list', 'allowlist_add', 'allowlist_edit', 'allowlist_delete'];
 
+// a supporting Principal's switch (supporting-charge.gs, auth.js actAs): these reads still answer; every other action is a write and is refused
+const ROSTER_SUPPORT_READS_ = ['roster', 'employees', 'designations', 'drivecheck', 'allowlist_list', 'nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus', 'verificationqueue', 'salaryfullrecord', 'docrules'];
 function doGet(e) {
   const action = (e.parameter.action || 'roster').toLowerCase();
+  if (e.parameter.actAs && ROSTER_SUPPORT_READS_.indexOf(action) === -1) return jsonOut(SUPPORT_READ_ONLY);
   if (STAFF_ACTIONS_.indexOf(action) !== -1) return staffDoGet_(e);
   if (ALLOWLIST_ACTIONS_.indexOf(action) !== -1) return allowlistDoGet_(e);
   try {
@@ -206,6 +209,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
+    if (body && body.actAs !== undefined && body.actAs !== null && body.actAs !== '') return staffJsonOut_(SUPPORT_READ_ONLY); // a supporting Principal's switch: no writes here
     if (body.action === 'uploaddocument') return staffJsonOut_(sdocUpload_(body));
     if (body.action === 'transportupload') return staffJsonOut_(tupUpload_(body)); // transport-uploads.gs
     if (body.action === 'driverfilllist') return staffJsonOut_(driverFillList_(body)); // driver-fill-confirm.gs: the Fee Clerk's check

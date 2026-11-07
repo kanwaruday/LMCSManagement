@@ -8,12 +8,18 @@
 
 var officeClock_ = null; // tests set a Date here (see officeNow_)
 
+// a supporting Principal's switch (assets/auth.js actAs, supporting-charge.gs): not for this backend, refused before anything runs
+function officeActAsRefused_(actAs) { return actAs !== undefined && actAs !== null && actAs !== ''; }
+var OFFICE_SUPPORT_READ_ONLY = { success: false, code: 'SUPPORT_READ_ONLY', error: "You're supporting another school: this page is read-only there." };
 function doGet(e) {
+  if (officeActAsRefused_(e.parameter.actAs)) return ContentService.createTextOutput(JSON.stringify(OFFICE_SUPPORT_READ_ONLY)).setMimeType(ContentService.MimeType.JSON);
   return officeHandle_(e.parameter.action, e.parameter.idToken, e.parameter.data || {});
 }
 
 // Writes are POST with a text/plain JSON body (no CORS preflight).
 function doPost(e) {
+  let b = null; try { b = JSON.parse((e.postData && e.postData.contents) || '{}'); } catch (err) { b = null; }
+  if (b && officeActAsRefused_(b.actAs)) return ContentService.createTextOutput(JSON.stringify(OFFICE_SUPPORT_READ_ONLY)).setMimeType(ContentService.MimeType.JSON);
   return officeHandle_(null, null, null, (e.postData && e.postData.contents) || '{}');
 }
 

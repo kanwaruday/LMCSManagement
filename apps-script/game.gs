@@ -264,6 +264,7 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents), action = String(body.action || '').toLowerCase();
     // viewing a school as its Principal is GET only: a write never runs as anyone but the verified caller
     if (body && body.asCampus !== undefined && body.asCampus !== null && body.asCampus !== '') { console.warn('POST refused: GAME_VIEW_READ_ONLY'); return gameJson_(GAME_VIEW_READ_ONLY); }
+    if (body && body.actAs !== undefined && body.actAs !== null && body.actAs !== '') return gameJson_(SUPPORT_READ_ONLY); // a supporting Principal's switch: game reads only (supporting-charge.gs)
     // The Mac's nightly activity check (tools/teacher_activity_match.py) has no Google token: exactly these two actions are gated by the shared secret
     // GAME_PUSH_SECRET instead (checked inside each), as the Coordinator backend does for transportpush. Every other action needs a verified caller.
     if (action === 'teachermatchpull') return gameJson_(tchMatchPull_(body));

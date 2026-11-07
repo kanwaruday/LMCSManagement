@@ -586,7 +586,7 @@ window.LMCS = (function () {
     bar.appendChild(document.createTextNode('Supporting ' + campusLabel(s.actAs) + ': you can read and advise. Decisions stay with its Principal. '));
     const back = document.createElement('button');
     back.type = 'button'; back.textContent = 'Back to ' + campusLabel(s.homeCampusId);
-    back.style.cssText = 'margin-left:8px;min-height:36px;background:#fff;color:#7a5200;border:none;border-radius:6px;padding:4px 12px;font:700 13px/1 system-ui,sans-serif;cursor:pointer;';
+    back.style.cssText = 'margin-left:8px;min-height:44px;background:#fff;color:#7a5200;border:none;border-radius:6px;padding:4px 12px;font:700 13px/1 system-ui,sans-serif;cursor:pointer;';
     back.onclick = function () { supportSwitch(null); };
     bar.appendChild(back);
     document.body.insertBefore(bar, document.body.firstChild);

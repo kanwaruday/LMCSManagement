@@ -172,6 +172,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
+    if (body && body.actAs !== undefined && body.actAs !== null && body.actAs !== '') return coordJson_(SUPPORT_READ_ONLY); // a supporting Principal's switch: read only here (supporting-charge.gs)
     // the drive-index sync on Uday's Mac pushes transport data here with a shared secret, not a Google ID token
     if (String(body.action || '').toLowerCase() === 'transportpush') return coordJson_(coordTransportPush_(body));
     if (String(body.action || '').toLowerCase() === 'driverbus') return coordJson_(coordDriverBus_(body)); // a linked driver phone, deviceToken (coordinator-driverbus.gs)

@@ -143,13 +143,17 @@ const PAY_STEPS = ['staff', 'leave', 'adjustments', 'holds', 'review'];
 
 const PAY_READ_ACTIONS_ = ['month', 'draft', 'accounts', 'fnfpreview', 'outputs'];
 
+// a supporting Principal's switch (assets/auth.js actAs, supporting-charge.gs): not for this backend, refused before anything runs
+var PAY_SUPPORT_READ_ONLY = { success: false, code: 'SUPPORT_READ_ONLY', error: "You're supporting another school: this page is read-only there." };
 function doGet(e) {
+  if (e.parameter.actAs) return ContentService.createTextOutput(JSON.stringify(PAY_SUPPORT_READ_ONLY)).setMimeType(ContentService.MimeType.JSON);
   return payHandle_(e.parameter.action, e.parameter.idToken, e.parameter.data ? JSON.parse(e.parameter.data) : {});
 }
 
 // Writes come as POST -- a month of inputs is too long for a URL.
 function doPost(e) {
   const body = JSON.parse((e.postData && e.postData.contents) || '{}');
+  if (body && body.actAs !== undefined && body.actAs !== null && body.actAs !== '') return ContentService.createTextOutput(JSON.stringify(PAY_SUPPORT_READ_ONLY)).setMimeType(ContentService.MimeType.JSON);
   return payHandle_(body.action, body.idToken, body.data || {});
 }
 

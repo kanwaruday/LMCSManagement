@@ -433,13 +433,13 @@ test('support in the game backend: a read at a supported school; outside the Sup
   // doGet only: the one line sits before view-as and dispatch; doPost never calls it
   const g = fs.readFileSync(dir + 'game.gs', 'utf8'), get = g.slice(g.indexOf('function doGet'), g.indexOf('function doPost')), post = g.slice(g.indexOf('function doPost'));
   assert.ok(/if \(e\.parameter\.actAs\) caller = gameActAs_\(caller, e\.parameter\.actAs\);/.test(get) && get.indexOf('gameActAs_') < get.indexOf('gameDispatch_'));
-  assert.ok(!/gameActAs_|actAs/.test(post.slice(0, post.indexOf('\nfunction '))), 'never on POST');
-  // a game write aimed at the supported school: the caller stays at LMS4, so the rooms save is refused
+  assert.ok(!/gameActAs_/.test(post.slice(0, post.indexOf('\nfunction '))), 'never on POST: a POST with actAs is refused instead (tests/apps-script/test-support-writes.js)');
+  // a game write aimed at the supported school: refused before any handler (G2: fail closed), even before the caller check
   const saved = ctx.gameVerifyCaller_;
   ctx.gameVerifyCaller_ = () => J(P4);
   try {
     const r = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ action: 'roomssave', idToken: 't', actAs: 'LMS3', campus: 'LMS3', rooms: [{ name: 'Lab', type: 'lab', staff: '' }] }) } }).body);
-    assert.deepStrictEqual([r.success, r.code], [false, 'ROOMS_NO_RIGHT'], JSON.stringify(r));
+    assert.deepStrictEqual([r.success, r.code], [false, 'SUPPORT_READ_ONLY'], JSON.stringify(r));
   } finally { ctx.gameVerifyCaller_ = saved; }
 });
 

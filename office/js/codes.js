@@ -23,6 +23,7 @@ export const CODES = {
   TOO_LARGE: 'The file is too large. Take a smaller photo (a fuel fill video can be up to 25 MB: ask the driver for a shorter one).',
   INSUFFICIENT_CASH: 'The day book does not show this much cash yet. Record the collection first, then try again.',
   OPENING_LOCKED: 'Opening balances are locked because day book entries already exist.',
+  SUPPORT_READ_ONLY: "You're supporting another school, so this page can't save anything. Switch back to your own school first.",
   NO_BALANCES: 'No opening balances were sent. Enter the amounts and try again.',
   FORBIDDEN_CAMPUS: 'You do not have access to this campus.',
   FORBIDDEN_ROLE: 'Your role is not allowed to do this.',
