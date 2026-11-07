@@ -3,7 +3,7 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert'), path =
 const ctx = { window: {}, document: { currentScript: null }, location: { href: 'http://x/' }, URL, Math, Date, JSON, String, Number, Object, Array, isFinite };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../../coordinator/route-map.js'), 'utf8'), ctx);
-const { runFacts } = ctx.window.LMCSRouteMap;
+const { runFacts, streetView } = ctx.window.LMCSRouteMap;
 const J = (x) => JSON.parse(JSON.stringify(x));
 
 // three frames 1 km apart going north (0.009 deg of latitude ~ 1 km), the middle one with no position on record
@@ -33,4 +33,14 @@ assert.strictEqual(lines.length, 2, 'two onRun lines: a driver phone and a signe
 lines.forEach((l) => assert.ok(l.indexOf('//') === -1 && /state\.onRun = \(reg\) => run\(/.test(l), 'onRun is code, not a comment'));
 assert.ok(/opts\.driverToken && opts\.coordUrl/.test(lines[0]) && /deviceToken: opts\.driverToken/.test(lines[0]), 'a driver phone asks the Coordinator with its device token');
 assert.ok(/\n\s*TransportViews\.render\(el, d, opts\.mode, state\);\n\s*\} catch/.test(src), 'the map is drawn for every caller');
+// Street View: the keyless link, coordinates and heading only (north = 0, east = 90), the last known place for a frame with no position
+const SV = 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=';
+assert.strictEqual(streetView(pts, 0), SV + '31.000000,77.000000&heading=0', 'going north: heading 0');
+assert.strictEqual(streetView(pts, 1), SV + '31.000000,77.000000&heading=0', 'a frame with no position: the last known place');
+assert.strictEqual(streetView(pts, 3), SV + '31.027000,77.000000&heading=0', 'the last frame: the heading it arrived with');
+assert.strictEqual(streetView([[31, 77, 0], [31, 77.01, 1]], 0), SV + '31.000000,77.000000&heading=90', 'going east: heading 90');
+assert.strictEqual(streetView([[31, 77, 0], [31, 77, 1]], 0), SV + '31.000000,77.000000&heading=0', 'a bus that has not moved: heading 0');
+assert.strictEqual(streetView([null, null], 1), '', 'no position at all: no link');
+assert.ok(!/key=|student|name/i.test(streetView(pts, 2)), 'no key, nothing but the place');
+
 console.log('route run: all checks passed');

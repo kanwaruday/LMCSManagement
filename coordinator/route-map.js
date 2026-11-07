@@ -101,6 +101,27 @@ window.LMCSRouteMap = (function () {
     return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(h)));
   }
   const key = (n) => String(n || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  function bearing(a, b) { // degrees clockwise from north, a -> b
+    const r = Math.PI / 180, y = Math.sin((b[1] - a[1]) * r) * Math.cos(b[0] * r);
+    const x = Math.cos(a[0] * r) * Math.sin(b[0] * r) - Math.sin(a[0] * r) * Math.cos(b[0] * r) * Math.cos((b[1] - a[1]) * r);
+    return (Math.atan2(y, x) / r + 360) % 360;
+  }
+  /** Google Street View where the bus is at frame i (Uday, 7 Nov: free, no key: the keyless api=1 link opens a new tab or the Maps app).
+   *  Only the coordinates and the heading leave the page. points as runFacts; a frame with no position uses the last known one; the
+   *  heading points to the next place the bus moved to (over 5 m), else from where it came; '' with no position. */
+  function streetView(points, i) {
+    const pts = points || [];
+    let j = Math.max(0, Math.min(pts.length - 1, i));
+    while (j > 0 && !pts[j]) j--;
+    const p = pts[j];
+    if (!p) return '';
+    const far = (q) => q && metres(p, q) > 5;
+    let k = j + 1, a = p, b;
+    while (k < pts.length && !far(pts[k])) k++;
+    b = pts[k];
+    if (!b) { k = j - 1; while (k >= 0 && !far(pts[k])) k--; a = pts[k]; b = p; }
+    return 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + Number(p[0]).toFixed(6) + ',' + Number(p[1]).toFixed(6) + '&heading=' + (a && b ? Math.round(bearing(a, b)) % 360 : 0);
+  }
   /** The view's facts, pure (tests/transport/test-route-run.js). run {startedAt, endedAt, frames, stops:[{seq, name, lat, lng, at, boardOn, boardOff}]},
    *  points [[lat, lng, takenAt] | null] (one per video frame), plan [{name, km, children, kmDay, rounds}] -> {km, boardOn, boardOff, chapters, planned, diffs} */
   function runFacts(run, points, plan) {
@@ -158,6 +179,7 @@ window.LMCSRouteMap = (function () {
         (x.startedAt ? day(x.startedAt) + ', ' + hm(x.startedAt) : esc(x.runId)) + ' · ' + x.frames + ' frames</option>').join('') + '</select></label>' : '') +
       (rn ? '<p class="note">' + esc(b.campus) + (b.driver ? ' · Driver ' + esc(b.driver) : '') + (rn.startedAt ? ' · ' + day(rn.startedAt) + ', ' + hm(rn.startedAt) + (rn.endedAt ? '–' + hm(rn.endedAt) : '') : '') + '</p>' : '<p class="status">No route video recorded for this bus yet. The plan is below.</p>') +
       (rn ? '<section class="rr-run" aria-label="The run"><h4>The run</h4><div class="rr-media"><div class="rr-vid"><p class="status">Loading the video…</p></div><div class="rr-map" role="region" aria-label="Map of the run"></div></div>' +
+        '<a class="gb-btn rr-sv" target="_blank" rel="noopener" style="margin-top:8px" hidden>Open in Street View ↗</a>' +
         (f.chapters.length ? '<ol class="rr-chapters">' + f.chapters.map((c, i) => '<li><button type="button" data-ch="' + i + '"' + (c.frame < 0 ? ' disabled' : '') + '><b>' + (i + 1) + '</b> ' + esc(c.name || 'Stop ' + (i + 1)) + (c.at && isFinite(Date.parse(c.at)) ? ' · ' + hm(Date.parse(c.at)) : '') + (c.boardOn || c.boardOff ? ' · ' + c.boardOn + ' on, ' + c.boardOff + ' off' : '') + '</button></li>').join('') + '</ol>' : '<p class="note">No stops were marked on this run.</p>') +
         '</section>' : '') +
       '<section aria-label="Plan and run"><h4>Plan and run</h4>' +
@@ -186,20 +208,31 @@ window.LMCSRouteMap = (function () {
     f.chapters.forEach((c, i) => { if (c.ll) L.circleMarker(c.ll, { radius: 6, color: '#fff', weight: 2, fillColor: '#00798c', fillOpacity: 1 }).addTo(map).bindTooltip(String(i + 1)); });
     if (ll.length) map.fitBounds(whole.getBounds(), { padding: [16, 16] }); else map.setView([31.85, 77.15], 9);
     if (!ll.length) el.querySelector('.rr-map').insertAdjacentHTML('afterend', '<p class="note">' + esc(pathR && pathR.error ? pathR.error : 'This run has no GPS points on record.') + '</p>');
+    const sv = el.querySelector('.rr-sv');
     const show = (i) => {
       let j = Math.max(0, Math.min(points.length - 1, i));
       while (j > 0 && !points[j]) j--; // a frame with no position: the last known one
       if (!points[j] || !here) return;
       here.setLatLng([points[j][0], points[j][1]]);
       done.setLatLngs(points.slice(0, j + 1).filter(Boolean).map((p) => [p[0], p[1]]));
+      sv.href = streetView(points, j); sv.hidden = false;
     };
+    let video = null;
+    whole.on('click', (e) => { // any point on the path: the bus's nearest frame (and the video there, once loaded)
+      let best = 0, bd = Infinity;
+      points.forEach((p, i) => { if (!p) return; const d = metres([e.latlng.lat, e.latlng.lng], p); if (d < bd) { bd = d; best = i; } });
+      if (video) video.currentTime = (best + 0.5) / FPS;
+      show(best);
+    });
+    if (ll.length) show(0);
     // the video: the BLURRED phone copy, as a blob held only while the view is open
     const vid = el.querySelector('.rr-vid');
     roster('video').then((v) => {
       if (!v.success) { vid.innerHTML = '<p class="status">' + esc(v.error || 'Could not load the video.') + '</p>'; return; }
       const bin = atob(v.base64), bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const url = URL.createObjectURL(new Blob([bytes], { type: v.mime })), video = document.createElement('video');
+      const url = URL.createObjectURL(new Blob([bytes], { type: v.mime }));
+      video = document.createElement('video');
       video.src = url; video.controls = true; video.muted = true; video.playsInline = true; video.preload = 'auto';
       video.setAttribute('aria-label', 'Route video, faces and number plates blurred');
       vid.textContent = ''; vid.appendChild(video);
@@ -223,5 +256,5 @@ window.LMCSRouteMap = (function () {
     if (!btn) { btn = document.createElement('button'); btn.type = 'button'; btn.className = 'gb-btn'; btn.textContent = '‹ All routes'; el.appendChild(btn); }
     btn.addEventListener('click', () => { if (el._rrFree) el._rrFree(); el._rrFree = null; o.back(); });
   }
-  return { mount, run, runFacts };
+  return { mount, run, runFacts, streetView };
 })();
