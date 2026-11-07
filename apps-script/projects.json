@@ -149,6 +149,7 @@
       "acad-episodes",
       "game-bus-chain",
       "game-workplace",
+      "game-hq-photos",
       "../coordinator/capture/fleet-quests.js",
       "../coordinator/transport-rank.js",
       "game-erp",

@@ -28,6 +28,7 @@ const NO_SOURCES = {
   'owner/index.html': 'HQ Home: tiles from the game backend (gamekingdom counts) and the appointment box (PDR data, whose sources are linked on hiring/); Owner Part A adds a strip',
   'principal/rooms.html': 'room setup: the Game Rooms tab through the game backend (roomsget / roomssave), no sheet links',
   'owner/event-design.html': "Owner quest 'Design the event quests': the Events Director's proposals (data/event-proposals.json, from the vault) and decisions through the game backend (eventdesign / eventdesigndecide), no sheet links",
+  'hq-photos/index.html': "the HQ photos quest: its holder's own photos and pin through the game backend (hqphotosget / hqphotossave), no sheet links",
   'owner/people.html': 'the People room: the Coordinator rows of the allowlist through the game backend (peoplelist / peoplecoordinator), no sheet links',
   'lm-monitor/dashboard.html': 'local LM Studio monitor, not part of the portal data',
   'lmcs-last-2-months.html': 'static summary page',

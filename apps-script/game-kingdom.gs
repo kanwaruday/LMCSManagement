@@ -209,11 +209,11 @@ function questGateHookKeep_(keep, fn, quest) {
 // (a role that works at one school holds it); network: one HQ row (a network-wide role holds it). end: an event's last day, else ''.
 function kingdomGateFamilies_(cfg) {
   const out = [];
-  const add = function (id, title, roles, go, end) {
+  const add = function (id, title, roles, go, end, netOnly) { // netOnly: one HQ row only, whoever of these roles is picked (a hook's networkOnly)
     roles = roles.filter(function (r) { return r !== 'Owner'; });
     if (!roles.length) return;
     const net = roles.filter(function (r) { return QUEST_GATE_NETWORK_ROLES.indexOf(r) !== -1; }).length;
-    out.push({ id: id, title: title, roles: roles, campus: net < roles.length, network: net > 0, go: go || QUEST_GATE_HOME[roles[0]] || '', end: end || '' });
+    out.push({ id: id, title: title, roles: roles, campus: !netOnly && net < roles.length, network: !!netOnly || net > 0, go: go || QUEST_GATE_HOME[roles[0]] || '', end: end || '' });
   };
   eventList_(cfg).forEach(function (ev) {
     const roles = Object.keys(ev.steps).filter(function (r) { return Array.isArray(ev.steps[r]) && ev.steps[r].length; }), st = ev.story;
@@ -225,7 +225,7 @@ function kingdomGateFamilies_(cfg) {
     const id = String(r[0]).trim(), role = String(r[1]).trim();
     if (id && role) add('gq:' + id, String(r[2] || id), [role], '', '');
   });
-  Object.keys(QUEST_GATE_HOOKS).forEach(function (k) { const f = QUEST_GATE_HOOKS[k]; add(f.id, f.title, f.roles.slice(), '', ''); });
+  Object.keys(QUEST_GATE_HOOKS).forEach(function (k) { const f = QUEST_GATE_HOOKS[k]; add(f.id, f.title, f.roles.slice(), f.go || '', '', f.networkOnly === true); });
   return out;
 }
 // 'All teachers at LMS 3' / 'All coordinators'
