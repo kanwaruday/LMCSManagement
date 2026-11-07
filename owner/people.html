@@ -154,16 +154,17 @@
     // a Principal: the school only (the same select as a Coordinator's, starting on "Choose a school" when the sheet holds something else)
     function editPrincipal(p, opener) {
       const s = sheet('Change ' + (p.name || p.email) + "'s school", [], opener);
-      const known = DATA.campuses.indexOf(p.campus) !== -1;
+      const schools = DATA.campuses.filter(function (c) { return c !== 'ALL'; }); // one school: a network-wide Principal is a sheet edit
+      const known = schools.indexOf(p.campus) !== -1;
       const campus = h('select', { id: 'pp-pcampus', class: 'gb-input' }, [known ? null : h('option', { value: '', selected: true }, ['Choose a school'])].concat(
-        DATA.campuses.map(function (c) { return h('option', { value: c, selected: known && p.campus === c ? true : null }, [place(c)]); })));
+        schools.map(function (c) { return h('option', { value: c, selected: known && p.campus === c ? true : null }, [place(c)]); })));
       const err = h('p', { class: 'gb-field-err', role: 'alert' }, []);
       const next = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Next']);
       s.dlg.appendChild(h('div', {}, [h('div', { class: 'gb-field' }, [h('label', { for: 'pp-pcampus' }, ['School']), campus]), err,
         h('div', { class: 'pp-acts' }, [next, h('button', { type: 'button', class: 'gb-btn', onclick: s.close }, ['Cancel'])])]));
       campus.focus();
       next.onclick = function () {
-        if (DATA.campuses.indexOf(campus.value) === -1) { err.textContent = 'Choose a school.'; campus.focus(); return; }
+        if (schools.indexOf(campus.value) === -1) { err.textContent = 'Choose a school.'; campus.focus(); return; }
         confirmStep(s, 'Make ' + (p.name || p.email) + ' the Principal for ' + place(campus.value) + '? Their roles stay the same.', { email: p.email, campus: campus.value }, 'peopleprincipal');
       };
     }

@@ -9,7 +9,7 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //   peoplecoordinator  POST only (doPost in game.gs; never in GAME_MODULE_ACTIONS): add a Coordinator, change one's campus and
 //                      functions, or remove one. Owner + kingdomCan_(caller, 'allocate'); the same order as the Kingdom's writes:
 //                      inputs checked, audit `requested`, the write under the game lock, audit `done`; refusals audited too.
-//   peopleprincipal    POST only: change a Principal's campus (any row holding Principal, also with other roles), same rights and order.
+//   peopleprincipal    POST only: change a Principal's campus to one school (never ALL) (any row holding Principal, also with other roles), same rights and order.
 //                      It writes the Campus cell of that row only: roles, name and functions stay. Never a row holding Owner.
 // What peoplecoordinator may touch, and nothing else: the Coordinator role, that row's campus and its functions from PEOPLE_FUNCTIONS (any other
 // function already in the cell is kept). It never edits or removes a row holding Owner, never grants Owner, and leaves a row that holds
@@ -133,7 +133,7 @@ function peopleCoordinator_(caller, body) {
   }
 }
 
-// POST {email, campus: 'ALL'|'LMS1'..'LMS6'} -> {success, principal: {email, name, campus, roles, editable} , unchanged?}
+// POST {email, campus: 'LMS1'..'LMS6'} -> {success, principal: {email, name, campus, roles, editable} , unchanged?}
 function peoplePrincipal_(caller, body) {
   try {
     const noRight = function (why) {
@@ -152,7 +152,8 @@ function peoplePrincipal_(caller, body) {
     };
     const refuse = function (code) { kingdomAuditRefusal_(row('done', 'refused', code)); return peopleFail_(code); };
     if (!PEOPLE_EMAIL.test(email) || email.length > 254) return refuse('PEOPLE_BAD_EMAIL');
-    if (PEOPLE_CAMPUSES.indexOf(campus) === -1) return refuse('KINGDOM_BAD_INPUT');
+    // one school only: ALL would make a Principal network-wide (auth.js: every school's staff, the Coordinator portal). That stays a sheet edit.
+    if (campus === 'ALL' || PEOPLE_CAMPUSES.indexOf(campus) === -1) return refuse('KINGDOM_BAD_INPUT');
     return kingdomLocked_(function () {
       kingdomAudit_(row('requested', '', ''), true);
       const refuseHeld = function (code) { kingdomAudit_(row('done', 'refused', code), true); return peopleFail_(code); };

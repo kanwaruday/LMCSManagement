@@ -278,6 +278,8 @@ test('principal: refusals (not the Owner, not a Principal, Owner row, bad input,
   assert.strictEqual(princ(OWN, { email: 'c1@example.org', campus: 'LMS1' }).code, 'PEOPLE_NOT_PRINCIPAL');
   assert.strictEqual(princ(OWN, { email: 'nobody@example.org', campus: 'LMS1' }).code, 'PEOPLE_NOT_PRINCIPAL');
   assert.strictEqual(princ(OWN, { email: 'p4@example.org', campus: 'LMS9' }).code, 'KINGDOM_BAD_INPUT');
+  assert.strictEqual(princ(OWN, { email: 'p4@example.org', campus: 'all' }).code, 'KINGDOM_BAD_INPUT', 'never network-wide (ALL)');
+  assert.ok(audit().some((x) => col(x, 'Action') === 'people_principal' && col(x, 'Code') === 'KINGDOM_BAD_INPUT' && col(x, 'Campus') === 'ALL'), 'ALL refusal audited');
   assert.strictEqual(princ(OWN, { email: 'not-an-email', campus: 'LMS1' }).code, 'PEOPLE_BAD_EMAIL');
   assert.strictEqual(princ(OWN, { email: 'p4@example.org', campus: ['LMS1'] }).code, 'KINGDOM_BAD_INPUT');
   A.push(['op@example.org', 'Owner Princ', 'ALL', 'Owner, Principal', '', '']);
@@ -300,6 +302,7 @@ test('principal: POST dispatch only; the page posts it behind Confirm', () => {
   assert.ok(/if \(action === 'peopleprincipal'\) return gameJson_\(peoplePrincipal_\(caller, body\)\);/.test(g) && !('peopleprincipal' in ctx.GAME_MODULE_ACTIONS));
   const pp = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
   assert.ok(/\{ email: p\.email, campus: campus\.value \}, 'peopleprincipal'\)/.test(pp) && /id="pp-plist"/.test(pp));
+  assert.ok(/const schools = DATA\.campuses\.filter\(function \(c\) \{ return c !== 'ALL'; \}\)/.test(pp) && /schools\.map\(/.test(pp), 'the Principal select offers one school only, no All schools');
 });
 // the proof that a People edit reaches sign-in within ~10 min: sign-in (auth.js) reads allowlist_list from principal-allowlist.gs, which
 // reads this same sheet's Campus column through a 600 s cache. Same rows, cache older than 10 min -> the new campus.
