@@ -15,6 +15,9 @@ var LMCSHqPhotos = (function () {
     return isFinite(lat) && isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat: lat, lng: lng } : null;
   }
   function em(k) { return window.LMCSEmoji ? LMCSEmoji.get(k) + ' ' : ''; } // the shared emoji map (assets/game/emoji.js)
+  // the HQ pin already on record (assets/game/places.js, Uday's own Google Maps pin): offered to confirm or correct (Uday: "wherever we have
+  // existing data, it should just confirm that from the actual staff")
+  function knownPin() { var h = window.LMCSPlaces && LMCSPlaces.HES; return h && typeof h.lat === 'number' && typeof h.lng === 'number' && inArea(h) ? { lat: h.lat, lng: h.lng } : null; }
   function inArea(p) { return !!p && p.lat >= 31 && p.lat <= 33 && p.lng >= 75.5 && p.lng <= 78; } // the server checks the same box
 
   function el(tag, attrs, kids) {
@@ -92,11 +95,15 @@ var LMCSHqPhotos = (function () {
           d.sent ? null : el('label', { class: 'gb-btn hq-take' }, [s.taken ? 'Take it again' : em('photo') + 'Take the photo', input])]);
       }));
       root.appendChild(list);
+      var known = knownPin();
       var pinIn = el('input', { type: 'text', class: 'gb-input', id: 'hq-pin', inputmode: 'url', autocomplete: 'off', placeholder: 'A Google Maps link, or latitude, longitude', value: S.pinText, disabled: locked,
         on: { input: function () { S.pinText = pinIn.value; } } });
       root.appendChild(el('section', { class: 'hq-pinbox', 'aria-labelledby': 'hq-pinh' }, [
         el('h2', { id: 'hq-pinh', text: em('realMap') + (d.pin ? 'Pinned' : 'Pin LMCS HQ') }),
         d.pin ? el('p', {}, [String(d.pin.lat) + ', ' + String(d.pin.lng) + ' · ', el('a', { href: 'https://www.google.com/maps?q=' + d.pin.lat + ',' + d.pin.lng, target: '_blank', rel: 'noopener', text: 'check it on Google Maps' })]) : null,
+        !d.pin && !d.sent && known ? el('div', { class: 'hq-known' }, [el('p', {}, ['We have LMCS HQ here: ', el('a', { href: 'https://www.google.com/maps?q=' + known.lat + ',' + known.lng, target: '_blank', rel: 'noopener', text: 'see it on Google Maps' }), '. Is that right?']),
+          el('button', { type: 'button', class: 'gb-btn', disabled: locked, text: 'Yes, that is LMCS HQ', on: { click: function () { setPin(known); } } }),
+          el('p', { class: 'gb-muted', text: 'If it is wrong, use your location or paste the right place below.' })]) : null,
         d.sent ? null : el('div', { class: 'hq-row' }, [el('button', { type: 'button', class: 'gb-btn', disabled: locked, text: 'Use my location (stand at HQ)', on: { click: here } })]),
         d.sent ? null : el('div', { class: 'gb-field' }, [el('label', { for: 'hq-pin', text: 'Or paste where it is' }), pinIn,
           el('button', { type: 'button', class: 'gb-btn', disabled: locked, text: 'Set the pin', on: { click: function () { setPin(parsePin(pinIn.value)); } } })])]));
