@@ -227,7 +227,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, fnLabels: fnLabels, progressOf: progressOf, progressText: progressText,
     nextTier: nextTier, onlySoon: onlySoon, nextAction: nextAction, nextText: nextText, levelSnapshot: levelSnapshot, levelUps: levelUps, levelUpText: levelUpText,
     editKind: editKind, setupValueText: setupValueText, setupVerb: setupVerb, dayLabel: dayLabel,
-    hooks: { tier: null, base: null, after: null } };
+    hooks: { tier: null, base: null, after: null, townhall: null } };
   if (typeof document === 'undefined') return api; // tests: the helpers only
 
   // ═══ UI ═══════════════════════════════════════════════════════════
@@ -509,7 +509,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     if ((d.sourcesDown || []).length) S.el.appendChild(h('p', { class: 'kg-quiet kg-down', role: 'status' }, ["Some buildings couldn't be checked just now, so their steps show as “couldn't check”. Nothing is lost; try again in a few minutes."]));
     var cele = celebrate(d); if (cele) S.el.appendChild(cele);
     if (S.next) { S.next.textContent = ''; S.next.appendChild(nextCard(d, a)); } else S.el.appendChild(nextCard(d, a));
-    if (bases.length) { S.el.appendChild(box); S.el.appendChild(baseList(bases, nextId)); }
+    if (bases.length) { if (!S.noValley) { S.el.appendChild(box); S.el.appendChild(baseList(bases, nextId)); } } // noValley: the page draws the bases on its own map
     else S.el.appendChild(h('p', { class: 'kg-quiet' }, ['No schools to show yet. They appear here once the game settings list them.']));
     if (heads.length) {
       var hs = h('div', { class: 'kg-heads' }, heads.map(headButton));
@@ -548,7 +548,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function mount(el, opts) {
     opts = opts || {};
     S.el = el; S.session = opts.session; S.url = opts.backendUrl || ''; S.root = opts.root || ''; S.data = null;
-    S.panels = opts.panels || null; S.next = opts.next || null;
+    S.panels = opts.panels || null; S.next = opts.next || null; S.noValley = !!opts.noValley;
     if (!S.url) { el.textContent = ''; el.appendChild(message(LOAD_ERR, false)); return Promise.resolve(); }
     gdLoad(); thLoad();
     clearInterval(GD.timer);
@@ -577,6 +577,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     openLayer('Townhall', 'The services you can use', [rooms.length ? h('ul', { class: 'kg-th-list' }, rooms.map(thDoor)) : h('p', { class: 'kg-quiet' }, ['No doors for you here yet.'])], opener);
   }
   function thDraw() {
+    if (api.hooks.townhall) api.hooks.townhall(TH.data); // a page with its own map draws the Townhall there
     var bases = S.el && S.el.querySelector('.kg-bases'), list = S.el && S.el.querySelector('.kg-blist');
     [].forEach.call(S.el ? S.el.querySelectorAll('.kg-townhall, .kg-th-li') : [], function (n) { n.remove(); });
     if (!bases || !TH.data) return;
@@ -1000,7 +1001,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   }
   api.mountHome = mountHome;
   api.mount = mount; api.refresh = function () { return load(); }; api.last = function () { return S.data; };
-  api.openBase = function (id, op) { openBase(id, op); }; api.openReviews = function (op) { openReviews(op); }; api.close = closeLayer; api.state = S;
+  api.openBase = function (id, op) { openBase(id, op); }; api.openReviews = function (op) { openReviews(op); }; api.openQuests = function (op) { openQuests(op); }; api.openTownhall = function (op) { openTownhall(op); }; api.close = closeLayer; api.state = S;
   if (location.hostname === 'localhost') { api._render = function (d, el) { if (el) S.el = el; render(d); }; } // browser checks with a sample response; never on the live site
   return api;
 })();

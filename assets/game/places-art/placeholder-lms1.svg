@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" width="120" height="100">
+<!-- PLACEHOLDER building for LMS 1: swap the path in assets/game/places.js when Art Studio's render lands -->
+<ellipse cx="60" cy="92" rx="54" ry="7" fill="#000" opacity=".18"/>
+<rect x="14" y="44" width="92" height="46" rx="3" fill="#efe6d6" stroke="#5b4a36" stroke-width="2" stroke-dasharray="5 4"/>
+<path d="M8 46 60 14l52 32z" fill="#a10000" stroke="#5b4a36" stroke-width="2" stroke-linejoin="round"/>
+<rect x="52" y="64" width="16" height="26" rx="2" fill="#5b4a36"/>
+<rect x="24" y="56" width="14" height="12" fill="#9cc3d8"/><rect x="82" y="56" width="14" height="12" fill="#9cc3d8"/>
+<text x="60" y="40" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="700" font-size="13" fill="#fff">LMS 1</text>
+</svg>

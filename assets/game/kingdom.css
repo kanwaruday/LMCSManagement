@@ -245,17 +245,43 @@ a.kg-btn { text-decoration:none; color:var(--ink); }
 .kgm-x { position:absolute; top:calc(10px + env(safe-area-inset-top)); right:calc(10px + env(safe-area-inset-right)); z-index:1000; min-width:44px; min-height:44px; border:2px solid #1b2430; border-radius:22px; background:#fff; font-size:26px; line-height:1; cursor:pointer; }
 .kgm-note { position:absolute; left:calc(10px + env(safe-area-inset-left)); bottom:calc(28px + env(safe-area-inset-bottom)); z-index:1000; margin:0; padding:8px 12px; border-radius:10px; background:#fff; border:1px solid #d9d4ca; max-width:calc(100% - 20px); }
 .kgm-ico { background:none; border:0; }
-.kgm-pin { display:flex; align-items:center; gap:6px; min-width:44px; min-height:44px; padding:4px 10px; border:2px solid #a10000; border-radius:22px; background:#fff; color:#1b2430; font:600 13px system-ui,sans-serif; white-space:nowrap; cursor:pointer; transform:translate(-50%,-50%); }
-.kgm-hq { border-color:#7a5200; background:#fbefd3; }
-.kgm-lv { padding:1px 6px; border-radius:10px; background:#a10000; color:#fff; font-size:12px; }
-.kgm-x:focus-visible, .kgm-pin:focus-visible { outline:3px solid #1d4fa3; outline-offset:2px; }
-.kgm-pin .gb-emoji { font-size:20px; }
+.kgm-x:focus-visible, .kgm-b:focus-visible { outline:3px solid #1d4fa3; outline-offset:2px; }
+/* a place's building on the map: art, level shield, name plate with its progress bar, a "Next" flag (kingdom-map.js pinFor) */
+.kgm-hqset { display:flex; align-items:flex-end; gap:4px; transform:translate(-50%,-78%); }
+.kgm-b { position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; min-width:44px; min-height:44px; padding:0; border:0; background:none; color:#1b2430; font:700 13px/1.2 system-ui,sans-serif; white-space:nowrap; cursor:pointer; transform:translate(-50%,-78%); }
+.kgm-hqset .kgm-b { transform:none; }
+.kgm-pic { position:relative; display:flex; width:96px; height:80px; filter:drop-shadow(0 3px 3px rgba(0,0,0,.35)); transition:transform .15s ease; }
+.kgm-b:hover .kgm-pic, .kgm-b:focus-visible .kgm-pic { transform:translateY(-3px) scale(1.04); }
+.kgm-art { width:100%; height:100%; object-fit:contain; pointer-events:none; }
+.kgm-lvb { position:absolute; left:-4px; top:2px; min-width:24px; height:26px; padding:0 4px; box-sizing:border-box; display:grid; place-items:center; background:#a10000; color:#fff; font-size:13px; clip-path:polygon(0 0,100% 0,100% 70%,50% 100%,0 70%); }
+.kgm-hq .kgm-lvb { background:#7a5200; }
+.kgm-ph { position:absolute; right:-6px; top:-4px; padding:1px 5px; border-radius:6px; background:#fff; border:1px dashed #7a5200; color:#7a5200; font:600 10px/1.3 system-ui,sans-serif; }
+.kgm-plate { display:flex; flex-direction:column; align-items:center; gap:3px; padding:3px 9px 5px; border-radius:9px; background:rgba(255,255,255,.95); border:1.5px solid #a10000; box-shadow:0 2px 6px rgba(0,0,0,.25); }
+.kgm-hq .kgm-plate, .kgm-th .kgm-plate { border-color:#7a5200; background:#fbefd3; }
+.kgm-hp { display:block; width:64px; height:6px; border-radius:3px; background:#e4dccd; overflow:hidden; }
+.kgm-hp i { display:block; height:100%; background:#2e7d32; }
+.kgm-zm { font:600 11px system-ui,sans-serif; color:#5b4a36; }
+.kgm-flag { position:absolute; z-index:1; top:-20px; left:50%; padding:2px 8px 2px 6px; background:#a10000; color:#fff; font-size:11px; border-radius:3px 9px 9px 3px; transform:translateX(-10%); animation:kgm-wave 1.6s ease-in-out infinite; }
+.kgm-flag::before { content:""; position:absolute; left:-3px; top:0; bottom:-14px; width:3px; background:#5b4a36; }
+@keyframes kgm-wave { 50% { transform:translateX(-10%) rotate(-4deg); } }
+.kgm-next .kgm-plate { border-width:2.5px; box-shadow:0 0 0 3px rgba(161,0,0,.25), 0 2px 6px rgba(0,0,0,.25); }
+.kgm-grp .kgm-pic { width:110px; }
+.kgm-grp .kgm-art { width:56px; margin-left:-16px; } .kgm-grp .kgm-art:first-child { margin-left:0; }
+.kgm-grp .kgm-plate { border-style:dashed; }
+.kgm-sm .kgm-pic { width:56px; height:46px; }
+.kgm-sm.kgm-grp .kgm-pic { width:76px; } .kgm-sm.kgm-grp .kgm-art { width:38px; margin-left:-12px; } .kgm-sm.kgm-grp .kgm-art:first-child { margin-left:0; }
+.kgm-sm .kgm-lvb { min-width:20px; height:22px; font-size:12px; }
+.kgm-sm .kgm-ph { display:none; } /* zoomed out: the tag shows again as you zoom in */
+.kgm-sm .kgm-hp { width:40px; height:5px; }
+.kgm-sm .kgm-plate { padding:2px 7px 4px; }
+.kgm-th .kgm-pic { width:70px; height:58px; }
+.kgm-sm.kgm-th .kgm-pic { width:40px; height:34px; }
+@media (prefers-reduced-motion: reduce) { .kgm-flag { animation:none; } .kgm-pic { transition:none; } }
 .gb .gb-hsw button { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 14px; border-radius:10px; border:1.5px solid rgba(255,255,255,.6); background:none; color:#fff; font-family:inherit; font-size:inherit; font-weight:700; cursor:pointer; white-space:nowrap; }
 .gb .gb-hsw button[hidden] { display:none; }
 .kgm .leaflet-bar a.leaflet-control-zoom-in, .kgm .leaflet-bar a.leaflet-control-zoom-out { width:44px; height:44px; line-height:44px; font-size:22px; }
-.kgm .leaflet-bar { margin-top:calc(10px + env(safe-area-inset-top)); margin-left:calc(10px + env(safe-area-inset-left)); }
+.kgm .leaflet-bar { margin-left:calc(10px + env(safe-area-inset-left)); }
 .kgm[hidden] { display:none; }
-.kgm-grp { border-style:dashed; } /* several places this close together: tap to zoom in */
 /* coming-soon placeholders on a campus window (real data replaces them) */
 .kg-soon { margin:0 0 12px; }
 .kg-soonview { display:flex; align-items:center; justify-content:center; gap:8px; min-height:88px; margin-bottom:8px; border:1.5px dashed var(--line, #d9d4ca); border-radius:12px; background:linear-gradient(180deg, #eef2ea, #e2e8dc); color:var(--muted); font-weight:600; }

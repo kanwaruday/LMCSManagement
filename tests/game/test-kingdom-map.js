@@ -41,7 +41,7 @@ assert.ok(src.split('\n').some((l) => /L\.map\(.*\)\.setView\(/.test(l.split('//
 assert.ok(!/aria-modal/.test(src) && /role', 'region'/.test(src), 'the map is in the page, not a dialog: the base sheet it opens traps focus itself');
 assert.ok(!/KULLU/.test(src) && !/\[\s*31\./.test(src), 'no coordinates in the module');
 const page = read('owner/kingdom.html');
-assert.ok(page.includes('places.js') && page.includes('kingdom-map.js') && /LMCSKingdomMap\.mount/.test(page) && /LMCSKingdom\.openBase\(id, el\)/.test(page), 'the Map view mounts the map; a place opens its base sheet');
+assert.ok(page.includes('places.js') && page.includes('kingdom-map.js') && /LMCSKingdomMap\.mount/.test(page) && /K\.openBase\(id, el\)/.test(page), 'the Map view mounts the map; a place opens its base sheet');
 assert.ok(!/leaflet/i.test(page), 'Leaflet loads only when the map is opened');
 // close pins join one group so labels never stack; far ones stay apart
 const gs = (a) => M.cluster(a, 120, 52).map((g) => g.map((p) => p.id).join('+')).join();
@@ -62,4 +62,18 @@ assert.strictEqual(ln(P), 'HES-LMS1,HES-LMS2,HES-LMS3,HES-LMS4,HES-LMS5,HES-LMS6
 const pt = (links, lat) => ({ name: 'x', lat: lat === undefined ? 31.9 : lat, lng: 77, links });
 assert.strictEqual(ln({ A: pt(['B', 'C', 'Z', 'A']), B: pt(['A', 'C']), C: pt(), D: pt(['A'], null) }), 'A-B,A-C,B-C', 'several links per place; both ways drawn once; unknown, unpinned and self links skipped');
 assert.strictEqual(ln({ A: pt('B'), B: pt() }), '', 'links must be a list');
+// the full-screen Map (Uday, 7 Nov): one screen, the map is the ground; no illustrated Kingdom block, no right column, no block below
+assert.ok(/noValley: true/.test(page), 'the page asks the Kingdom not to draw its illustrated valley');
+assert.ok(/<body class="gb-app fm-page">/.test(page) && !/class="gb-shell"/.test(page) && !/gb-stage/.test(page), 'no grid shell: everything floats on the map');
+['fm-next', 'fm-edge', 'fm-drawer', 'fm-quests', 'fm-requests', 'fm-more'].forEach((c) => assert.ok(page.includes(c), 'HUD piece: ' + c));
+assert.ok(/K\.openQuests\(/.test(page) && /K\.openTownhall\(/.test(page) && /K\.hooks\.townhall = /.test(page), 'quests and the Townhall open from the map');
+// building art: one path per place in places.js, repo art only, and every placeholder exists and is marked
+Object.keys(P).filter((k) => k !== 'CENTER').forEach((k) => {
+  assert.ok(/^assets\/game\/[\w/.-]+\.(webp|png|svg)$/.test(P[k].art), k + ' has one art path');
+  assert.ok(fs.existsSync(path.join(root, P[k].art)), k + ' art exists');
+  if (/placeholder/.test(P[k].art)) assert.ok(/PLACEHOLDER/.test(read(P[k].art)), k + ' placeholder says so');
+});
+assert.ok(fs.existsSync(path.join(root, P.HES.townhallArt)), 'the Townhall art exists');
+assert.ok(!/assets\/game\/art\//.test(read('assets/game/places.js')), 'not the old illustrated art (Uday: "looks nothing like the school")');
+assert.ok(/\^assets\\\/game\\\//.test(src) && /\.src = \(V\.opts\.root/.test(src), 'the map only loads art from the repo');
 console.log('kingdom map: ok');

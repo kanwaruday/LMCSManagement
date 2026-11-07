@@ -13,33 +13,77 @@
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
   <link rel="stylesheet" href="../assets/game/v2-animations.css?v=dd8b1609" />
   <style>
-    /* the real map sits in the page, first, above the Kingdom (kingdom.css draws .kgm full screen for the old dialog) */
-    .kg-realmap { margin:0 0 16px; }
-    .kg-realmap .kgm { position:relative; inset:auto; z-index:0; height:min(62vh, 560px); border-radius:12px; overflow:hidden; border:1px solid #d9d4ca; }
-    .kg-realmap .kgm-note:empty { display:none; }
-    @media (max-width: 959px) { .gb-shell { grid-template-areas:"next" "stage" "panels"; } } /* phones: Buddy's one step, then the map, then the panels */
+    /* The Map is the whole screen: the real map is the ground, everything else floats on it (HUD). kingdom.css .kgm is fixed, inset 0. */
+    html, body.fm-page { height:100%; overflow:hidden; }
+    .fm-page #auth-root { position:relative; z-index:2; }
+    .fm[hidden] { display:none; }
+    .fm .kgm { z-index:0; }
+    .fm .kgm-note:empty { display:none; }
+    .fm-hud { position:fixed; z-index:500; } /* over the map, under the sheets (dialogs are in the top layer) */
+    .fm-top { top:calc(10px + env(safe-area-inset-top)); left:calc(10px + env(safe-area-inset-left)); right:calc(76px + env(safe-area-inset-right)); pointer-events:none; }
+    .fm-top .gb { background:none; min-height:0; }
+    .fm-top .gb-head { display:inline-block; pointer-events:auto; border-radius:14px; box-shadow:0 4px 14px rgba(0,0,0,.25); max-width:100%; }
+    .fm-top .gb-head > div { padding:8px 12px; gap:10px; }
+    .fm-top h1 { font-size:18px; margin:0; }
+    .fm-top #header-status { display:none; }
+    .fm-next { top:calc(82px + env(safe-area-inset-top)); left:calc(10px + env(safe-area-inset-left)); width:340px; max-height:calc(100vh - 170px); overflow:auto; border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,.28); }
+    .fm-next.kg, .fm-msgs.kg { padding:0; min-height:0; }
+    .fm-next:empty { display:none; }
+    .fm-next .kg-next { margin:0; }
+    .fm-msgs { top:calc(82px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%); width:min(420px, calc(100vw - 32px)); }
+    .fm-msgs .kg-cele, .fm-msgs .kg-msg, .fm-msgs .kg-quiet { margin:0 0 8px; box-shadow:0 6px 20px rgba(0,0,0,.28); }
+    .fm-msgs .kg-quiet { padding:8px 12px; border-radius:10px; background:#fff; }
+    .fm-edge { top:calc(10px + env(safe-area-inset-top)); right:calc(10px + env(safe-area-inset-right)); display:flex; flex-direction:column; gap:8px; }
+    .fm-eb { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; width:60px; min-height:60px; padding:6px 2px; border:2px solid #7a5200; border-radius:14px; background:#fbefd3; color:#1b2430; font:700 11.5px/1.15 system-ui,sans-serif; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,.25); }
+    .fm-eb .gb-emoji { font-size:22px; }
+    .fm-eb:focus-visible { outline:3px solid #1d4fa3; outline-offset:2px; }
+    .fm-eb[aria-expanded="true"] { background:#7a5200; color:#fff; }
+    .fm-n { position:absolute; top:-6px; right:-6px; min-width:20px; height:20px; padding:0 5px; box-sizing:border-box; border-radius:10px; background:#a10000; color:#fff; font-size:12px; line-height:20px; }
+    .fm-n:empty { display:none; }
+    .fm-drawer { top:0; right:0; bottom:0; z-index:600; width:min(380px, 100vw); overflow:auto; background:var(--paper, #fbf7ef); box-shadow:-8px 0 24px rgba(0,0,0,.3); padding:0 12px 24px; box-sizing:border-box; }
+    .fm-drawer[hidden] { display:none; }
+    .fm-dh { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; margin:0 -12px 10px; padding:calc(8px + env(safe-area-inset-top)) 8px 8px 14px; background:var(--slate, #3f4a58); color:#fff; }
+    .fm-dh h2 { margin:0; font-size:17px; color:#fff; }
+    .fm-x { min-width:44px; min-height:44px; border:0; border-radius:22px; background:none; color:#fff; font-size:26px; cursor:pointer; }
+    .fm-drawer .gb-panel { width:100%; margin-bottom:8px; }
+    .fm-sheet-h { display:none; }
+    @media (max-width: 759px) {
+      .fm-top { right:calc(74px + env(safe-area-inset-right)); }
+      .fm-top .gb-head > div { padding:6px 10px; }
+      /* phones: Buddy's next step is a bottom sheet; its handle folds it down to one line */
+      .fm-next { top:auto; left:0; right:0; bottom:0; width:auto; max-height:46vh; border-radius:18px 18px 0 0; padding-bottom:env(safe-area-inset-bottom); background:var(--paper, #fbf7ef); }
+      .fm-next .kg-next { border-radius:0; border-width:0; padding:4px 68px 12px 14px; } /* the right gutter: Buddy's button (buddy-dock.css, bottom-right) sits there */
+      .fm-next .kg-next .kg-buddy { width:44px; height:44px; }
+      .fm-sheet-h { display:flex; justify-content:center; width:100%; min-height:28px; border:0; background:none; cursor:pointer; padding:6px 0 0; }
+      .fm-sheet-h::before { content:""; width:44px; height:5px; border-radius:3px; background:#b9ae9c; }
+      .fm-next.is-min .kg-nextt, .fm-next.is-min .kg-qbar, .fm-next.is-min .kg-qmeta, .fm-next.is-min .kg-buddy { display:none; }
+      .fm-drawer { top:auto; left:0; width:auto; max-height:82vh; border-radius:18px 18px 0 0; box-shadow:0 -8px 24px rgba(0,0,0,.3); }
+      .fm-dh { border-radius:18px 18px 0 0; padding-top:8px; }
+      .fm-eb { width:56px; min-height:56px; }
+    }
   </style>
 </head>
-<body class="gb-app">
+<body class="gb-app fm-page">
 
-  <!-- The screen skeleton (assets/game/base.css): header, then the game bar, the next-step slot, the stage (the map) and the
-       panels. The header's wrapper gives it the gb scope; the Kingdom itself keeps kingdom.css. -->
-  <div class="gb"><header class="gb-head"><div><div><h1>Map</h1><p id="header-status">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" aria-current="page" data-emoji="realMap">Map</a></nav></div></header></div>
-  <div class="gb-shell">
-    <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
-    <div class="gb-next-slot" id="kg-next"></div>
-    <main class="gb-stage">
-      <section class="hero" id="auth-root" style="padding-top:24px;">
-        <div id="gate-slot"></div>
-      </section>
-      <div id="app-root" style="display:none">
-        <div class="kg-realmap" id="kg-realmap"></div>
-        <div class="kg" id="kingdom-root"></div>
-      </div>
-    </main>
-    <aside class="gb-panels" id="panels" aria-label="More" hidden>
-      <div id="kg-panels" style="display:contents"></div>
-      <details class="gb-panel"><summary data-emoji="tools">All tools</summary><div class="gb-panel-b"><a class="gb-go" href="index.html"><span>Owner home<small>Today, Approvals, Payroll, Salary, Transport</small></span></a></div></details>
+  <section class="hero" id="auth-root" style="padding-top:24px;">
+    <div id="gate-slot"></div>
+  </section>
+  <!-- The Map (Uday, 7 Nov: "Let the Map view take up the whole screen and everything is placed on it"): the real map is the ground,
+       LMCS HQ, the Townhall and LMS 1-6 stand on it as buildings; the next step, the edge buttons and the drawer float over it. -->
+  <div class="fm" id="app-root" hidden>
+    <div id="kg-realmap"></div>
+    <div class="fm-hud fm-top"><div class="gb"><header class="gb-head"><div><div><h1>Map</h1><p id="header-status">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" aria-current="page" data-emoji="realMap">Map</a></nav></div></header></div></div>
+    <section class="fm-hud fm-next kg" id="fm-next" aria-label="Your next step"></section>
+    <div class="fm-hud fm-msgs kg" id="kingdom-root"></div>
+    <nav class="fm-hud fm-edge" aria-label="Map tools">
+      <button type="button" class="fm-eb" id="fm-quests"><span data-emoji="quests"></span>Quests</button>
+      <button type="button" class="fm-eb" id="fm-requests" aria-expanded="false" aria-controls="panels"><span data-emoji="requests"></span>Requests<span class="fm-n" id="fm-reqn"></span></button>
+      <button type="button" class="fm-eb" id="fm-more" aria-expanded="false" aria-controls="panels"><span data-emoji="base"></span>Kingdom</button>
+    </nav>
+    <aside class="fm-hud fm-drawer" id="panels" aria-labelledby="fm-dh" hidden>
+      <div class="fm-dh"><h2 id="fm-dh" tabindex="-1">Kingdom</h2><button type="button" class="fm-x" id="fm-close" aria-label="Close">×</button></div>
+      <div class="gb" id="kg-panels"></div>
+      <div class="gb"><details class="gb-panel" data-panel="tools"><summary data-emoji="tools">All tools</summary><div class="gb-panel-b"><a class="gb-go" href="index.html"><span>Owner home<small>Today, Approvals, Payroll, Salary, Transport</small></span></a></div></details></div>
     </aside>
   </div>
 
@@ -50,20 +94,66 @@
   <script src="../assets/game/places.js?v=da3634dc"></script>
   <script src="../assets/game/kingdom-map.js?v=31c24fe4"></script>
   <script src="../assets/game/emoji.js?v=9abef414"></script>
-  <script src="../assets/game/rail.js?v=716e2ce0"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html
 
     function showKingdom(session) {
       document.getElementById('auth-root').style.display = 'none';
-      document.getElementById('app-root').style.display = '';
-      document.getElementById('panels').hidden = false;
-      // the real map first; every load of the Kingdom redraws its levels. A tapped place opens the same base sheet as the Kingdom's
-      const host = document.getElementById('kg-realmap'), pick = function (id, el) { LMCSKingdom.openBase(id, el); }, after = LMCSKingdom.hooks.after;
-      LMCSKingdomMap.mount(host, { bases: [], onPick: pick });
-      LMCSKingdom.hooks.after = function (d) { if (after) after(d); LMCSKingdomMap.mount(host, { bases: (d.kingdom && d.kingdom.campuses) || [], onPick: pick }); };
-      LMCSKingdom.mount(document.getElementById('kingdom-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', next: document.getElementById('kg-next'), panels: document.getElementById('kg-panels') });
-      LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' }); // Today (missions, quests) lives on Owner home
+      document.getElementById('app-root').hidden = false;
+      const host = document.getElementById('kg-realmap'), drawer = document.getElementById('panels'), K = LMCSKingdom;
+      const phone = function () { return !matchMedia('(min-width: 760px)').matches; };
+      // the HUD covers the top and the edges (and the bottom sheet on phones): the first fit keeps the buildings clear of it
+      const pad = function () { return phone() ? [[16, 80], [76, 210]] : [[380, 90], [96, 40]]; };
+      let bases = [], th = null;
+      const draw = function () {
+        LMCSKingdomMap.mount(host, { bases: bases, root: '../', pad: pad(), onPick: function (id, el) { K.openBase(id, el); },
+          townhall: th ? { open: th.rooms.filter(function (r) { return r.state === 'open'; }).length, onPick: function (el) { K.openTownhall(el); } } : null });
+      };
+      draw();
+      // the drawer (desktop: the right edge; phones: a bottom sheet): every panel the Kingdom builds, and All tools
+      let opener = null;
+      const toggles = [document.getElementById('fm-requests'), document.getElementById('fm-more')];
+      const closeDrawer = function () {
+        if (drawer.hidden) return;
+        drawer.hidden = true; toggles.forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+        if (opener) opener.focus();
+      };
+      const openDrawer = function (btn, panel) {
+        if (!drawer.hidden && opener === btn) return closeDrawer();
+        opener = btn; drawer.hidden = false;
+        toggles.forEach(function (b) { b.setAttribute('aria-expanded', String(b === btn)); });
+        const p = panel && drawer.querySelector('[data-panel="' + panel + '"]');
+        if (p) { p.open = true; p.scrollIntoView({ block: 'start' }); } else document.getElementById('fm-dh').focus();
+        if (p) p.querySelector('summary').focus();
+      };
+      document.getElementById('fm-requests').onclick = function (e) { openDrawer(e.currentTarget, 'kg-traypanel'); };
+      document.getElementById('fm-more').onclick = function (e) { openDrawer(e.currentTarget, null); };
+      document.getElementById('fm-close').onclick = closeDrawer;
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) closeDrawer(); });
+      document.getElementById('fm-quests').onclick = function (e) { K.openQuests(e.currentTarget); };
+      // phones: the next-step sheet folds to one line from its handle
+      const next = document.getElementById('fm-next');
+      const sheet = function () {
+        if (next.querySelector('.fm-sheet-h')) return;
+        const hd = document.createElement('button'); hd.type = 'button'; hd.className = 'fm-sheet-h';
+        const set = function (min) { next.classList.toggle('is-min', min); hd.setAttribute('aria-expanded', String(!min)); hd.setAttribute('aria-label', min ? 'Show your next step' : 'Fold your next step'); };
+        hd.onclick = function () { set(!next.classList.contains('is-min')); };
+        set(next.classList.contains('is-min')); next.insertBefore(hd, next.firstChild);
+      };
+      const after = K.hooks.after;
+      K.hooks.after = function (d) {
+        if (after) after(d);
+        const a = K.nextAction(d), nextId = a.base ? a.base.id : '';
+        bases = ((d.kingdom && d.kingdom.campuses) || []).map(function (b) {
+          const p = K.progressOf([b]);
+          return { id: b.id, level: b.level, pct: p.total ? Math.round(100 * p.done / p.total) : 0, next: b.id === nextId };
+        });
+        document.getElementById('fm-reqn').textContent = (d.cards || []).length || '';
+        document.getElementById('fm-requests').hidden = d.role !== 'Owner';
+        sheet(); draw();
+      };
+      K.hooks.townhall = function (data) { th = data; draw(); };
+      K.mount(document.getElementById('kingdom-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', next: next, panels: document.getElementById('kg-panels'), noValley: true });
     }
     function gate(session) {
       if (LMCS.canViewOwnerPortal(session)) return showKingdom(session);

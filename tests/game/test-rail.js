@@ -26,8 +26,9 @@ for (const c of ['gb-shell', 'gb-stage', 'gb-panels', 'gb-panel', 'gb-next-slot'
   if (!/^gb-(shell|stage|panels|panel|next-slot)$/.test(c)) assert.ok(gallery.includes(c), 'the gallery shows ' + c);
 }
 assert.ok(!/@keyframes|transition\s*:|animation\s*:/.test(css), 'base.css has no motion');
-// the skeleton: Owner home and the Kingdom put the bar, stage and panels in the shell; element headings don't outrank component ones
-for (const p of ['owner/index.html', 'owner/kingdom.html', 'principal/index.html']) {
+// the skeleton: Owner home and the Principal page put the bar, stage and panels in the shell; element headings don't outrank component ones.
+// The Owner's Map (owner/kingdom.html) left the shell on 7 Nov: it is one full screen with a floating HUD (tests/game/test-kingdom-map.js).
+for (const p of ['owner/index.html', 'principal/index.html']) {
   const h = fs.readFileSync(path.join(root, p), 'utf8');
   assert.ok(/class="gb-shell"/.test(h) && /class="gb-rail"/.test(h) && /class="gb-stage"/.test(h) && /class="gb-panels"/.test(h), p + ' uses the skeleton');
 }
@@ -41,7 +42,7 @@ for (const k of ['missions', 'quests', 'rallies', 'events', 'buddy', 'done', 'du
 assert.strictEqual(E.get('nope'), '', 'an unknown key has no emoji');
 assert.strictEqual(E.tag('quests'), null, 'tag() needs a document');
 assert.ok(Object.isFrozen(E.map), 'the map is read-only');
-for (const p of ['owner/index.html', 'owner/kingdom.html', 'principal/index.html']) {
+for (const p of ['owner/index.html', 'principal/index.html']) {
   const h = fs.readFileSync(path.join(root, p), 'utf8');
   assert.ok(h.indexOf('game/emoji.js') !== -1 && h.indexOf('game/emoji.js') < h.indexOf('game/rail.js'), p + ' loads emoji.js before rail.js');
 }
