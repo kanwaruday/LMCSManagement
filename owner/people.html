@@ -38,12 +38,12 @@
           <h2 class="gb-h2" id="pp-h">Coordinators</h2>
           <ul class="gb-list" id="pp-list"></ul>
           <div class="pp-acts"><button type="button" class="gb-btn gb-btn-primary" id="pp-add" hidden>Add a Coordinator</button></div>
-          <p class="gb-muted" id="pp-note">A change reaches their next sign-in within about 10 minutes. A Coordinator who also holds another role (Accounts, ...) is changed in the allowlist sheet; a Principal's school is changed below.</p>
+          <p class="gb-muted" id="pp-note">A change reaches their portal within about 15 minutes. A Coordinator who also holds another role (Accounts, ...) is changed in the allowlist sheet; a Principal's school is changed below.</p>
         </section>
         <section class="gb-section" aria-labelledby="pp-ph">
           <h2 class="gb-h2" id="pp-ph">Principals</h2>
           <ul class="gb-list" id="pp-plist"></ul>
-          <p class="gb-muted">Change sets their school only; their roles stay as they are. It reaches their next sign-in within about 10 minutes.</p>
+          <p class="gb-muted">Change sets their school only; their roles stay as they are. It reaches their portal within about 15 minutes.</p>
         </section>
       </div>
     </main>
@@ -114,7 +114,7 @@
           .then(function (r) { return r.json(); }).then(function (d) {
             if (!d || !d.success) { const e = new Error((d && d.error) || ''); e.server = true; throw e; }
             BUSY = false; s.close();
-            const said = body.remove ? 'Removed.' : d.unchanged ? 'Nothing to change.' : 'Saved. It reaches their next sign-in within about 10 minutes.';
+            const said = body.remove ? 'Removed.' : d.unchanged ? 'Nothing to change.' : 'Saved. It reaches their portal within about 15 minutes.';
             return load().then(function () { if (DATA) status(said); }); // after the reload, which clears the line
           }).catch(function (e) {
             BUSY = false; go.disabled = back.disabled = false; go.textContent = 'Confirm';

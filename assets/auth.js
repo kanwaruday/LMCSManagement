@@ -190,6 +190,15 @@ window.LMCS = (function () {
       })
       .finally(function () { clearTimeout(timer); });
   }
+  // A campus or role changed in the allowlist (the Owner's People room) reaches a session that is already signed in: the live list's
+  // values replace the session's, exactly what a fresh sign-in would store. Never signs anyone out (requireSession decides that), and an
+  // Employee Master sign-in (autoSignIn) was never on the list, so it is left alone.
+  function refreshSession_(map) {
+    const s = getSession(), m = s && !s.autoSignIn && map[s.email];
+    if (!m || (m.campusId === s.campusId && (m.role || '') === (s.role || ''))) return;
+    s.campusId = m.campusId; s.campusName = campusLabel(m.campusId); s.role = m.role || '';
+    setSession(s);
+  }
   let allowlistPromise = null;
   function loadAllowlist() {
     if (allowlistPromise) return allowlistPromise;
@@ -199,6 +208,7 @@ window.LMCS = (function () {
         try {
           const map = await fetchAllowlistOnce_();
           try { localStorage.setItem(ALLOWLIST_CACHE_KEY, JSON.stringify({ t: Date.now(), map: map })); } catch (_) { /* best-effort */ }
+          refreshSession_(map);
           return map;
         } catch (err) {
           lastErr = err;
@@ -374,7 +384,7 @@ window.LMCS = (function () {
         loadAllowlist().then((allowlist) => {
           // Re-validate the cached session is still on the live allowlist.
           // An Employee Master sign-in (autoSignIn) was never on the list: keep it, unless they have since been added -- then sign in again for the listed role.
-          if (existing.autoSignIn ? !allowlist[existing.email] : allowlist[existing.email]) { startExpiryWatch_(); resolve(existing); return; }
+          if (existing.autoSignIn ? !allowlist[existing.email] : allowlist[existing.email]) { startExpiryWatch_(); resolve(getSession() || existing); return; } // refreshed campus/role
           localStorage.removeItem(SESSION_KEY);
           renderGate();
         }).catch(() => {
@@ -529,6 +539,13 @@ window.LMCS = (function () {
     } catch (_) { /* a help button -- never let it break a page */ }
   }
   if (getSession()) loadDock_();
+  // pages show a cached session without re-checking it, so re-check in the background, 5 s after load and at most every 5 min (the server caches 10):
+  // a changed campus or role is in the session from the next page load. ponytail: one allowlist read per 5 min per signed-in browser.
+  if (getSession()) {
+    let fresh = false;
+    try { const c = JSON.parse(localStorage.getItem(ALLOWLIST_CACHE_KEY)); fresh = !!(c && Date.now() - c.t < 5 * 60 * 1000); } catch (_) { /* no copy: re-check */ }
+    if (!fresh) setTimeout(function () { loadAllowlist().catch(function () { /* offline: keep the session as it is */ }); }, 5000); // after the page's own first reads
+  }
 
   return { requireSession, getSession, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewPrincipalPortal, showNotForRole, roleLabel, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
 })();
