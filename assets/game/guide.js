@@ -188,17 +188,17 @@ window.LMCSGuide = {
       "This step shows Done once the index has been built in the last two hours, so it may take a little while.",
     ] },
     { id: 'setup-form', title: 'Setup 4: Add the classwork and homework form link', roles: ['Owner'], body: [
-      "Open the Kingdom, tap LMCS HQ, and under Set up the game tap Add the link next to this step.",
+      "Open your Home, find Set up the game, and tap Add the link next to this step.",
       "Paste your Google Form link. It must start with https://docs.google.com/forms/ or https://forms.gle/. Then tap Save.",
       "Teachers' Go button then opens that form. Tap Change to replace the link later.",
     ] },
     { id: 'setup-term', title: "Setup 5: Set this term's end date", roles: ['Owner'], body: [
-      "Open the Kingdom, tap LMCS HQ, and under Set up the game tap Set the date next to this step.",
+      "Open your Home, find Set up the game, and tap Set the date next to this step.",
       "Pick the day the term ends, then tap Save. Chapters that start after that date drop out of the teachers' chapter quests.",
       "Tap Change to move the date later.",
     ] },
     { id: 'setup-suit', title: 'Setup 6: Open the track-suit decision', roles: ['Owner'], body: [
-      "Open the Kingdom, tap LMCS HQ, and under Set up the game tap Set the dates next to this step.",
+      "Open your Home, find Set up the game, and tap Set the dates next to this step.",
       "Pick the opening and closing dates, then tap Save. Principals choose their days between those dates.",
       "This step shows Done once both dates are in. Tap Change to move them; the dates already set are shown first.",
     ] },
