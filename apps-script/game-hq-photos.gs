@@ -5,8 +5,9 @@ var QUEST_GATE_HOOKS = QUEST_GATE_HOOKS || {};
 // ═══════════════════════════════════════════════════════════════════
 // LMCS Game Backend -- 🏛️ "Photograph LMCS HQ and pin it" (Uday, 7 Nov: "now through the principal quests"): the HQ building's outside
 // photos (3 required, a 4th optional, no people) and its map pin, for the Art Studio's HQ render, collected through a quest instead of
-// asking Uday. One quest at HQ (network scope): the Owner gives it to one person in Kingdom → All quests (family hook:hq-photos, any
-// Principal, Coordinator or Accounts person), the existing setup-owner flow. Only that person (and the Owner) can open it.
+// asking Uday. One quest at HQ (network scope). Uday, 8 Nov: "The owner i.e. me gets this quest": it is on the Owner's own board by default.
+// He can still give it to one person in Kingdom → All quests (family hook:hq-photos, any Principal, Coordinator or Accounts person), the
+// existing setup-owner flow. Only that person and the Owner can open it.
 //   hqphotosget  (GET)  the slots, the pin and the status, for the holder or the Owner.
 //   hqphotossave (POST only, from game.gs doPost; never in GAME_MODULE_ACTIONS) op photo | pin | submit.
 // Storage: tab `HQ Photos` in the Game workbook (created on first save), one row per slot (the photos and 'pin'). The photos go to a
@@ -115,9 +116,9 @@ function hqPhotosSave_(caller, body) {
   }
 }
 
-// ── the quest: on the holder's board (the setup gate shows it only to whoever the Owner gave the HQ row) ──
+// ── the quest: on the Owner's board, and on the holder's (the setup gate shows it only to whoever the Owner gave the HQ row) ──
 function hqPhotosQuests_(caller) {
-  if ((caller.roles || []).indexOf('Owner') !== -1 || !hqpMay_(caller)) return []; // never on the Owner's own board: this asks someone else
+  if (caller.viewAs || caller.supportingAt || !hqpMay_(caller)) return []; // the Owner previewing a school, or a supporting switch: not here
   const st = hqpState_(hqpRows_());
   const steps = HQP_SHOTS.filter(function (s) { return s.required; }).map(function (s) { return { id: s.id, title: '📷 ' + s.label, go: HQP_GO, done: !!st.shots[s.id], locked: false }; })
     .concat([{ id: 'pin', title: '📍 Pin LMCS HQ on the map', go: HQP_GO, done: !!st.pin, locked: false },
@@ -131,4 +132,4 @@ function authorizeHqPhotosDrive() { Logger.log(hqpFolder_().getName()); }
 
 QUEST_GATE_HOOKS.hqPhotosQuests_ = { id: HQP_FAMILY, title: 'Photograph LMCS HQ and pin it', roles: HQP_ROLES.slice(), networkOnly: true, go: HQP_GO };
 GAME_MODULE_ACTIONS.hqphotosget = hqPhotosGet_;
-HQP_ROLES.forEach(function (role) { GAME_MODULE_QUESTS[role] = [].concat(GAME_MODULE_QUESTS[role] || [], hqPhotosQuests_); });
+HQP_ROLES.concat(['Owner']).forEach(function (role) { GAME_MODULE_QUESTS[role] = [].concat(GAME_MODULE_QUESTS[role] || [], hqPhotosQuests_); });

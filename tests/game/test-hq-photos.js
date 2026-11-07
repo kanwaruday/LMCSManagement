@@ -144,8 +144,9 @@ test('only the holder opens it: nobody until the Owner picks; then that person, 
   assert.strictEqual(save(P3, { op: 'pin', lat: 31.9, lng: 77.1 }).code, 'HQP_NOT_YOURS');
   const q = J(ctx.hqPhotosQuests_(P4))[0];
   assert.deepStrictEqual([q.title, q.steps.map((s) => s.id), q.steps[0].go], ['🏛️ Photograph LMCS HQ and pin it', ['front', 'gate', 'side', 'pin', 'send'], 'hq-photos/index.html']);
-  assert.deepStrictEqual(J(ctx.hqPhotosQuests_(OWN)), [], 'never on the Owner\'s own board');
+  assert.deepStrictEqual(J(ctx.hqPhotosQuests_(OWN))[0].steps.map((s) => s.id), ['front', 'gate', 'side', 'pin', 'send'], 'on the Owner\'s own board too (Uday, 8 Nov)');
   assert.strictEqual(view(OWN).success, true, 'the Owner can look');
+  assert.deepStrictEqual(J(ctx.hqPhotosQuests_(Object.assign({}, OWN, { viewAs: true, primaryRole: 'Principal' }))), [], 'not while previewing a school');
   // the Owner previewing a school, or a switched supporting Principal, never acts on it
   assert.strictEqual(view(Object.assign({}, P4, { supportingAt: 'LMS3' })).code, 'HQP_NOT_YOURS');
 });
@@ -186,6 +187,16 @@ test('send: needs the three required photos, the pin and the "no people" tick; t
   assert.strictEqual(J(ctx.hqPhotosQuests_(P4))[0].complete, true);
   for (const b of [{ op: 'photo', shot: 'wide', base64: JPEG }, { op: 'pin', lat: 31.9, lng: 77.1 }, { op: 'submit', noPeople: true }]) assert.strictEqual(save(P4, b).code, 'HQP_DONE');
   assert.strictEqual(save(P4, { op: 'shred' }).code, 'HQP_DONE');
+});
+
+test('the Owner plays it himself (Uday, 8 Nov): photos, pin, send, and the quest counts as done', () => {
+  go(); drive.folders = {}; drive.files = {};
+  ['front', 'gate', 'side'].forEach((s) => assert.strictEqual(save(OWN, { op: 'photo', shot: s, base64: JPEG }).success, true));
+  assert.strictEqual(save(OWN, { op: 'pin', lat: 31.93, lng: 77.11 }).success, true);
+  assert.deepStrictEqual(save(OWN, { op: 'submit', noPeople: true }), { success: true, sent: true });
+  const q = J(ctx.hqPhotosQuests_(OWN))[0];
+  assert.ok(q.complete && q.steps.every((s) => s.done));
+  assert.ok(ctx.GAME_MODULE_QUESTS.Owner.includes(ctx.hqPhotosQuests_), 'on the Owner board hooks');
 });
 
 test('wiring: POST only (one doPost line), the GET read registered, the page and the pin parser', () => {
