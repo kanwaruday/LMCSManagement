@@ -143,6 +143,9 @@ assert.strictEqual(r.success, false); assert.ok(/overwrite: true/.test(r.error),
 assert.strictEqual(book4().getSheetByName('assignments').data.length, 2, 'refused push left the tab as it was');
 r = seed({ overwrite: true, rows: [['T2', 'class', 'IX', '', '', '', 'Test Teacher 2', '']] });
 assert.strictEqual(r.success, true); assert.strictEqual(book4().getSheetByName('assignments').data[1][0], 'T2');
+r = push({ campus: 'LMS4', tab: 'assignments', mode: 'upsert', key: ['emp_code'], header: AH, rows: [['T2', 'class', 'X', '', '', '', 'Test Teacher 2', '']], overwrite: true });
+assert.strictEqual(r.success, false, 'no upsert into assignments'); assert.ok(/replace only/.test(r.error), r.error);
+assert.strictEqual(book4().getSheetByName('assignments').data[1][2], 'IX', 'refused upsert left the tab as it was');
 assert.strictEqual(push({ campus: 'LMS4', tab: 'assignments', mode: 'replace', header: ['emp_code', 'email'], rows: [], overwrite: true }).success, false, 'no email column in a pushed assignments tab');
 
 const S = { campus: 'LMS4', sensitive: true, tab: 'students_full', mode: 'replace', header: ['enroll_no', 'aadhaar'], rows: [['E1', '000000000000']] };

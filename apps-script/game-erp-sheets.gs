@@ -14,7 +14,8 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //                      swapped in on the last part, so readers never see half a tab), upsert (by key columns).
 // Guards: game Sheets take only the known tabs (never salary_totals, which goes to the sensitive Sheet). `assignments` is
 // seeded once from the timetables (tools/erp-assignments-push.py, Uday 7 Nov via V1); after that Principals fix it by hand, so
-// a replace of a filled assignments tab is refused unless the push says overwrite: true and refuse a header naming a sensitive column (Aadhaar/UID, PAN, bank, phone, DOB, address, photo, caste,
+// a replace of a filled assignments tab is refused unless the push says overwrite: true, and an upsert into it always is.
+// Every game tab refuses a header naming a sensitive column (Aadhaar/UID, PAN, bank, phone, DOB, address, photo, caste,
 // religion, health, salary…). The sensitive Sheets take any tab, but only while
 // Script property ERP_SENS_PUSH is exactly "on" (Uday's own switch). Size limits per call. Logs: counts only.
 // ponytail: no script lock (the Mac pushes one call at a time); add LockService if two pushers ever run at once.
@@ -102,6 +103,7 @@ function erpPushCheckBody_(b) {
   const mode = String(b.mode || '').trim().toLowerCase();
   if (ERP_CAMPUSES.indexOf(campus) === -1) return { error: 'campus must be LMS1 to LMS6' };
   if (mode !== 'replace' && mode !== 'upsert') return { error: 'mode must be check, replace or upsert' };
+  if (tab === 'assignments' && mode === 'upsert' && !sens) return { error: 'assignments: replace only (an upsert would revert Principals\' fixes)' };
   if (sens ? !/^[a-z0-9_]{1,40}$/.test(tab) : ERP_PUSH_TABS.indexOf(tab) === -1) return { error: 'tab not accepted' + (sens ? '' : ': one of ' + ERP_PUSH_TABS.join(', ')) };
   const header = b.header, rows = b.rows;
   if (!Array.isArray(header) || !header.length || header.length > ERP_MAX_COLS) return { error: 'header: 1 to ' + ERP_MAX_COLS + ' columns' };
