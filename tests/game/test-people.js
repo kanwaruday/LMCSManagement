@@ -39,7 +39,7 @@ const ctx = {
   ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ setMimeType: () => ({ body: s }) }) },
 };
 vm.createContext(ctx);
-['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-confirm.gs', 'game-office.gs', 'game-buddy.gs', 'game-kingdom.gs', 'game-people.gs', 'supporting-charge.gs'].forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
+['game.gs', 'game-actions.gs', 'game-missions.gs', 'game-confirm.gs', 'game-office.gs', 'game-buddy.gs', 'game-kingdom.gs', 'game-people.gs', 'supporting-charge.gs', 'game-rooms.gs'].forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
 ctx.SpreadsheetApp = { openById: (id) => (id === vm.runInContext('GAME_ALLOWLIST_SHEET_ID', ctx) ? allowBook : book) };
 const J = (x) => JSON.parse(JSON.stringify(x));
 const NOW = new Date('2026-10-29T05:00:00Z');
@@ -421,6 +421,26 @@ test('support: POST dispatch only; the page offers other schools only, behind Co
   assert.ok(/action === 'peoplesupport'\) return gameJson_\(peopleSupport_\(caller, body\)\)/.test(g));
   assert.ok(!/peoplesupport/.test(g.slice(0, g.indexOf('function doPost'))), 'never a GET');
   assert.ok(/c !== 'ALL' && c !== p\.campus/.test(page) && /'peoplesupport'\)/.test(page) && /p\.canSupport \?/.test(page));
+});
+
+test('support in the game backend: a read at a supported school; outside the Supporting cell the home school; a write there refused', () => {
+  go(); store.clear();
+  assert.strictEqual(support(OWN, { email: 'p4@example.org', schools: ['LMS3'] }).success, true);
+  const at = J(ctx.gameActAs_(J(P4), 'LMS3'));
+  assert.deepStrictEqual([at.campusId, at.homeCampusId, at.supportingAt, at.canDecide], ['LMS3', 'LMS4', 'LMS3', false]);
+  for (const act of ['LMS5', 'ALL', 'all', 'LMS4', ['LMS3'], '']) assert.strictEqual(J(ctx.gameActAs_(J(P4), act)).campusId, 'LMS4', 'home school for ' + JSON.stringify(act));
+  assert.strictEqual(J(ctx.gameActAs_(J(P3), 'LMS4')).campusId, 'LMS3', 'no charge: home');
+  // doGet only: the one line sits before view-as and dispatch; doPost never calls it
+  const g = fs.readFileSync(dir + 'game.gs', 'utf8'), get = g.slice(g.indexOf('function doGet'), g.indexOf('function doPost')), post = g.slice(g.indexOf('function doPost'));
+  assert.ok(/if \(e\.parameter\.actAs\) caller = gameActAs_\(caller, e\.parameter\.actAs\);/.test(get) && get.indexOf('gameActAs_') < get.indexOf('gameDispatch_'));
+  assert.ok(!/gameActAs_|actAs/.test(post.slice(0, post.indexOf('\nfunction '))), 'never on POST');
+  // a game write aimed at the supported school: the caller stays at LMS4, so the rooms save is refused
+  const saved = ctx.gameVerifyCaller_;
+  ctx.gameVerifyCaller_ = () => J(P4);
+  try {
+    const r = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ action: 'roomssave', idToken: 't', actAs: 'LMS3', campus: 'LMS3', rooms: [{ name: 'Lab', type: 'lab', staff: '' }] }) } }).body);
+    assert.deepStrictEqual([r.success, r.code], [false, 'ROOMS_NO_RIGHT'], JSON.stringify(r));
+  } finally { ctx.gameVerifyCaller_ = saved; }
 });
 
 let fail = 0;

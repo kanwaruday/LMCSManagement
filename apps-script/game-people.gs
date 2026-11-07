@@ -262,5 +262,27 @@ function peopleSupport_(caller, body) {
   }
 }
 
+// GET only (one doGet line in game.gs): actAs=<school> from a Principal who supports it -> a read-only copy at that school
+// (supporting-charge.gs); anything else (not on their Supporting cell, ALL, not a string, a failed read) -> the caller at home.
+// POSTs never come through here, so a game write at a supported school is checked against the Principal's own school and fails.
+// The Supporting cell is read from the allowlist by header, cached 5 minutes per person like the caller itself.
+function gameActAs_(caller, actAs) {
+  if (!caller || typeof actAs !== 'string' || !actAs) return caller;
+  try {
+    const cache = CacheService.getScriptCache(), key = 'gamesupport_' + String(caller.email || '').slice(0, 200);
+    let sup = cache.get(key);
+    if (sup) sup = JSON.parse(sup);
+    else {
+      const v = peopleSheet_().getDataRange().getValues(), row = v.slice(1).filter(function (r) { return gameLower_(r[0]) === gameLower_(caller.email); })[0];
+      sup = row ? supportSchools_(v[0], row) : [];
+      cache.put(key, JSON.stringify(sup), 300);
+    }
+    return supportActAs_(Object.assign({}, caller, { supporting: sup }), actAs) || caller;
+  } catch (err) {
+    console.error('gameActAs_: ' + (err && err.message));
+    return caller;
+  }
+}
+
 // ── registration (this file's own functions only) ───────────────────
 GAME_MODULE_ACTIONS.peoplelist = peopleList_;
