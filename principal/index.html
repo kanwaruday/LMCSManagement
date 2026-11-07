@@ -18,6 +18,24 @@
     .gb-viewbar { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; margin:0 0 10px; padding:6px 12px; border-radius:10px; background:var(--gb-ink); color:#fff; font-size:14px; }
     .gb-viewbar button { min-height:44px; min-width:44px; padding:0 14px; border:1.5px solid #fff; border-radius:10px; background:transparent; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
     .gb-viewbar button:focus-visible { outline:3px solid #fff; outline-offset:2px; }
+    /* Teachers' class confirmations (assets/game/ties-review.js), inside the Setup ground */
+    .tr { margin:14px 0 0; padding-top:12px; border-top:1px solid var(--gb-line); }
+    .tr-h { margin:0 0 8px; font-size:16px; }
+    .tr-counts { list-style:none; margin:0 0 10px; padding:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(92px, 1fr)); gap:6px; }
+    .tr-chip { display:flex; flex-direction:column; align-items:flex-start; padding:6px 10px; border:1.5px solid var(--gb-line); border-radius:10px; font-size:13px; }
+    .tr-chip b { font-size:20px; line-height:1.1; }
+    .tr-chip.is-zero { opacity:.6; }
+    .tr-chip.tr-corrected, .tr-chip.tr-fix { border-color:var(--gb-gold-ink, #8a5a00); }
+    .tr-chip.tr-confirmed { border-color:var(--gb-ok, #2e7d32); }
+    .tr-list { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+    .tr-row { display:grid; gap:2px; padding:8px 10px; border:1px solid var(--gb-line); border-radius:10px; }
+    .tr-top { display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+    .tr-state { font-size:13px; font-weight:700; white-space:nowrap; color:var(--gb-muted); }
+    .tr-row.tr-corrected .tr-state, .tr-row.tr-fix .tr-state { color:var(--gb-gold-ink, #8a5a00); }
+    .tr-row.tr-confirmed .tr-state { color:var(--gb-ok, #2e7d32); }
+    .tr-sec { color:var(--gb-muted); }
+    .tr-approve { min-height:44px; margin-top:6px; justify-self:start; }
+    .tr-note { margin-top:10px; font-size:13px; }
   </style>
 </head>
 <body class="gb gb-app">
@@ -80,6 +98,7 @@
   <script src="../assets/game/school-building.js?v=8e2592b7"></script>
   <script src="../assets/game/school-models.js?v=8d407d9a"></script>
   <script src="../assets/game/home-hud.js?v=38f7e5f4"></script>
+  <script src="../assets/game/ties-review.js?v=00000000"></script>
   <script src="../assets/game/rail.js?v=716e2ce0"></script>
   <script src="../coordinator/route-map.js?v=190b434e"></script>
   <script type="module" src="../office/js/erp-dues.js?v=b53ff4e0"></script>
@@ -147,7 +166,23 @@
     }
     // the school's buildings from the Kingdom (gamekingdom: a Principal gets their own base only). Read-only here.
     // Each building: its level of maxLevel and the next step that isn't "soon"; a step the game can link to gets its link.
+    // the Setup ground: the buildings, then the teachers' class confirmations (read-only; filled when erpread what=ties answers)
+    let TIES = null;
     function setupBody(base) {
+      const box = el('div', 'gb-setup');
+      box.appendChild(buildingsBody(base));
+      if (window.LMCSTiesReview) box.appendChild(LMCSTiesReview.node(TIES));
+      return box;
+    }
+    function loadTies(session) {
+      if (!window.LMCSTiesReview) return;
+      LMCSTiesReview.load(session, GAME_BACKEND_URL).then(function (r) {
+        TIES = r;
+        const old = document.querySelector('#rooms .gb-room[data-host="setup"] .tr');
+        if (old) old.replaceWith(LMCSTiesReview.node(TIES));
+      });
+    }
+    function buildingsBody(base) {
       if (!base) return el('p', 'gb-muted', GAME_BACKEND_URL ? 'Loading your buildings… If this stays, the setup progress couldn\'t be loaded; nothing is lost.' : 'The game isn\'t switched on yet, so building levels don\'t show.');
       const ul = el('ul', 'gb-list');
       (base.buildings || []).forEach(function (b) {
@@ -253,8 +288,15 @@
     // The HUD (assets/game/home-hud.js). Its sheets show these: the page lists for the sources that are plain link lists, and the setup rooms.
     function sourceBody(key) {
       const path = function (host) { return PATHS.filter(function (p) { return p.host === host; })[0]; };
-      if (key === 'setup') { const b = document.querySelector('#rooms .gb-room[data-host="setup"] .gb-room-b'); return (b && b.firstChild ? b.firstChild.cloneNode(true) : el('p', 'gb-muted', 'Your school\'s buildings')); }
+      if (key === 'setup') { const b = document.querySelector('#rooms .gb-room[data-host="setup"] .gb-room-b .gb-setup'); return b ? setupFresh_(b) : el('p', 'gb-muted', 'Your school\'s buildings'); }
       return pageList(path(key).pages);
+    }
+    // the sheet's copy: the buildings cloned, the confirmations built fresh (a clone would lose any button's handler)
+    function setupFresh_(b) {
+      const box = el('div', 'gb-setup');
+      if (b.firstChild) box.appendChild(b.firstChild.cloneNode(true));
+      if (window.LMCSTiesReview) box.appendChild(LMCSTiesReview.node(TIES));
+      return box;
     }
     function mountHud(session) {
       const campus = String(session.campus || session.campusId || '').split(',')[0].trim().toUpperCase();
@@ -292,6 +334,7 @@
       mountHud(session);
       wireSchool(); drawSchool(session, null);
       loadBase(session);
+      loadTies(session);
       if (!VIEW) LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session }); // the Owner's own appointments: not this school's
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
     }
