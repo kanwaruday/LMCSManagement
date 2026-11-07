@@ -151,15 +151,20 @@ var LMCSBuilding = (function () {
 
   // the drawing: optional hills, grounds, then prisms back to front (painter's order by plan depth), then the rooms
 
-  // The campus picture (Art Bible v3, stylized 3D; assets/game/art/): shown above the drawn building, which stays the control. Only where a
-  // reviewed render exists; a campus without one shows the drawn building alone. A picture is decoration: it carries a short alt, no logic.
+  // The campus picture: Art Studio's real-building cut-out (7 Nov; Uday on the old renders: "this image looks nothing like the school"),
+  // shown above the drawn building, which stays the control. A picture is decoration: a short alt, no logic. Each cut-out has its own aspect
+  // (about 1.4-1.8 : 1), so the img carries the 960 px file's own size and is sized by width, in the 480 px slot: the 960 px export for sharp
+  // screens, the 200 px map file otherwise. (The Principal home hides it: home-hud.css, one building on the home.)
   var ART_BASE = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src || '').replace(/[^\/]*$/, '') + 'art/';
-  var ART = { LMS1: ['lms1-dhalpur', 'Dhalpur'], LMS2: ['lms2-kelheli', 'Kelheli'], LMS3: ['lms3-dunkhra', 'Dunkhra'], LMS4: ['lms4-nerchowk', 'Ner Chowk'] };
+  var ART = { // campus: [file stem, name, 960 file's height]
+    LMS1: ['real-lms1-dhalpur-map', 'LMS 1 Dhalpur', 573], LMS2: ['real-lms2-kelheli-map', 'LMS 2 Kelheli', 670],
+    LMS3: ['real-lms3-dunkhra-map', 'LMS 3 Dunkhra', 537], LMS4: ['real-lms4-nerchowk-map', 'LMS 4 Ner Chowk', 603],
+    LMS5: ['real-lms5-sayoli-map', 'LMS 5 Sayoli', 567], LMS6: ['real-lms6-jogindernagar-map', 'LMS 6 Jogindernagar', 542] };
   function artFigure(campus) {
     var a = ART[String(campus || '').toUpperCase().replace(/\s+/g, '')]; if (!a) return '';
     return '<figure class="sb-art" style="margin:0 0 8px;position:sticky;left:0;width:min(100%,480px)"><img src="' + ART_BASE + a[0] + '-1x.webp" srcset="' + ART_BASE + a[0] +
-      '-1x.webp 480w, ' + ART_BASE + a[0] + '-2x.webp 960w" sizes="(max-width:520px) 100vw, 480px" width="480" height="480" alt="Illustration of the ' + a[1] +
-      ' school building" loading="lazy" decoding="async" style="display:block;width:100%;height:auto;border-radius:12px"></figure>';
+      '-1x.webp 200w, ' + ART_BASE + a[0] + '-960.webp 960w" sizes="(max-width:520px) 100vw, 480px" width="960" height="' + a[2] +
+      '" alt="The ' + a[1] + ' school building" loading="lazy" decoding="async" style="display:block;width:100%;height:auto"></figure>';
   }
 
   function svg(model, opts) {

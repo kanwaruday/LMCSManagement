@@ -191,8 +191,9 @@
       busbay: 'it will open your school\'s routes', lab: 'its equipment will show here', computer: 'its equipment will show here', library: 'its books will show here' };
     function drawSchool(session, model) {
       if (typeof LMCSBuilding === 'undefined') return;
-      const own = model || (typeof LMCSBuildingModels !== 'undefined' && LMCSBuildingModels[session.campus || String(session.campusId || '').split(',')[0].trim().toUpperCase()]) || null;
-      BUILDING = LMCSBuilding.clean(own) || LMCSBuilding.clean(Object.assign({}, LMCSBuilding.SAMPLE, { name: session.campusName, campus: session.campus, sample: true }));
+      const campus = session.campus || String(session.campusId || '').split(',')[0].trim().toUpperCase();
+      const own = model || (typeof LMCSBuildingModels !== 'undefined' && LMCSBuildingModels[campus]) || null;
+      BUILDING = LMCSBuilding.clean(own) || LMCSBuilding.clean(Object.assign({}, LMCSBuilding.SAMPLE, { name: session.campusName, campus: campus, sample: true })); // the school's own picture shows above a sample drawing too
       const box = document.getElementById('school-3d');
       const keep = box.scrollLeft;
       box.innerHTML = LMCSBuilding.svg(BUILDING, { hosts: HOSTS }); // every label is escaped inside svg()

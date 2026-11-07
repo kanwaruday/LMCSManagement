@@ -71,7 +71,7 @@ assert.ok(/LMCSGame\.setTourTargets\(\{ today: '#hh-strip', go: null, bar: '#hh-
 const game = read('assets/game/game.js');
 assert.ok(/function tt\(k, d\) \{ return k in tourTargets \? tourTargets\[k\] : d; \}/.test(game) && /target: tt\('today', todayEl\)/.test(game) && /var tourTargets = \{\};/.test(game), 'game.js: defaults unchanged when no targets are set');
 // drawSchool finds the campus from campusId when session.campus is absent
-assert.ok(/LMCSBuildingModels\[session\.campus \|\| String\(session\.campusId/.test(page), 'drawSchool: session.campus || session.campusId');
+assert.ok(/const campus = session\.campus \|\| String\(session\.campusId/.test(page) && /LMCSBuildingModels\[campus\]/.test(page) && /campus: campus, sample: true/.test(page), 'drawSchool: session.campus || session.campusId, for the model and the sample alike');
 // review fixes: the edge follows the drawer in the DOM (so `.is-open ~ .hh-edge` matches), the drawer has an X and closes on an outside tap
 assert.ok(/\[tl, top, el\.events, el\.drawer, el\.edge, bottom\]/.test(js) && /\.hh-drawer\.is-open ~ \.hh-edge/.test(css), 'edge is built after the drawer');
 assert.ok(/'aria-label': L\.closeTasks \}, '\\u00d7'/.test(js) && H.LABELS.closeTasks === 'Close tasks' && /pointerdown', function \(e\) \{ if \(el\.drawer\.classList\.contains\('is-open'\)/.test(js) && /if \(S\.drawer\) S\.drawer\(false\)/.test(js), 'drawer: X, outside tap, closes when a sheet opens');

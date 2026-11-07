@@ -39,4 +39,27 @@ assert.ok(!/\d{2}\.\d{4,}°|lat|lng|longitude/i.test(JSON.stringify(M)), 'no map
 assert.ok(/data-room="meet"[^]*?class="sb-e"[^>]*>🤝</.test(svg), 'the sample Meeting room shows 🤝');
 assert.ok(/data-room="f4-hall"[^]*?class="sb-e"[^>]*>🤝</.test(B.svg(M.LMS2)), 'LMS 2 Sessions hall shows 🤝');
 assert.strictEqual(B.rooms(B.clean({ name: 'T', blocks: [{ id: 'b', x: 0, y: 0, w: 1, d: 1, floors: 1, rooms: [{ id: 'r', name: 'R', type: 'office', e: '"><x', face: 'front', floor: 0, at: 0, span: 1 }] }] }))[0].e, '', 'a bad emoji key is dropped');
+// the campus picture: Art Studio's real-building cut-out for every school (7 Nov), the 960 px export's own size as the img size (sized by
+// width, each campus its own aspect), in the 480 px slot, and the old renders gone
+const fs = require('fs');
+const webpSize = (f) => { // VP8X / VP8L / VP8 headers -> [width, height]
+  const b = fs.readFileSync(f), k = b.toString('ascii', 12, 16);
+  if (k === 'VP8X') return [1 + b.readUIntLE(24, 3), 1 + b.readUIntLE(27, 3)];
+  if (k === 'VP8L') { const n = b.readUInt32LE(21); return [1 + (n & 0x3fff), 1 + ((n >> 14) & 0x3fff)]; }
+  return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
+};
+const NAMES = { LMS1: 'LMS 1 Dhalpur', LMS2: 'LMS 2 Kelheli', LMS3: 'LMS 3 Dunkhra', LMS4: 'LMS 4 Ner Chowk', LMS5: 'LMS 5 Sayoli', LMS6: 'LMS 6 Jogindernagar' };
+for (const [c, name] of Object.entries(NAMES)) {
+  const html = B.svg(Object.assign({}, B.SAMPLE, { campus: c }));
+  const img = (html.match(/<img [^>]+>/) || [''])[0], att = (k) => (img.match(new RegExp(' ' + k + '="([^"]*)"')) || [])[1];
+  const stem = c.toLowerCase().replace('lms', 'lms');
+  assert.ok(new RegExp('art/real-' + stem + '-[a-z]+-map-1x\\.webp').test(att('src')), c + ': the real cut-out');
+  assert.strictEqual(att('alt'), 'The ' + name + ' school building', c + ' alt');
+  const big = path.join(root, 'assets/game', att('src').replace(/^.*?art\//, 'art/').replace('-1x', '-960')), [w, h] = webpSize(big);
+  assert.deepStrictEqual([Number(att('width')), Number(att('height')), w], [w, h, 960], c + ': width/height are the 960 px file\'s own');
+  assert.ok(att('srcset').includes('-960.webp 960w') && att('srcset').includes('-1x.webp 200w') && fs.existsSync(big.replace('-960', '-1x')), c + ': 1x and the 960 px export');
+  assert.ok(/width:min\(100%,480px\)/.test(html) && 480 * 2 <= w, c + ': the 480 px slot, sharp at 2x without upscaling');
+}
+assert.ok(!B.svg(Object.assign({}, B.SAMPLE, { campus: 'LMS3' }), { art: false }).includes('<img'), 'art:false draws no picture');
+assert.ok(!fs.readdirSync(path.join(root, 'assets/game/art')).some((f) => /^lms\d-/.test(f)), 'the old renders are gone');
 console.log('test-school-building: ok');
