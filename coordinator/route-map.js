@@ -8,9 +8,10 @@
      Coordinator's read-only view of one bus as its driver (the same POST, apps-script/driver-token.gs's dlkLinkOrView_).
    The route view (Uday, 7 Nov: "the actual route view along with plans and all of the other meta data"): staff tapping a line (metro)
      or a bus (city) open LMCSRouteMap.run(el, { session, backendUrl, reg, back }), also used by Fleet Command (transport-checks.js):
-     the run's GPS path with the BLURRED route video in step (each video frame is one point), the stops as chapters, the workbook's
+     the run's GPS path on a map you pan, zoom and tap (Uday, 7 Nov: "i dont see the need for a video, the map needs to be
+     interactable": no video), a slider along the run, the stops as chapters, Street View at any point, the workbook's
      plan beside the run with the differences, and the run's facts (children as counts only). GET transportrun (coordinator-world.gs)
-     says who may (the Owner, Coordinators of the bus's district) and signs a ticket; the path, video and stop photos come from the
+     says who may and signs a ticket; the path and the BLURRED stop photos come from the
      Roster's capturerunview with it (transport-capture.gs), which has the Drive access. Nothing is kept on the device.
    Drawn by coordinator/transport-views.js (loaded here when the page has not), styled by coordinator/route-map.css; the city map
    loads Leaflet 1.9.4 from cdnjs the first time it is needed. Stop locations are never in this repo: they come from the backend,
@@ -94,7 +95,6 @@ window.LMCSRouteMap = (function () {
   }
 
   // ── The route view ──
-  const FPS = 30; // capture.py stitches route.mp4 at 30 frames a second, one frame per timelapse photo
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function metres(a, b) {
     const r = Math.PI / 180, h = Math.sin((b[0] - a[0]) * r / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin((b[1] - a[1]) * r / 2) ** 2;
@@ -123,7 +123,7 @@ window.LMCSRouteMap = (function () {
     return 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + Number(p[0]).toFixed(6) + ',' + Number(p[1]).toFixed(6) + '&heading=' + (a && b ? Math.round(bearing(a, b)) % 360 : 0);
   }
   /** The view's facts, pure (tests/transport/test-route-run.js). run {startedAt, endedAt, frames, stops:[{seq, name, lat, lng, at, boardOn, boardOff}]},
-   *  points [[lat, lng, takenAt] | null] (one per video frame), plan [{name, km, children, kmDay, rounds}] -> {km, boardOn, boardOff, chapters, planned, diffs} */
+   *  points [[lat, lng, takenAt] | null] (one per processed photo, in order), plan [{name, km, children, kmDay, rounds}] -> {km, boardOn, boardOff, chapters, planned, diffs} */
   function runFacts(run, points, plan) {
     const pts = points || [], at = (i) => pts[i] && [pts[i][0], pts[i][1]];
     let m = 0, last = null;
@@ -177,9 +177,10 @@ window.LMCSRouteMap = (function () {
       '<div class="rr-head"><button type="button" class="gb-btn rr-back">‹ All routes</button><h3>' + esc(b.reg) + (b.route ? ' · ' + esc(b.route) : '') + '</h3></div>' +
       ((r.runs || []).length > 1 ? '<label class="rr-pick">Run <select>' + r.runs.map((x) => '<option value="' + esc(x.runId) + '"' + (rn && x.runId === rn.runId ? ' selected' : '') + '>' +
         (x.startedAt ? day(x.startedAt) + ', ' + hm(x.startedAt) : esc(x.runId)) + ' · ' + x.frames + ' frames</option>').join('') + '</select></label>' : '') +
-      (rn ? '<p class="note">' + esc(b.campus) + (b.driver ? ' · Driver ' + esc(b.driver) : '') + (rn.startedAt ? ' · ' + day(rn.startedAt) + ', ' + hm(rn.startedAt) + (rn.endedAt ? '–' + hm(rn.endedAt) : '') : '') + '</p>' : '<p class="status">No route video recorded for this bus yet. The plan is below.</p>') +
-      (rn ? '<section class="rr-run" aria-label="The run"><h4>The run</h4><div class="rr-media"><div class="rr-vid"><p class="status">Loading the video…</p></div><div class="rr-map" role="region" aria-label="Map of the run"></div></div>' +
-        '<a class="gb-btn rr-sv" target="_blank" rel="noopener" style="margin-top:8px" hidden>Open in Street View ↗</a>' +
+      (rn ? '<p class="note">' + esc(b.campus) + (b.driver ? ' · Driver ' + esc(b.driver) : '') + (rn.startedAt ? ' · ' + day(rn.startedAt) + ', ' + hm(rn.startedAt) + (rn.endedAt ? '–' + hm(rn.endedAt) : '') : '') + '</p>' : '<p class="status">No run recorded for this bus yet. The plan is below.</p>') +
+      (rn ? '<section class="rr-run" aria-label="The run"><h4>The run</h4><div class="rr-map" role="region" aria-label="Map of the run: drag, zoom, tap the route"></div>' +
+        '<div class="rr-scrub" hidden><label>Along the run <input type="range" min="0" value="0" step="1"></label><span class="rr-at" aria-live="polite"></span>' +
+        '<a class="gb-btn rr-sv" target="_blank" rel="noopener">Open in Street View ↗</a></div>' +
         (f.chapters.length ? '<ol class="rr-chapters">' + f.chapters.map((c, i) => '<li><button type="button" data-ch="' + i + '"' + (c.frame < 0 ? ' disabled' : '') + '><b>' + (i + 1) + '</b> ' + esc(c.name || 'Stop ' + (i + 1)) + (c.at && isFinite(Date.parse(c.at)) ? ' · ' + hm(Date.parse(c.at)) : '') + (c.boardOn || c.boardOff ? ' · ' + c.boardOn + ' on, ' + c.boardOff + ' off' : '') + '</button></li>').join('') + '</ol>' : '<p class="note">No stops were marked on this run.</p>') +
         '</section>' : '') +
       '<section aria-label="Plan and run"><h4>Plan and run</h4>' +
@@ -197,55 +198,53 @@ window.LMCSRouteMap = (function () {
       '</section></div>';
     back(el, o, el.querySelector('.rr-back'));
     const pick = el.querySelector('.rr-pick select');
-    if (pick) pick.addEventListener('change', () => { if (el._rrFree) el._rrFree(); el._rrFree = null; run(el, Object.assign({}, o, { runId: pick.value })); });
+    if (pick) pick.addEventListener('change', () => { run(el, Object.assign({}, o, { runId: pick.value })); });
     if (!rn) return;
-    // the map: the whole path, the part driven so far, and where the video is now
+    // the map: the whole path, the part driven so far, and the bus at the chosen point; drag, zoom and tap anywhere
     const ll = points.filter(Boolean).map((p) => [p[0], p[1]]);
-    const map = L.map(el.querySelector('.rr-map'), { dragging: !L.Browser.mobile });
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
-    const whole = L.polyline(ll, { color: '#8a939c', weight: 4, opacity: 0.6 }).addTo(map), done = L.polyline([], { color: '#1a1a1a', weight: 5 }).addTo(map);
-    const here = ll.length ? L.circleMarker(ll[0], { radius: 8, color: '#fff', weight: 3, fillColor: '#CE0000', fillOpacity: 1 }).addTo(map) : null; // no path: no "the bus is here" dot
-    f.chapters.forEach((c, i) => { if (c.ll) L.circleMarker(c.ll, { radius: 6, color: '#fff', weight: 2, fillColor: '#00798c', fillOpacity: 1 }).addTo(map).bindTooltip(String(i + 1)); });
+    const map = L.map(el.querySelector('.rr-map'), { tap: true });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+    const whole = L.polyline(ll, { color: '#8a939c', weight: 6, opacity: 0.6 }).addTo(map), done = L.polyline([], { color: '#1a1a1a', weight: 5, interactive: false }).addTo(map);
+    const here = ll.length ? L.circleMarker(ll[0], { radius: 9, color: '#fff', weight: 3, fillColor: '#CE0000', fillOpacity: 1, interactive: false }).addTo(map) : null; // no path: no "the bus is here" dot
     if (ll.length) map.fitBounds(whole.getBounds(), { padding: [16, 16] }); else map.setView([31.85, 77.15], 9);
     if (!ll.length) el.querySelector('.rr-map').insertAdjacentHTML('afterend', '<p class="note">' + esc(pathR && pathR.error ? pathR.error : 'This run has no GPS points on record.') + '</p>');
-    const sv = el.querySelector('.rr-sv');
-    const show = (i) => {
+    const scrub = el.querySelector('.rr-scrub'), slider = scrub.querySelector('input'), at = scrub.querySelector('.rr-at'), sv = scrub.querySelector('.rr-sv');
+    slider.max = String(Math.max(0, points.length - 1));
+    const show = (i, pan) => {
       let j = Math.max(0, Math.min(points.length - 1, i));
       while (j > 0 && !points[j]) j--; // a frame with no position: the last known one
       if (!points[j] || !here) return;
-      here.setLatLng([points[j][0], points[j][1]]);
-      done.setLatLngs(points.slice(0, j + 1).filter(Boolean).map((p) => [p[0], p[1]]));
-      sv.href = streetView(points, j); sv.hidden = false;
+      const p = [points[j][0], points[j][1]], t = Number(points[j][2]);
+      here.setLatLng(p);
+      done.setLatLngs(points.slice(0, j + 1).filter(Boolean).map((q) => [q[0], q[1]]));
+      slider.value = String(j);
+      at.textContent = (t > 0 ? hm(t) + ' · ' : '') + 'photo ' + (j + 1) + ' of ' + points.length;
+      sv.href = streetView(points, j);
+      if (pan && !map.getBounds().contains(p)) map.panTo(p);
     };
-    let video = null;
-    whole.on('click', (e) => { // any point on the path: the bus's nearest frame (and the video there, once loaded)
+    const nearest = (latlng) => { // the run's frame nearest a tapped place
       let best = 0, bd = Infinity;
-      points.forEach((p, i) => { if (!p) return; const d = metres([e.latlng.lat, e.latlng.lng], p); if (d < bd) { bd = d; best = i; } });
-      if (video) video.currentTime = (best + 0.5) / FPS;
-      show(best);
+      points.forEach((p, i) => { if (!p) return; const d = metres([latlng.lat, latlng.lng], p); if (d < bd) { bd = d; best = i; } });
+      return best;
+    };
+    if (ll.length) {
+      scrub.hidden = false;
+      map.on('click', (e) => show(nearest(e.latlng))); // a tap anywhere: the bus where it passed nearest
+      slider.addEventListener('input', () => show(+slider.value, true));
+      show(0);
+    }
+    f.chapters.forEach((c, i) => {
+      if (!c.ll) return;
+      L.circleMarker(c.ll, { radius: 8, color: '#fff', weight: 2, fillColor: '#00798c', fillOpacity: 1 }).addTo(map).bindTooltip(String(i + 1))
+        .bindPopup(esc((i + 1) + '. ' + (c.name || 'Stop ' + (i + 1))) + (c.boardOn || c.boardOff ? '<br>' + c.boardOn + ' on, ' + c.boardOff + ' off' : ''))
+        .on('click', () => { if (c.frame >= 0) show(c.frame); });
     });
-    if (ll.length) show(0);
-    // the video: the BLURRED phone copy, as a blob held only while the view is open
-    const vid = el.querySelector('.rr-vid');
-    roster('video').then((v) => {
-      if (!v.success) { vid.innerHTML = '<p class="status">' + esc(v.error || 'Could not load the video.') + '</p>'; return; }
-      const bin = atob(v.base64), bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const url = URL.createObjectURL(new Blob([bytes], { type: v.mime }));
-      video = document.createElement('video');
-      video.src = url; video.controls = true; video.muted = true; video.playsInline = true; video.preload = 'auto';
-      video.setAttribute('aria-label', 'Route video, faces and number plates blurred');
-      vid.textContent = ''; vid.appendChild(video);
-      const tick = () => show(Math.floor(video.currentTime * FPS));
-      video.addEventListener('timeupdate', tick); video.addEventListener('seeked', tick);
-      if (video.requestVideoFrameCallback) { const step = (now, md) => { show(Math.floor(md.mediaTime * FPS)); video.requestVideoFrameCallback(step); }; video.requestVideoFrameCallback(step); }
-      el.querySelectorAll('[data-ch]').forEach((btn) => btn.addEventListener('click', () => {
-        const c = f.chapters[+btn.dataset.ch];
-        video.currentTime = (c.frame + 0.5) / FPS; show(c.frame);
-        if (c.ll) map.setView(c.ll, Math.max(map.getZoom(), 15));
-      }));
-      el._rrFree = () => URL.revokeObjectURL(url);
-    }).catch(() => { vid.innerHTML = '<p class="status">No connection: the video did not load.</p>'; });
+    el.querySelectorAll('[data-ch]').forEach((btn) => btn.addEventListener('click', () => {
+      const c = f.chapters[+btn.dataset.ch];
+      if (c.frame >= 0) show(c.frame);
+      if (c.ll) map.setView(c.ll, Math.max(map.getZoom(), 16));
+      el.querySelector('.rr-map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }));
     el.querySelectorAll('[data-ph]').forEach((fig) => {
       const c = f.chapters[+fig.dataset.ph];
       roster('photo', { seq: c.seq }).then((x) => { if (!x.success) return; const img = document.createElement('img'); img.alt = 'Stop ' + (c.name || '') + ', blurred'; img.src = 'data:' + x.mime + ';base64,' + x.base64; fig.prepend(img); }).catch(() => {});
@@ -254,7 +253,7 @@ window.LMCSRouteMap = (function () {
   function back(el, o, btn) {
     if (!o.back) { if (btn) btn.hidden = true; return; }
     if (!btn) { btn = document.createElement('button'); btn.type = 'button'; btn.className = 'gb-btn'; btn.textContent = '‹ All routes'; el.appendChild(btn); }
-    btn.addEventListener('click', () => { if (el._rrFree) el._rrFree(); el._rrFree = null; o.back(); });
+    btn.addEventListener('click', () => o.back());
   }
   return { mount, run, runFacts, streetView };
 })();

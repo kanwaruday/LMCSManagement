@@ -43,4 +43,8 @@ assert.strictEqual(streetView([[31, 77, 0], [31, 77, 1]], 0), SV + '31.000000,77
 assert.strictEqual(streetView([null, null], 1), '', 'no position at all: no link');
 assert.ok(!/key=|student|name/i.test(streetView(pts, 2)), 'no key, nothing but the place');
 
+// Uday, 7 Nov: "i dont see the need for a video, the map needs to be interactable": no video is fetched or drawn; the map pans, a tap moves the bus
+assert.ok(!/roster\('video'\)|createElement\('video'\)|<video/.test(src), 'no video in the route view');
+assert.ok(!/dragging: !L\.Browser\.mobile/.test(src) && /map\.on\('click'/.test(src) && /type="range"/.test(src), 'the map drags on phones too, a tap and a slider move along the run');
+
 console.log('route run: all checks passed');
