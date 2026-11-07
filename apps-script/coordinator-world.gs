@@ -54,7 +54,7 @@ function coordWorldPath_(cell) {
 /** GET action=transportrun&reg= (Uday, 7 Nov: "the actual route view along with plans and all of the other meta data"): one bus's
  *  newest processed route video. Here: the bus (driver, campus, route, seats), the run (times, frames, stops with children as counts)
  *  and the plan (Transport Plan tab: planned stops, km from school, children). The Drive side (the frame path, the BLURRED video and
- *  stop photos) is the Roster's capturerun, which has the Drive access this project lacks: it serves only a run this answer signs a
+ *  stop photos) is the Roster's capturerunview, which has the Drive access this project lacks: it serves only a run this answer signs a
  *  ticket for, good for 30 minutes. The Owner sees every bus; a Coordinator their district's. */
 function coordWorldRun_(caller, reg) {
   if (!caller || caller.principal || caller.feeClerkOnly) return { success: false, error: 'Not authorized' };
@@ -81,8 +81,8 @@ function coordWorldRun_(caller, reg) {
   return out;
 }
 
-/** {reg, runId, exp, sig}: the Roster's capturerun checks sig with the same TRANSPORT_PUSH_SECRET (transport-capture.gs capTicketOk_). */
+/** {reg, runId, exp, sig}: the Roster's capturerunview checks sig with the same TRANSPORT_PUSH_SECRET (transport-capture.gs capTicketOk_). */
 function coordRunTicket_(reg, runId, exp) {
   const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
-  return { reg: reg, runId: runId, exp: exp, sig: Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(reg + '|' + runId + '|' + exp, secret)) };
+  return { reg: reg, runId: runId, exp: exp, sig: Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature('runview|' + reg + '|' + runId + '|' + exp, secret)) }; // 'runview|': this signature means nothing anywhere else
 }

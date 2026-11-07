@@ -35,11 +35,12 @@
 //   phone's run never writes it (Captured By already names the driver).
 // POST {action:'capturediscard', secret, reg, runId} -> {success}. The Coordinator's Discard on that shelf: Capture/<REG>/<runId>/
 //   goes to the Drive bin (recoverable 30 days) and the run's Status becomes 'closed', so the Mac's pull never lists it again.
-// POST {action:'capturerun', ticket:{reg, runId, exp, sig}, part:'path'|'video'|'photo', seq?} -> the route view's Drive side
+// POST {action:'capturerunview', ticket:{reg, runId, exp, sig}, part:'path'|'video'|'photo', seq?} -> the route view's Drive side
 //   (Uday, 7 Nov). The Coordinator backend's transportrun signs the ticket after its own Owner / Coordinator district check
 //   (coordinator-world.gs); nothing here decides who may see a bus, and a ticket opens one run for 30 minutes.
-//   path  {points:[[lat, lng, takenAt] | null]}: one per timelapse frame in seq order, the order of route.mp4's frames (capture.py),
-//         so a video frame's index is its point. Read once from the original frames' descriptions and kept as processed/path.json,
+//   path  {points:[[lat, lng, takenAt] | null]}: one per processed/frame-NNNNN.jpg in seq order, exactly the frames route.mp4 was
+//         stitched from (capture.py), so a video frame's index is its point. Positions come from the matching original's description,
+//         read once and kept as processed/path.json,
 //         because the originals are deleted 30 days after processing. null: a frame with no position on record.
 //   video {base64, mime}: the BLURRED processed/route-web.mp4 (capture.py's 360 px phone copy); photo {base64, mime}: the BLURRED
 //         processed/stop-<seq>.jpg. Never an original frame or photo.
@@ -317,8 +318,10 @@ function capTicketOk_(t) {
   const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
   if (!secret || !t || !/^[A-Z0-9]{1,16}$/.test(String(t.reg || '')) || !/^[A-Za-z0-9_-]{1,64}$/.test(String(t.runId || ''))) return false;
   if (!(Number(t.exp) > Date.now())) return false;
-  const want = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(t.reg + '|' + t.runId + '|' + t.exp, secret));
-  return want === String(t.sig || '');
+  const want = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature('runview|' + t.reg + '|' + t.runId + '|' + t.exp, secret)), got = String(t.sig || '');
+  let diff = want.length ^ got.length;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i % (got.length || 1)); // constant time
+  return diff === 0;
 }
 
 /** POST capturerun (see the header). */
@@ -329,7 +332,7 @@ function captureRunView_(body) {
   capPath_().concat([t.reg, t.runId]).forEach(function (n) { f = f && capSub_(f, n); });
   const out = f && capSub_(f, 'processed');
   if (!out) return { success: false, error: 'This run has no processed video yet' };
-  const first = function (name) { const it = out.getFilesByName(name); return it.hasNext() ? it.next() : null; };
+  const first = function (name) { const it = out.getFilesByName(name); while (it.hasNext()) { const x = it.next(); if (!(x.isTrashed && x.isTrashed())) return x; } return null; };
   const send = function (file, mime) { return { success: true, mime: mime, base64: Utilities.base64Encode(file.getBlob().getBytes()) }; };
   if (body.part === 'video') {
     const v = first('route-web.mp4'); // never route.mp4: too big to send through here
@@ -352,7 +355,9 @@ function captureRunView_(body) {
     try { d = JSON.parse(file.getDescription() || 'null'); } catch (e) { d = null; }
     bySeq[m[1]] = d && isFinite(Number(d.lat)) && isFinite(Number(d.lng)) && d.lat !== '' && d.lng !== '' ? [Number(d.lat), Number(d.lng), Number(d.takenAt) || null] : null;
   }
-  const points = Object.keys(bySeq).sort().map(function (k) { return bySeq[k]; });
+  const inVideo = [], made = out.getFiles(); // the blurred frames route.mp4 was stitched from: their set and order, not the originals'
+  while (made.hasNext()) { const m = /^frame-(\d{5})\.jpg$/.exec(made.next().getName()); if (m) inVideo.push(m[1]); }
+  const points = inVideo.sort().map(function (k) { return k in bySeq ? bySeq[k] : null; });
   if (points.length) out.createFile('path.json', JSON.stringify(points), 'application/json'); // ponytail: two first opens at once may both write it; the first one found is used
   return { success: true, points: points };
 }

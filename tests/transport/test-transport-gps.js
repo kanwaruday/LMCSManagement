@@ -473,7 +473,7 @@ assert.deepStrictEqual(J(run('gpsRows_("Parts Catalog")')).filter(r => r.model =
   assert.deepStrictEqual([o.plan.length, o.plan[0].name, o.plan[1].children, o.plan[0].kmDay], [2, 'Village A', null, 40], 'and the plan, a broken count as null');
   assert.deepStrictEqual([o.ticket.reg, o.ticket.runId], ['HP1', 'HP1-20261030-150452-rv01']);
   assert.ok(o.ticket.exp > Date.now() && o.ticket.exp <= Date.now() + 30 * 60000, 'a ticket for 30 minutes');
-  assert.strictEqual(o.ticket.sig, ctx.Utilities.base64EncodeWebSafe(ctx.Utilities.computeHmacSha256Signature('HP1|HP1-20261030-150452-rv01|' + o.ticket.exp, 'S')), 'signed as the Roster checks it (capTicketOk_)');
+  assert.strictEqual(o.ticket.sig, ctx.Utilities.base64EncodeWebSafe(ctx.Utilities.computeHmacSha256Signature('runview|HP1|HP1-20261030-150452-rv01|' + o.ticket.exp, 'S')), 'signed as the Roster checks it (capTicketOk_)');
   assert.strictEqual(tr({ email: 'c@x.org', campusId: 'LMS5', roles: ['Coordinator'] }, 'HP1').bus.reg, 'HP1', 'a Coordinator of the district');
   assert.strictEqual(tr({ email: 'c@x.org', campusId: 'LMS2', roles: ['Coordinator'] }, 'HP1').error, 'No such bus in your schools', 'another district: refused');
   assert.strictEqual(tr({ email: 'c@x.org', campusId: 'LMS2', roles: ['Coordinator'] }, 'HP99').error, 'No such bus in your schools', 'an unknown bus reads the same');

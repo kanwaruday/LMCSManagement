@@ -11,7 +11,7 @@
      the run's GPS path with the BLURRED route video in step (each video frame is one point), the stops as chapters, the workbook's
      plan beside the run with the differences, and the run's facts (children as counts only). GET transportrun (coordinator-world.gs)
      says who may (the Owner, Coordinators of the bus's district) and signs a ticket; the path, video and stop photos come from the
-     Roster's capturerun with it (transport-capture.gs), which has the Drive access. Nothing is kept on the device.
+     Roster's capturerunview with it (transport-capture.gs), which has the Drive access. Nothing is kept on the device.
    Drawn by coordinator/transport-views.js (loaded here when the page has not), styled by coordinator/route-map.css; the city map
    loads Leaflet 1.9.4 from cdnjs the first time it is needed. Stop locations are never in this repo: they come from the backend,
    for a signed-in person or a linked phone, and stay in memory. */
@@ -78,7 +78,8 @@ window.LMCSRouteMap = (function () {
         if (!d.stops.length) { say(el, hi ? 'अभी रूट नहीं बना है। कुछ दिन बस चलने के बाद दिखेगा · No route yet. It appears after the bus has run its route for a few days.' : 'No bus routes recorded here yet. They appear once the buses\' trackers have run their routes for a few days.'); return; }
         el.textContent = '';
         const who = opts.session || (window.LMCS && LMCS.getSession());
-        if (!hi && window.LMCS && LMCS.canViewCoordinatorPortal(who)) state.onRun = // the Owner and Coordinators (UI only: transportrun checks again) (reg) => run(el, { session: opts.session, backendUrl: opts.backendUrl, reg, back: () => { el.textContent = ''; TransportViews.render(el, d, opts.mode, state); } });
+        // the Owner and Coordinators get "See the run" (UI only: transportrun checks again)
+        if (!hi && window.LMCS && LMCS.canViewCoordinatorPortal(who)) state.onRun = (reg) => run(el, { session: opts.session, backendUrl: opts.backendUrl, reg, back: () => { el.textContent = ''; TransportViews.render(el, d, opts.mode, state); } });
         TransportViews.render(el, d, opts.mode, state);
       } catch (e) {
         if (e.refused && opts.refused) { say(el, opts.refused); return; }
@@ -139,7 +140,7 @@ window.LMCSRouteMap = (function () {
       r = await (await fetch(o.backendUrl + '?action=transportrun&reg=' + encodeURIComponent(o.reg) + '&idToken=' + encodeURIComponent((s && s.idToken) || ''), { cache: 'no-store' })).json();
     } catch (e) { r = { success: false, error: 'No connection. Try again when you have signal.' }; }
     if (!r.success) { say(el, r.error === 'Not authorized' ? 'Only the Owner and Coordinators see a bus\'s run.' : r.error || 'Could not load the run.', () => run(el, o)); back(el, o); return; }
-    const roster = (part, extra) => fetch(r.rosterUrl, { method: 'POST', body: JSON.stringify(Object.assign({ action: 'capturerun', ticket: r.ticket, part }, extra || {})) }).then((x) => x.json());
+    const roster = (part, extra) => fetch(r.rosterUrl, { method: 'POST', body: JSON.stringify(Object.assign({ action: 'capturerunview', ticket: r.ticket, part }, extra || {})) }).then((x) => x.json());
     const [pathR] = r.run ? await Promise.all([roster('path').catch(() => ({ success: false })), script(LEAFLET + 'leaflet.min.js', () => !!window.L, SRI.js), css(LEAFLET + 'leaflet.min.css', SRI.css)]) : [null];
     const points = pathR && pathR.success ? pathR.points : [];
     const f = runFacts(r.run, points, r.plan), b = r.bus, rn = r.run;

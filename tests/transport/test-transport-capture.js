@@ -427,7 +427,9 @@ assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
     fr(2, { lat: 9, lng: 9, takenAt: 9 }, 'frame-00002 (1).jpg'); // a Drive conflict copy: the original wins
     runDir.createFile({ name: 'stop-00004.jpg', bytes: [1, 2, 3] }); // the phone's unblurred stop photo
     out.createFile({ name: 'route.mp4', bytes: [9, 9, 9, 9] }); out.createFile({ name: 'stop-00004.jpg', bytes: [7, 7] });
-    const sign = (reg, runId, exp, key) => ({ reg, runId, exp, sig: ctx.Utilities.base64EncodeWebSafe(ctx.Utilities.computeHmacSha256Signature(reg + '|' + runId + '|' + exp, key || 'S')) });
+    ['frame-00000.jpg', 'frame-00001.jpg', 'frame-00002.jpg'].forEach((n) => out.createFile({ name: n })); // what the video was stitched from
+    fr(3, { lat: 31.4, lng: 77.4, takenAt: 4000 }); // an original that reached Drive after processing: not in the video, so not in the path
+    const sign = (reg, runId, exp, key) => ({ reg, runId, exp, sig: ctx.Utilities.base64EncodeWebSafe(ctx.Utilities.computeHmacSha256Signature('runview|' + reg + '|' + runId + '|' + exp, key || 'S')) });
     const t = sign('HP659511', 'HP659511-20261101-071500-rv01', Date.now() + 60000);
     const rv = (b) => run('captureRunView_(' + JSON.stringify(b) + ')');
     assert.strictEqual(rv({ part: 'path' }).error, 'Not authorized', 'no ticket, nothing');
@@ -436,16 +438,24 @@ assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
     assert.strictEqual(rv({ ticket: sign(t.reg, t.runId, Date.now() - 1), part: 'path' }).error, 'Not authorized', 'an expired ticket is refused');
     assert.strictEqual(rv({ ticket: sign('HP659511/..', t.runId, t.exp), part: 'path' }).error, 'Not authorized', 'an unsafe reg is refused even when signed');
     const p1 = rv({ ticket: t, part: 'path' });
-    assert.deepStrictEqual(p1.points, [[31.1, 77.1, 1000], null, [31.3, 77.3, 3000]], 'one point per frame in seq order (the video\'s order), null where none, the original over its copy');
+    assert.deepStrictEqual(p1.points, [[31.1, 77.1, 1000], null, [31.3, 77.3, 3000]], 'one point per frame of the video, in its order; null where none; the original over its copy; a late original left out');
+    assert.strictEqual(rv({ ticket: Object.assign({}, t, { sig: t.sig.slice(0, -1) }), part: 'path' }).error, 'Not authorized', 'a signature one character short is refused');
     assert.ok(out.files.some((f) => f.name === 'path.json'), 'the path is kept beside the video, for after the originals go');
     runDir.files.forEach((f) => { if (/^frame-/.test(f.name)) f.setDescription(''); });
     assert.deepStrictEqual(rv({ ticket: t, part: 'path' }).points, p1.points, 'read back from path.json, not the originals');
     assert.ok(/not made yet/.test(rv({ ticket: t, part: 'video' }).error), 'no phone copy: refused, never the full route.mp4');
+    const binned = out.createFile({ name: 'route-web.mp4', bytes: [1] }); binned.isTrashed = () => true;
+    assert.ok(/not made yet/.test(rv({ ticket: t, part: 'video' }).error), 'a binned file is never served');
     out.createFile({ name: 'route-web.mp4', bytes: [5, 6] });
     assert.deepStrictEqual([rv({ ticket: t, part: 'video' }).base64, rv({ ticket: t, part: 'video' }).mime], [Buffer.from([5, 6]).toString('base64'), 'video/mp4'], 'the blurred phone copy');
     assert.strictEqual(rv({ ticket: t, part: 'photo', seq: 4 }).base64, Buffer.from([7, 7]).toString('base64'), 'the blurred stop photo, never the original');
     assert.strictEqual(rv({ ticket: t, part: 'photo', seq: '4/../x' }).error, 'Bad stop');
     assert.strictEqual(rv({ ticket: sign('HP659511', 'HP659511-20261026-071500-cd34', t.exp), part: 'path' }).error, 'This run has no processed video yet');
+  }
+  { // the Roster router sends capturerunview to the route view, and capturerun still to the run manifest
+    const src = gs('employee-roster.gs');
+    assert.ok(/action === 'capturerunview'\) return staffJsonOut_\(captureRunView_\(body\)\)/.test(src), 'capturerunview reaches captureRunView_');
+    assert.ok(/action === 'capturerun'\) return staffJsonOut_\(captureRun_\(body\)\)/.test(src) && !/'capturerun'\) return staffJsonOut_\(captureRunView_/.test(src), 'and capturerun stays the manifest');
   }
   console.log('transport capture: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });
