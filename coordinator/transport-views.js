@@ -7,7 +7,8 @@
    campuses. Stop locations never live in this public repo. When the staff stop workbook is wired in, a stop's `name` (checked name)
    and `students` (children at the stop) are used where present; until then the GPS place name and route totals stand in.
    Needs Leaflet (window.L) for the city view. Without pnl in the data (the route World: transportworld, driverroute) nothing shows
-   money: no badges, no money lines, no money colours. Mounted outside the transport pages by coordinator/route-map.js. */
+   money: no badges, no money lines, no money colours. Mounted outside the transport pages by coordinator/route-map.js.
+   S.onRun(reg), when the page sets it (staff only): a line's panel (metro) and a chosen bus (city) offer "See the run", the route view. */
 window.TransportViews = (function () {
   const LINES = ['#d1495b', '#00798c', '#d68c1a', '#30638e', '#5b9a6f', '#8d6a9f', '#2e4057', '#b5604f', '#3c9d9b', '#9a7b24'];
   const PROFIT = '#15803d', LOSS = '#CE0000', WARN = '#b45309', OFF = '#8a939c', INK = '#1a1a1a';
@@ -126,7 +127,9 @@ window.TransportViews = (function () {
       info.innerHTML = '<b style="color:' + m.colour[reg] + '">' + esc(reg) + ' · ' + esc(r.name) + '</b><p>' + esc(v.campus || '') + (v.start ? ' · from ' + esc(v.start) : '') + '</p>' +
         '<p>' + (v.students != null ? v.students + ' children' : 'children not known') + ' · ' + (cap ? cap + ' seats across ' + (v.rounds || 2) + ' rounds' : 'seats not known') + (v.kmday ? ' · ' + v.kmday + ' km a day' : '') + '</p>' +
         (v.net != null ? '<p>' + esc(m.period) + ': <b style="color:' + (v.net < 0 ? LOSS : PROFIT) + '">' + lakh(v.net) + '</b> after fuel, fixed costs and driver pay.</p>' : '') +
-        '<p>' + r.all.length + ' stops, ' + esc(r.all[0].t) + ' to ' + esc(r.all[r.all.length - 1].t) + '.' + (close ? ' <b>' + close + ' stop' + (close > 1 ? 's' : '') + ' within 2 minutes of the previous one in the same village</b>: could they be one?' : '') + '</p>';
+        '<p>' + r.all.length + ' stops, ' + esc(r.all[0].t) + ' to ' + esc(r.all[r.all.length - 1].t) + '.' + (close ? ' <b>' + close + ' stop' + (close > 1 ? 's' : '') + ' within 2 minutes of the previous one in the same village</b>: could they be one?' : '') + '</p>' +
+        (S.onRun ? '<p><button type="button" class="gb-btn tv-run">See the run</button></p>' : '');
+      if (S.onRun) info.querySelector('.tv-run').addEventListener('click', () => S.onRun(reg));
     };
     const stInfo = k => {
       const s = station[k], regs = Array.from(new Set(s.list.map(x => x.bus)));
@@ -143,8 +146,9 @@ window.TransportViews = (function () {
     if (!S.bus || m.buses.indexOf(S.bus) === -1) S.bus = m.buses.slice().sort((a, b) => ((m.veh[a] || {}).net || 0) - ((m.veh[b] || {}).net || 0))[0] || ''; // open on the biggest loss
     el.innerHTML = '<p class="note">The line is the road the bus really drives (a typical day from the GPS)' + (m.months.length ? ', green if the bus earns more than it costs ' + esc(m.period) + ', red if it loses' : '') + '. Each stop has a ' + WALK_M + ' m walking circle in the bus\'s colour: circles of two colours overlapping mean two buses serve the same houses. Square: where the bus waits.</p>' +
       '<div class="ctl"><select class="tv-bus" aria-label="Bus"><option value="">All buses</option>' + m.buses.map(b => '<option' + (b === S.bus ? ' selected' : '') + '>' + esc(b) + '</option>').join('') + '</select>' +
-      '<label class="sm"><input type="checkbox" class="tv-walk"' + (S.walk === false ? '' : ' checked') + '> Walking circles</label></div><div class="tv-city" role="region" aria-label="Map of routes and stops"></div>';
-    el.querySelector('.tv-bus').addEventListener('change', e => { S.bus = e.target.value; draw(); });
+      '<label class="sm"><input type="checkbox" class="tv-walk"' + (S.walk === false ? '' : ' checked') + '> Walking circles</label>' + (S.onRun ? '<button type="button" class="gb-btn tv-run"' + (S.bus ? '' : ' hidden') + '>See the run</button>' : '') + '</div><div class="tv-city" role="region" aria-label="Map of routes and stops"></div>';
+    if (S.onRun) el.querySelector('.tv-run').addEventListener('click', () => S.onRun(S.bus));
+    el.querySelector('.tv-bus').addEventListener('change', e => { S.bus = e.target.value; const b = el.querySelector('.tv-run'); if (b) b.hidden = !S.bus; draw(); });
     el.querySelector('.tv-walk').addEventListener('change', e => { S.walk = e.target.checked; draw(); });
     const map = L.map(el.querySelector('.tv-city'), { dragging: !L.Browser.mobile }); // a phone: one finger scrolls the page, two fingers zoom the map
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);

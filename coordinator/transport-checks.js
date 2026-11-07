@@ -113,7 +113,11 @@ window.TransportChecks = (function () {
       const tab = body.querySelector('.tc-tab');
       mapEl.hidden = S.tab !== 'map';
       if (S.tab === 'map') { if (!S.live) S.live = TransportLive.mount(mapEl, session); else S.live.sync(); return; }
-      if (views.indexOf(S.tab) !== -1) { TransportViews.render(tab, d, S.tab, (S.view = S.view || {})[S.tab] = S.view[S.tab] || {}); return; }
+      if (views.indexOf(S.tab) !== -1) {
+        const vs = (S.view = S.view || {})[S.tab] = S.view[S.tab] || {};
+        if (window.LMCSRouteMap && window.LMCS && LMCS.canViewCoordinatorPortal(session)) vs.onRun = (reg) => LMCSRouteMap.run(tab, { session, backendUrl: BACKEND_URL, reg, back: render }); // the route view (route-map.js); the backend still checks who
+        TransportViews.render(tab, d, S.tab, vs); return;
+      }
       ({ overview, checks, trackers, driving, fuel, stops })[S.tab](tab, d, open, late);
     }
 
