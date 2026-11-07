@@ -83,7 +83,7 @@ window.LMCSKingdomMap = (function () {
   function art(src, cls) {
     var i = el('img', cls);
     i.alt = ''; i.decoding = 'async'; i.draggable = false;
-    if (src && /^assets\/game\/[\w\/.-]+\.(webp|png|svg)$/.test(src)) i.src = (V.opts.root || '') + src; // repo art only
+    if (src && /^assets\/game\/[\w\/.-]+\.(webp|png|svg)$/.test(src) && src.indexOf('..') === -1) i.src = (V.opts.root || '') + src; // repo art only
     if (i.src && /-1x\.webp$/.test(src)) i.srcset = (V.opts.root || '') + src.replace(/-1x\.webp$/, '-2x.webp') + ' 2x';
     return i;
   }

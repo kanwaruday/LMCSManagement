@@ -54,7 +54,9 @@
       .fm-next { top:auto; left:0; right:0; bottom:0; width:auto; max-height:46vh; border-radius:18px 18px 0 0; padding-bottom:env(safe-area-inset-bottom); background:var(--paper, #fbf7ef); }
       .fm-next .kg-next { border-radius:0; border-width:0; padding:4px 68px 12px 14px; } /* the right gutter: Buddy's button (buddy-dock.css, bottom-right) sits there */
       .fm-next .kg-next .kg-buddy { width:44px; height:44px; }
-      .fm-sheet-h { display:flex; justify-content:center; width:100%; min-height:28px; border:0; background:none; cursor:pointer; padding:6px 0 0; }
+      .fm-sheet-h { display:flex; justify-content:center; align-items:center; width:100%; min-height:44px; border:0; background:none; cursor:pointer; padding:0; }
+      /* Leaflet's bottom corners (zoom, the OpenStreetMap credit the tile policy needs) sit above the sheet: --fm-sheet is its height */
+      .fm .leaflet-bottom { bottom:var(--fm-sheet, 0px); }
       .fm-sheet-h::before { content:""; width:44px; height:5px; border-radius:3px; background:#b9ae9c; }
       .fm-next.is-min .kg-nextt, .fm-next.is-min .kg-qbar, .fm-next.is-min .kg-qmeta, .fm-next.is-min .kg-buddy { display:none; }
       .fm-drawer { top:auto; left:0; width:auto; max-height:82vh; border-radius:18px 18px 0 0; box-shadow:0 -8px 24px rgba(0,0,0,.3); }
@@ -137,9 +139,13 @@
         if (next.querySelector('.fm-sheet-h')) return;
         const hd = document.createElement('button'); hd.type = 'button'; hd.className = 'fm-sheet-h';
         const set = function (min) { next.classList.toggle('is-min', min); hd.setAttribute('aria-expanded', String(!min)); hd.setAttribute('aria-label', min ? 'Show your next step' : 'Fold your next step'); };
-        hd.onclick = function () { set(!next.classList.contains('is-min')); };
+        hd.onclick = function () { set(!next.classList.contains('is-min')); lift(); };
         set(next.classList.contains('is-min')); next.insertBefore(hd, next.firstChild);
       };
+      // the sheet's height, for the map's bottom controls (phones only; on desktop the card floats top-left)
+      const lift = function () { document.documentElement.style.setProperty('--fm-sheet', phone() && next.offsetHeight ? next.offsetHeight + 'px' : '0px'); };
+      if (window.ResizeObserver) new ResizeObserver(lift).observe(next);
+      window.addEventListener('resize', lift);
       const after = K.hooks.after;
       K.hooks.after = function (d) {
         if (after) after(d);
@@ -150,7 +156,7 @@
         });
         document.getElementById('fm-reqn').textContent = (d.cards || []).length || '';
         document.getElementById('fm-requests').hidden = d.role !== 'Owner';
-        sheet(); draw();
+        sheet(); lift(); draw();
       };
       K.hooks.townhall = function (data) { th = data; draw(); };
       K.mount(document.getElementById('kingdom-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', next: next, panels: document.getElementById('kg-panels'), noValley: true });

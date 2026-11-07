@@ -42,7 +42,7 @@ assert.ok(!/aria-modal/.test(src) && /role', 'region'/.test(src), 'the map is in
 assert.ok(!/KULLU/.test(src) && !/\[\s*31\./.test(src), 'no coordinates in the module');
 const page = read('owner/kingdom.html');
 assert.ok(page.includes('places.js') && page.includes('kingdom-map.js') && /LMCSKingdomMap\.mount/.test(page) && /K\.openBase\(id, el\)/.test(page), 'the Map view mounts the map; a place opens its base sheet');
-assert.ok(!/leaflet/i.test(page), 'Leaflet loads only when the map is opened');
+assert.ok(!/leaflet[\w.@/-]*\.(js|css)/i.test(page) && !/cdnjs[^"']*leaflet/i.test(page), 'Leaflet loads only when the map is opened (the page only styles its controls)');
 // close pins join one group so labels never stack; far ones stay apart
 const gs = (a) => M.cluster(a, 120, 52).map((g) => g.map((p) => p.id).join('+')).join();
 assert.strictEqual(gs([{ id: 'HES', x: 100, y: 100 }, { id: 'LMS1', x: 110, y: 90 }, { id: 'LMS3', x: 300, y: 40 }, { id: 'LMS4', x: 100, y: 300 }]), 'HES+LMS1,LMS3,LMS4');
@@ -81,4 +81,8 @@ assert.ok(!/assets\/game\/art\/lms\d/.test(read('assets/game/places.js')), 'not 
 });
 assert.ok(/placeholder/.test(P.HES.art) && /placeholder/.test(P.HES.townhallArt), 'HQ and the Townhall stay marked placeholders until their art lands');
 assert.ok(/\^assets\\\/game\\\//.test(src) && /\.src = \(V\.opts\.root/.test(src), 'the map only loads art from the repo');
+// phones: the next-step sheet never covers Leaflet's bottom corners (zoom; the OpenStreetMap credit the tile policy needs)
+assert.ok(/\.fm \.leaflet-bottom \{ bottom:var\(--fm-sheet, 0px\); \}/.test(page) && /new ResizeObserver\(lift\)\.observe\(next\)/.test(page) && /setProperty\('--fm-sheet'/.test(page), 'the bottom controls ride above the sheet');
+assert.ok(/\.fm-sheet-h \{[^}]*min-height:44px/.test(page), 'the fold handle is a 44 px target');
+assert.ok(/src\.indexOf\('\.\.'\) === -1/.test(src), 'no .. in an art path');
 console.log('kingdom map: ok');
