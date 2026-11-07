@@ -65,6 +65,9 @@ test('the quest is registered for teachers only', () => {
   assert.deepStrictEqual([def.scope, def.selfOnly, def.addable, def.prefill, def.skipLabel], ['self', true, false, 'erp.myTies', 'Not my class']);
   assert.deepStrictEqual(J(def.roles), ['Teacher']);
   assert.strictEqual(J(ctx.cqGetAction_(P4, { quest: 't2' })).code, 'SETUP_NOT_YOURS');
+  // the Game Config override still wins over a module's quest: t2 can be switched off without a deploy
+  assert.ok(!ctx.cqDefs_({ confirmQuests: { t2: { active: false } } }).some((d) => d.id === 't2'));
+  assert.strictEqual(ctx.cqDefs_({ confirmQuests: { t2: { title: 'Check your classes' } } }).filter((d) => d.id === 't2')[0].title, 'Check your classes');
 });
 
 test('pre-filled from the seeded ties, nothing confirmed, no student shown', () => {

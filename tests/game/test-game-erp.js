@@ -47,12 +47,12 @@ const LMS4 = {
 };
 // ---- the setup-quest store (game-confirm.gs Setup Data): cqRead_ rows, cqStored_ as the engine reads them (latest row wins)
 let setup = [];
-ctx.cqRead_ = () => setup;
-ctx.cqStored_ = (rows, q, scope) => {
-  const byItem = {}, order = [];
-  rows.forEach((r) => { if (r.quest !== q || r.scope !== scope) return; if (!byItem[r.item]) { byItem[r.item] = {}; order.push(r.item); } byItem[r.item][r.field] = { value: r.value, status: r.status }; });
-  return { order, byItem };
+const cqConfirmed = (q, scope) => {
+  const out = {};
+  setup.forEach((r) => { if (r.quest !== q || (scope !== null && r.scope !== scope)) return; (out[r.item] = out[r.item] || {})[r.field] = { value: r.value, status: r.status }; });
+  return out;
 };
+ctx.cqConfirmed_ = cqConfirmed;
 const asg = (empCode, email, kind, cls, section, subject) => ({ empCode, email, kind, class: cls, section, subject, bus: '' });
 // a teacher's answer in quest t2 for one seeded row: confirmed values, or status 'skipped' ("Not my class")
 function answer(email, row, fields, status) {
@@ -259,9 +259,9 @@ setup = []; answer('other@test.invalid', t7, { class: '7', section: 'A' }); // s
 assert.ok(denied(read(classT, { what: 'students' })));
 setup = []; answer('ct@test.invalid', t7, { class: '7', section: 'A' }); answer('ct@test.invalid', t7, {}, 'skipped'); // the latest answer wins
 assert.ok(denied(read(classT, { what: 'students' })));
-delete ctx.cqRead_; // the engine isn't loaded: no tie at all
+delete ctx.cqConfirmed_; // the engine isn't loaded: no tie at all
 assert.ok(denied(read(classT, { what: 'students' })));
-ctx.cqRead_ = () => setup;
+ctx.cqConfirmed_ = cqConfirmed;
 
 // ---- the pre-fill: the caller's own seeded ties, as quest items (no student data)
 ctx.CacheService = { getScriptCache: () => ({ get: () => null, put() {} }) };

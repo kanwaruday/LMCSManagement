@@ -156,6 +156,18 @@ function cqStored_(rows, questId, scopeKey) {
   return { order: order, byItem: byItem };
 }
 
+// the latest answer per item and field of one quest: { item: { field: { value, status } } } (status as cqSaveAction_ writes it:
+// 'confirmed' or 'skipped'), for one scope, or every scope merged in write order when scopeKey is null. The one reader a module
+// uses (game-erp.gs's faces gate), so it never depends on cqRead_'s row shape.
+function cqConfirmed_(questId, scopeKey) {
+  const out = {};
+  cqRead_().forEach(function (r) {
+    if (r.quest !== questId || (scopeKey !== null && r.scope !== scopeKey)) return;
+    (out[r.item] = out[r.item] || {})[r.field] = { value: r.value, status: r.status };
+  });
+  return out;
+}
+
 function cqEnsureTab_(book) {
   let sh = book.getSheetByName(CQ_TAB);
   if (!sh) { sh = book.insertSheet(CQ_TAB); gameAppendText_(sh, [CQ_HEADER]); }

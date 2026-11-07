@@ -107,8 +107,8 @@ function erpTieIsMine_(caller, t) {
 
 // the caller's own confirmations in the tie quest: { item: { field: { value, status } } }, or null when the engine isn't loaded
 function erpConfirmedFor_(caller) {
-  if (typeof cqRead_ !== 'function' || typeof cqStored_ !== 'function') return null;
-  return cqStored_(cqRead_(), ERP_TIE_QUEST, 'self:' + String(caller.email || '').trim().toLowerCase()).byItem;
+  if (typeof cqConfirmed_ !== 'function') return null;
+  return cqConfirmed_(ERP_TIE_QUEST, 'self:' + String(caller.email || '').trim().toLowerCase());
 }
 
 // one seeded tie + its confirmation -> { state: pending|confirmed|corrected|notmine, section } (section: the one confirmed)
@@ -361,11 +361,7 @@ function erpRead_(caller, params) {
 // what=ties (Owner/Principal; a supporting Principal reads the same, nothing here writes): every seeded row with its teacher's state.
 // Staff names only, never a student. -> { rows: [{teacher, empCode, kind, class, subject, seededSection, section, state, fix}], summary }
 function erpTiesReview_(assignRows) {
-  const byItem = {};
-  if (typeof cqRead_ === 'function') cqRead_().forEach(function (r) {
-    if (r.quest !== ERP_TIE_QUEST || !/^self:/.test(r.scope)) return;
-    (byItem[r.item] = byItem[r.item] || {})[r.field] = { value: r.value, status: r.status }; // append order: the latest row wins
-  });
+  const byItem = typeof cqConfirmed_ === 'function' ? cqConfirmed_(ERP_TIE_QUEST, null) : {}; // t2 is self-scoped; item keys carry their owner
   const summary = { pending: 0, confirmed: 0, corrected: 0, notmine: 0, fix: 0 };
   const rows = erpSeedTies_(assignRows).filter(function (t) { return t.kind !== 'bus'; }).map(function (t) {
     const st = t.owner ? erpTieState_(t, byItem[t.item]) : { state: 'fix', section: '' };
