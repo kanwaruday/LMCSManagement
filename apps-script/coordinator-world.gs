@@ -73,6 +73,7 @@ function coordWorldRun_(caller, reg) {
   if (!latest) { out.run = null; return out; }
   const sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE);
   const row = (sh ? sh.getDataRange().getValues().slice(1) : []).filter(function (r) { return String(r[0]) === String(latest.runId); })[0] || [];
+  if (String(row[12]) === 'closed') { out.run = null; return out; } // discarded on the review shelf (capturediscard): its folder is binned, so no stop list either
   const ms = function (v) { const n = v instanceof Date ? v.getTime() : Number(v); return isFinite(n) && n > 0 ? n : null; };
   out.run = { runId: String(latest.runId), startedAt: ms(row[4]), endedAt: ms(row[5]), frames: Number(row[8]) || 0,
     stops: latest.stops.map(function (s) { return { seq: Number(s.seq) || 0, name: String(s.name || ''), lat: s.lat, lng: s.lng, at: String(s.at || ''), boardOn: Number(s.boardOn) || 0, boardOff: Number(s.boardOff) || 0, photo: !!s.photoFileId }; }) };

@@ -324,7 +324,7 @@ function capTicketOk_(t) {
   return diff === 0;
 }
 
-/** POST capturerun (see the header). */
+/** POST capturerunview (see the header). */
 function captureRunView_(body) {
   const t = body.ticket;
   if (!capTicketOk_(t)) return { success: false, error: 'Not authorized' };

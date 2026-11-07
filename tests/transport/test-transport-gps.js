@@ -482,6 +482,9 @@ assert.deepStrictEqual(J(run('gpsRows_("Parts Catalog")')).filter(r => r.model =
   assert.strictEqual(tr(null, 'HP1').error, 'Not authorized');
   const none = tr({ email: 'o@x.org', campusId: 'ALL', roles: ['Owner'] }, 'HP7');
   assert.deepStrictEqual([none.run, 'ticket' in none, none.plan], [null, false, []], 'a bus with no processed run: no run, no ticket');
+  book(run('COORD_TRANSPORT_FORM_ID')).getSheetByName('Capture Runs')._rows().find(r => r[0] === 'HP1-20261030-150452-rv01')[12] = 'closed';
+  const gone = tr({ email: 'o@x.org', campusId: 'ALL', roles: ['Owner'] }, 'HP1');
+  assert.deepStrictEqual([gone.run, 'ticket' in gone, gone.plan.length], [null, false, 2], 'a discarded run that still has a Capture Stops row: no stop list, no ticket; the plan still shows');
   ctx.coordVisibleCampuses_ = stubVisible;
 }
 console.log('transport gps: all checks passed');
