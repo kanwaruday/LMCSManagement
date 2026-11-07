@@ -74,6 +74,11 @@ Object.keys(P).filter((k) => k !== 'CENTER').forEach((k) => {
   if (/placeholder/.test(P[k].art)) assert.ok(/PLACEHOLDER/.test(read(P[k].art)), k + ' placeholder says so');
 });
 assert.ok(fs.existsSync(path.join(root, P.HES.townhallArt)), 'the Townhall art exists');
-assert.ok(!/assets\/game\/art\//.test(read('assets/game/places.js')), 'not the old illustrated art (Uday: "looks nothing like the school")');
+assert.ok(!/assets\/game\/art\/lms\d/.test(read('assets/game/places.js')), 'not the old illustrated art (Uday: "looks nothing like the school")');
+['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].forEach((k) => {
+  assert.ok(/^assets\/game\/art\/real-lms\d-[a-z]+-map-1x\.webp$/.test(P[k].art), k + ': the real-building cut-out');
+  assert.ok(fs.existsSync(path.join(root, P[k].art.replace('-1x', '-2x'))), k + ': its 2x');
+});
+assert.ok(/placeholder/.test(P.HES.art) && /placeholder/.test(P.HES.townhallArt), 'HQ and the Townhall stay marked placeholders until their art lands');
 assert.ok(/\^assets\\\/game\\\//.test(src) && /\.src = \(V\.opts\.root/.test(src), 'the map only loads art from the repo');
 console.log('kingdom map: ok');
