@@ -322,6 +322,59 @@ test('principal: the sign-in allowlist read shows the new campus once its 10-min
   assert.ok(/campusId: match\.campusId/.test(fs.readFileSync(__dirname + '/../../assets/auth.js', 'utf8')), 'sign-in takes the campus from that read');
 });
 
+// Fee Clerks and Accounts (Uday's "A", 7 Nov): a plain Fee Clerk may be LMS1-6 or ALL; Accounts and mixed rows one school only
+const office = (c, b) => J(ctx.peopleOffice_(c, b));
+const OFFICE_ROWS = [['fc@example.org', 'Fee Clerk', 'LMS2', 'FeeClerk', '', ''], ['ac@example.org', 'Accounts One', 'LMS1', 'Accounts', '', ''],
+  ['fa@example.org', 'Fee Acc', 'LMS3', 'FeeClerk, Accounts', '', ''], ['ft@example.org', 'Fee Teach', 'LMS5', 'FeeClerk, Teacher', '', 'HR']];
+test('office: peoplelist lists Fee Clerks and Accounts with mayAll only for a plain Fee Clerk', () => {
+  go(); A.push(...OFFICE_ROWS.map((r) => r.slice()));
+  const d = J(ctx.peopleList_(OWN, {}));
+  assert.deepStrictEqual(d.office.map((p) => [p.email, p.mayAll, p.editable]), [['c2@example.org', false, true], ['fc@example.org', true, true], ['ac@example.org', false, true], ['fa@example.org', false, true], ['ft@example.org', false, true]]);
+  assert.strictEqual(J(ctx.peopleList_(COORD, {})).code, 'PEOPLE_NOT_YOURS');
+});
+test('office: a plain Fee Clerk to ALL and back; campus cell only; audited; unchanged is a no-op', () => {
+  go(); A.push(...OFFICE_ROWS.map((r) => r.slice()));
+  let r = office(OWN, { email: 'fc@example.org', campus: 'all' });
+  assert.strictEqual(r.success, true, JSON.stringify(r));
+  assert.deepStrictEqual(rowOf('fc@example.org'), ['fc@example.org', 'Fee Clerk', 'ALL', 'FeeClerk', '', '']);
+  assert.strictEqual(r.person.mayAll, true);
+  assert.strictEqual(office(OWN, { email: 'fc@example.org', campus: 'ALL' }).unchanged, true);
+  assert.strictEqual(office(OWN, { email: 'fc@example.org', campus: 'LMS6' }).success, true);
+  assert.strictEqual(rowOf('fc@example.org')[2], 'LMS6');
+  r = office(OWN, { email: 'ft@example.org', campus: 'LMS4' });
+  assert.strictEqual(r.success, true);
+  assert.deepStrictEqual(rowOf('ft@example.org'), ['ft@example.org', 'Fee Teach', 'LMS4', 'FeeClerk, Teacher', '', 'HR'], 'roles, name and functions stay');
+  assert.ok(audit().every((x) => col(x, 'Action') === 'people_office'));
+  assert.ok(!logs.concat(warns).some((m) => /@example/.test(m)), 'no people in logs');
+});
+test('office: Accounts and mixed rows never ALL (refused, audited, nothing written); other refusals', () => {
+  go(); A.push(...OFFICE_ROWS.map((r) => r.slice()));
+  const before = JSON.stringify(A);
+  for (const e of ['ac@example.org', 'fa@example.org', 'ft@example.org', 'c2@example.org']) assert.strictEqual(office(OWN, { email: e, campus: 'ALL' }).code, 'PEOPLE_ONE_SCHOOL', e);
+  assert.ok(audit().some((x) => col(x, 'Code') === 'PEOPLE_ONE_SCHOOL' && col(x, 'Campus') === 'ALL'), 'refusal audited');
+  for (const c of [COORD, P4]) assert.strictEqual(office(c, { email: 'fc@example.org', campus: 'LMS1' }).code, 'KINGDOM_NO_RIGHT');
+  assert.strictEqual(office(OWN, { email: 'p4@example.org', campus: 'LMS1' }).code, 'PEOPLE_NOT_OFFICE');
+  assert.strictEqual(office(OWN, { email: 'owner@example.org', campus: 'LMS1' }).code, 'PEOPLE_OWNER_ROW');
+  A.push(['ow@example.org', 'Owner Fee', 'ALL', 'Owner, FeeClerk', '', '']);
+  assert.strictEqual(office(OWN, { email: 'ow@example.org', campus: 'LMS1' }).code, 'PEOPLE_OWNER_ROW');
+  A.pop();
+  assert.strictEqual(office(OWN, { email: 'fc@example.org', campus: 'LMS9' }).code, 'KINGDOM_BAD_INPUT');
+  // a Fee Clerk given Accounts in the sheet between the read and the write: ALL is decided on the roles as they are then
+  onReadRow = () => { rowOf('fc@example.org')[3] = 'FeeClerk, Accounts'; };
+  assert.strictEqual(office(OWN, { email: 'fc@example.org', campus: 'ALL' }).code, 'PEOPLE_CHANGED');
+  onReadRow = null; rowOf('fc@example.org')[3] = 'FeeClerk';
+  assert.strictEqual(JSON.stringify(A), before, 'nothing written');
+  // the sign-in rule agrees: ALL is a plain-Fee-Clerk campus only (auth.js onlyFeeClerk)
+  const au = fs.readFileSync(__dirname + '/../../assets/auth.js', 'utf8');
+  assert.ok(/roles\.every\(function \(r\) \{ return r === 'FeeClerk'; \}\)/.test(au) && /roles\.every\(function \(r\) \{ return r === 'FeeClerk'; \}\)/.test(fs.readFileSync(dir + 'game-people.gs', 'utf8')), 'same rule as onlyFeeClerk');
+});
+test('office: POST dispatch only; the page posts it behind Confirm and offers All schools to a plain Fee Clerk only', () => {
+  const g = fs.readFileSync(dir + 'game.gs', 'utf8'), page = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
+  assert.ok(/action === 'peopleoffice'\) return gameJson_\(peopleOffice_\(caller, body\)\)/.test(g));
+  assert.ok(!/peopleoffice/.test(g.slice(0, g.indexOf('function doPost'))), 'never a GET');
+  assert.ok(/'peopleoffice'\)/.test(page) && /confirmStep\(/.test(page) && /p\.mayAll \? DATA\.campuses : /.test(page));
+});
+
 let fail = 0;
 for (const [n, fn] of tests) { try { fn(); console.log('ok  ' + n); } catch (e) { fail++; console.log('FAIL ' + n + '\n  ' + (e.stack || e).split('\n').slice(0, 14).join('\n  ')); } }
 if (fail) process.exit(1);

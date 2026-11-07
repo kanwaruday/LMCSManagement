@@ -11,6 +11,9 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //                      inputs checked, audit `requested`, the write under the game lock, audit `done`; refusals audited too.
 //   peopleprincipal    POST only: change a Principal's campus to one school (never ALL) (any row holding Principal, also with other roles), same rights and order.
 //                      It writes the Campus cell of that row only: roles, name and functions stay. Never a row holding Owner.
+//   peopleoffice       POST only: change a Fee Clerk's or Accounts person's campus (any row holding FeeClerk or Accounts), same rights,
+//                      order and Campus-cell-only write. Uday's answer "A" (7 Nov), the same rule as auth.js onlyFeeClerk: a row whose
+//                      only role is FeeClerk may be LMS1-6 or ALL; Accounts and any mixed row get one school only (ALL refused).
 // What peoplecoordinator may touch, and nothing else: the Coordinator role, that row's campus and its functions from PEOPLE_FUNCTIONS (any other
 // function already in the cell is kept). It never edits or removes a row holding Owner, never grants Owner, and leaves a row that holds
 // any other role (Principal, Accounts, ...) to the sheet. One row per email (two rows for one email: refused). A new row is plain text.
@@ -24,7 +27,8 @@ var PEOPLE_EMAIL = /^[a-z0-9][a-z0-9._%+\-]{0,63}@[a-z0-9\-]{1,63}(\.[a-z0-9\-]{
 var PEOPLE_NOT_YOURS = { success: false, code: 'PEOPLE_NOT_YOURS', error: 'The People room is for the Owner.' };
 var PEOPLE_CODES = { PEOPLE_BAD_EMAIL: 'That email does not look right.', PEOPLE_BAD_NAME: 'Add their name (letters, up to 80).',
   PEOPLE_OWNER_ROW: "The Owner's own row can't be changed here.", PEOPLE_OTHER_ROLES: 'This person has other roles too. Change them in the allowlist sheet.',
-  PEOPLE_NOT_FOUND: 'That person is not a Coordinator.', PEOPLE_NOT_PRINCIPAL: 'That person is not a Principal.', PEOPLE_NO_FUNCTIONS_COLUMN: 'The allowlist has no Functions column yet, so functions cannot be saved.',
+  PEOPLE_NOT_FOUND: 'That person is not a Coordinator.', PEOPLE_NOT_PRINCIPAL: 'That person is not a Principal.', PEOPLE_NOT_OFFICE: 'That person is not a Fee Clerk or Accounts.',
+  PEOPLE_ONE_SCHOOL: 'Only a plain Fee Clerk can cover all schools. Choose one school.', PEOPLE_NO_FUNCTIONS_COLUMN: 'The allowlist has no Functions column yet, so functions cannot be saved.',
   PEOPLE_DUPLICATE: 'That email is on the allowlist more than once. Fix the sheet first.', PEOPLE_CHANGED: 'The allowlist changed just now. Nothing was removed; please try again.', PEOPLE_ERROR: 'Something went wrong. Nothing was changed.' };
 
 function peopleFail_(code) { return { success: false, code: code, error: PEOPLE_CODES[code] || KINGDOM_CODES[code] || PEOPLE_CODES.PEOPLE_ERROR }; }
@@ -46,7 +50,11 @@ function peopleList_(caller, params) {
       const roles = peopleRoles_(r[3]);
       return { email: gameLower_(r[0]), name: String(r[1] || '').trim(), campus: String(r[2] || '').trim().toUpperCase(), roles: roles, editable: roles.indexOf('Owner') === -1 };
     });
-    return { success: true, coordinators: list, principals: principals, functions: PEOPLE_FUNCTIONS.slice(), campuses: PEOPLE_CAMPUSES.slice(), hasFunctions: peopleFnAt_(header) !== -1,
+    const office = v.slice(1).filter(function (r) { return gameLower_(r[0]) && peopleOfficeHolds_(peopleRoles_(r[3])); }).map(function (r) {
+      const roles = peopleRoles_(r[3]);
+      return { email: gameLower_(r[0]), name: String(r[1] || '').trim(), campus: String(r[2] || '').trim().toUpperCase(), roles: roles, editable: roles.indexOf('Owner') === -1, mayAll: peopleOnlyFeeClerk_(roles) };
+    });
+    return { success: true, coordinators: list, principals: principals, office: office, functions: PEOPLE_FUNCTIONS.slice(), campuses: PEOPLE_CAMPUSES.slice(), hasFunctions: peopleFnAt_(header) !== -1,
       canEdit: kingdomCan_(caller, 'allocate', cqLoadCfg_()) };
   } catch (err) {
     console.error('peoplelist: ' + (err && err.message));
@@ -134,11 +142,24 @@ function peopleCoordinator_(caller, body) {
 }
 
 // POST {email, campus: 'LMS1'..'LMS6'} -> {success, principal: {email, name, campus, roles, editable} , unchanged?}
-function peoplePrincipal_(caller, body) {
+// the rows each campus write may change, and when ALL is allowed (decided under the lock, from the row's roles as they are then)
+var PEOPLE_CAMPUS_KINDS = {
+  principal: { audit: 'people_principal', out: 'principal', holds: function (roles) { return roles.indexOf('Principal') !== -1; }, notCode: 'PEOPLE_NOT_PRINCIPAL',
+    mayAll: function () { return false; } }, // ALL would make a Principal network-wide (auth.js: every school's staff, the Coordinator portal). That stays a sheet edit.
+  office: { audit: 'people_office', out: 'person', holds: function (roles) { return peopleOfficeHolds_(roles); }, notCode: 'PEOPLE_NOT_OFFICE',
+    mayAll: function (roles) { return peopleOnlyFeeClerk_(roles); } } // ALL widens a plain Fee Clerk's campus only (auth.js onlyFeeClerk)
+};
+function peopleOfficeHolds_(roles) { return roles.indexOf('FeeClerk') !== -1 || roles.indexOf('Accounts') !== -1; }
+function peopleOnlyFeeClerk_(roles) { return roles.length > 0 && roles.every(function (r) { return r === 'FeeClerk'; }); }
+function peoplePrincipal_(caller, body) { return peopleSetCampus_(caller, body, PEOPLE_CAMPUS_KINDS.principal); }
+function peopleOffice_(caller, body) { return peopleSetCampus_(caller, body, PEOPLE_CAMPUS_KINDS.office); }
+
+// POST {email, campus} -> {success, principal | person, unchanged?}: the Campus cell of one row, nothing else
+function peopleSetCampus_(caller, body, kind) {
   try {
     const noRight = function (why) {
-      console.warn('peopleprincipal refused: ' + why);
-      kingdomAuditRefusal_([gameNow_().toISOString(), gameLower_(caller && caller.email), 'people_principal', 'allowlist', '', '', '', '', '', 'done', 'refused', 'KINGDOM_NO_RIGHT']);
+      console.warn(kind.audit + ' refused: ' + why);
+      kingdomAuditRefusal_([gameNow_().toISOString(), gameLower_(caller && caller.email), kind.audit, 'allowlist', '', '', '', '', '', 'done', 'refused', 'KINGDOM_NO_RIGHT']);
       return peopleFail_('KINGDOM_NO_RIGHT');
     };
     if (!caller || (caller.roles || []).indexOf('Owner') === -1) return noRight('not the Owner');
@@ -148,12 +169,11 @@ function peoplePrincipal_(caller, body) {
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const campus = typeof body.campus === 'string' ? body.campus.trim().toUpperCase() : '';
     const row = function (phase, result, code) {
-      return [at, by, 'people_principal', 'allowlist', kingdomCell_(email, 200), kingdomCell_(campus, 10), kingdomCell_(email, 200), '', '', phase, result, kingdomCell_(String(code), 200)];
+      return [at, by, kind.audit, 'allowlist', kingdomCell_(email, 200), kingdomCell_(campus, 10), kingdomCell_(email, 200), '', '', phase, result, kingdomCell_(String(code), 200)];
     };
     const refuse = function (code) { kingdomAuditRefusal_(row('done', 'refused', code)); return peopleFail_(code); };
     if (!PEOPLE_EMAIL.test(email) || email.length > 254) return refuse('PEOPLE_BAD_EMAIL');
-    // one school only: ALL would make a Principal network-wide (auth.js: every school's staff, the Coordinator portal). That stays a sheet edit.
-    if (campus === 'ALL' || PEOPLE_CAMPUSES.indexOf(campus) === -1) return refuse('KINGDOM_BAD_INPUT');
+    if (PEOPLE_CAMPUSES.indexOf(campus) === -1 || (campus === 'ALL' && kind === PEOPLE_CAMPUS_KINDS.principal)) return refuse('KINGDOM_BAD_INPUT');
     return kingdomLocked_(function () {
       kingdomAudit_(row('requested', '', ''), true);
       const refuseHeld = function (code) { kingdomAudit_(row('done', 'refused', code), true); return peopleFail_(code); };
@@ -163,18 +183,21 @@ function peoplePrincipal_(caller, body) {
       if (!at_.length) return refuseHeld('PEOPLE_NOT_PRINCIPAL');
       const i = at_[0], roles = peopleRoles_(v[i][3]);
       if (roles.indexOf('Owner') !== -1) return refuseHeld('PEOPLE_OWNER_ROW');
-      if (roles.indexOf('Principal') === -1) return refuseHeld('PEOPLE_NOT_PRINCIPAL');
+      if (!kind.holds(roles)) return refuseHeld(kind.notCode);
       // the row as it is this instant (the roster backend and hand edits touch the sheet without our lock)
       const now = sh.getRange(i + 1, 1, 1, 4).getValues()[0];
       if (gameLower_(now[0]) !== email || String(now[3]) !== String(v[i][3])) return refuseHeld('PEOPLE_CHANGED');
+      if (campus === 'ALL' && !kind.mayAll(roles)) return refuseHeld(kind === PEOPLE_CAMPUS_KINDS.principal ? 'KINGDOM_BAD_INPUT' : 'PEOPLE_ONE_SCHOOL'); // the roles just re-read
       const out = { email: email, name: String(now[1] || '').trim(), campus: campus, roles: roles, editable: true };
-      if (String(now[2] || '').trim().toUpperCase() === campus) { kingdomAudit_(row('done', 'ok', 'unchanged'), true); return { success: true, unchanged: true, principal: out }; }
+      if (kind === PEOPLE_CAMPUS_KINDS.office) out.mayAll = kind.mayAll(roles);
+      const res = function (extra) { const o = { success: true }; o[kind.out] = out; return Object.assign(o, extra || {}); };
+      if (String(now[2] || '').trim().toUpperCase() === campus) { kingdomAudit_(row('done', 'ok', 'unchanged'), true); return res({ unchanged: true }); }
       sh.getRange(i + 1, 3).setNumberFormat('@').setValue(campus);
       kingdomAudit_(row('done', 'ok', 'changed'), true);
-      return { success: true, principal: out };
+      return res();
     });
   } catch (err) {
-    console.error('peopleprincipal: ' + (err && err.message));
+    console.error(kind.audit + ': ' + (err && err.message));
     return peopleFail_('PEOPLE_ERROR');
   }
 }

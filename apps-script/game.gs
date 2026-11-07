@@ -289,6 +289,7 @@ function doPost(e) {
     // The People room's write (game-people.gs): POST only, never in GAME_MODULE_ACTIONS; Owner and rights checks are inside it.
     if (action === 'peoplecoordinator') return gameJson_(peopleCoordinator_(caller, body));
     if (action === 'peopleprincipal') return gameJson_(peoplePrincipal_(caller, body)); // game-people.gs: Owner + allocate right inside
+    if (action === 'peopleoffice') return gameJson_(peopleOffice_(caller, body)); // game-people.gs: Owner + allocate right inside
     // The 🎉 event self-tick (game-event.gs): POST only, never in GAME_MODULE_ACTIONS; every check is inside it.
     if (action === 'gameeventtick') return gameJson_(eventTick_(caller, body));
     // An Owner tick-off quest step (game-setup.gs): POST only, never in GAME_MODULE_ACTIONS; the Owner check is inside it.

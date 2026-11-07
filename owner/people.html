@@ -26,9 +26,9 @@
 <body class="gb gb-app">
 
   <!-- 👑 The People room (Owner only): the Coordinators and Principals on the allowlist, from the game backend (peoplelist). Add a
-       Coordinator, or change one's school and functions (peoplecoordinator); change a Principal's school (peopleprincipal). Every write is
+       Coordinator, or change one's school and functions (peoplecoordinator); change a Principal's school (peopleprincipal), or a Fee Clerk's or Accounts person's (peopleoffice). Every write is
        a POST behind a confirm, and the server checks the Owner again on every call. The allowlist sheet stays the one store. -->
-  <header class="gb-head"><div><div><h1>People</h1><p>Coordinators and Principals across LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="realMap">Map</a></nav></div></header>
+  <header class="gb-head"><div><div><h1>People</h1><p>Coordinators, Principals, Fee Clerks and Accounts across LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="realMap">Map</a></nav></div></header>
   <div class="gb-shell">
     <main class="gb-stage">
       <section class="hero" id="auth-root" style="padding-top:24px;"><div id="gate-slot"></div></section>
@@ -44,6 +44,11 @@
           <h2 class="gb-h2" id="pp-ph">Principals</h2>
           <ul class="gb-list" id="pp-plist"></ul>
           <p class="gb-muted">Change sets their school only; their roles stay as they are. It reaches their portal within about 15 minutes.</p>
+        </section>
+        <section class="gb-section" aria-labelledby="pp-oh">
+          <h2 class="gb-h2" id="pp-oh">Fee Clerks and Accounts</h2>
+          <ul class="gb-list" id="pp-olist"></ul>
+          <p class="gb-muted">Change sets their school only; their roles stay as they are. Only a plain Fee Clerk can cover all schools; Accounts, or anyone with another role too, gets one school. It reaches their portal within about 15 minutes.</p>
         </section>
       </div>
     </main>
@@ -82,12 +87,41 @@
           DATA.canEdit && p.editable ? h('div', { class: 'pp-acts' }, [h('button', { type: 'button', class: 'gb-btn', onclick: function (e) { editPrincipal(p, e.currentTarget); } }, ['Change school'])]) : null]));
       });
     }
+    // Fee Clerks and Accounts: one card each, Change school (All schools for a plain Fee Clerk only, the server checks it again)
+    function roleText(roles) { return roles.map(function (r) { return r === 'FeeClerk' ? 'Fee Clerk' : r; }).join(', '); }
+    function renderOffice() {
+      const ol = document.getElementById('pp-olist'), ps = DATA.office || [];
+      ol.textContent = '';
+      if (!ps.length) ol.appendChild(h('li', { class: 'gb-card' }, ['No Fee Clerks or Accounts on the allowlist yet.']));
+      ps.forEach(function (p) {
+        ol.appendChild(h('li', { class: 'gb-card pp-row' }, [h('b', {}, [p.name || p.email]), h('small', {}, [p.email]),
+          h('small', {}, [place(p.campus) + ' · ' + roleText(p.roles)]),
+          DATA.canEdit && p.editable ? h('div', { class: 'pp-acts' }, [h('button', { type: 'button', class: 'gb-btn', onclick: function (e) { editOffice(p, e.currentTarget); } }, ['Change school'])]) : null]));
+      });
+    }
+    function editOffice(p, opener) {
+      const s = sheet('Change ' + (p.name || p.email) + "'s school", [], opener);
+      const schools = p.mayAll ? DATA.campuses : DATA.campuses.filter(function (c) { return c !== 'ALL'; });
+      const known = schools.indexOf(p.campus) !== -1;
+      const campus = h('select', { id: 'pp-ocampus', class: 'gb-input' }, [known ? null : h('option', { value: '', selected: true }, ['Choose a school'])].concat(
+        schools.map(function (c) { return h('option', { value: c, selected: known && p.campus === c ? true : null }, [place(c)]); })));
+      const err = h('p', { class: 'gb-field-err', role: 'alert' }, []);
+      const next = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Next']);
+      s.dlg.appendChild(h('div', {}, [h('div', { class: 'gb-field' }, [h('label', { for: 'pp-ocampus' }, ['School']), campus]),
+        p.mayAll ? null : h('p', { class: 'gb-muted' }, ['One school: only a plain Fee Clerk can cover all schools.']), err,
+        h('div', { class: 'pp-acts' }, [next, h('button', { type: 'button', class: 'gb-btn', onclick: s.close }, ['Cancel'])])]));
+      campus.focus();
+      next.onclick = function () {
+        if (schools.indexOf(campus.value) === -1) { err.textContent = 'Choose a school.'; campus.focus(); return; }
+        confirmStep(s, 'Move ' + (p.name || p.email) + ' (' + roleText(p.roles) + ') to ' + place(campus.value) + '? Their roles stay the same.', { email: p.email, campus: campus.value }, 'peopleoffice');
+      };
+    }
     function load() {
       status('Loading…');
       return fetch(GAME_BACKEND_URL + '?action=peoplelist&idToken=' + encodeURIComponent(SESSION.idToken || ''), { cache: 'no-store' })
         .then(function (r) { return r.json(); }).then(function (d) {
           if (!d || !d.success) throw new Error((d && d.error) || '');
-          DATA = d; status(''); render();
+          DATA = d; status(''); render(); renderOffice();
         }).catch(function (e) { status((e && e.message) || "Couldn't load the People room. Check the connection, then try again."); });
     }
 
