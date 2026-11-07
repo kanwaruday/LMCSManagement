@@ -28,6 +28,7 @@ const ctx = {
 };
 vm.createContext(ctx);
 proj.forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx));
+Object.keys(ctx.CQ_MODULE_DEFS).forEach((k) => { delete ctx.CQ_MODULE_DEFS[k]; }); // the shipped defaults only: module quests (game-erp.gs t2) are tested in their own files
 const J = (x) => JSON.parse(JSON.stringify(x));
 const NOW = new Date('2026-11-10T05:00:00Z');
 ctx.gameNow_ = () => NOW;

@@ -2,6 +2,7 @@ var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
 var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {};
 var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 var CQ_PREFILL = CQ_PREFILL || {};
+var CQ_MODULE_DEFS = CQ_MODULE_DEFS || {}; // a module's own setup quests (CQ_MODULE_DEFS.<id> = def, set in its own file); a shipped default of the same id wins
 
 // Setup quests ("confirm values"): per-item fields pre-filled (known, amber) from our records, confirmed or corrected by a
 // person. Store: the append-only `Setup Data` tab in the Game workbook, latest row per (quest, scope, item, field) wins.
@@ -103,6 +104,7 @@ function cqValidDef_(id, raw) {
 function cqDefs_(cfg, includeInactive) {
   const base = cqDefaults_(), over = (cfg && cfg.confirmQuests) || {};
   const has = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+  Object.keys(CQ_MODULE_DEFS).forEach(function (k) { if (!has(base, k)) base[k] = CQ_MODULE_DEFS[k]; });
   const ids = Object.keys(base).concat(Object.keys(over).filter(function (k) { return !has(base, k); }));
   const out = [];
   ids.forEach(function (id) {

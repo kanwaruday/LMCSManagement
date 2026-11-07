@@ -26,6 +26,7 @@ function mkCtx(files) {
   };
   vm.createContext(c);
   files.forEach((f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), c));
+  if (c.CQ_MODULE_DEFS) Object.keys(c.CQ_MODULE_DEFS).forEach((k) => { delete c.CQ_MODULE_DEFS[k]; }); // engine quests only: module quests have their own tests
   return c;
 }
 const J = (x) => JSON.parse(JSON.stringify(x));

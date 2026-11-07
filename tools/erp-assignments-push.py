@@ -12,6 +12,8 @@ match when it is confident (>= 0.9) and the code is Active in the ERP staff mast
 nobody) and `fix` says what the Principal checks. No bus in-charges: no timetable has them.
 Faces rule (V1/G2, 7 Nov): no timetable has sections, so by default a tie is seeded only where students_now shows the class
 with exactly one section (the row names it); a class with several sections, or none known yet, becomes a fix row.
+Every seeded row is UNCONFIRMED (Uday, 7 Nov: staff confirm what we already know): it unlocks students only after its teacher
+confirms it, with a section, in the game's setup quest t2 (game-erp.gs). The Principal reads each row's state (erpread what=ties).
 Names go only into the private Sheet. This prints counts, never names. Secrets: the extractor's data/secrets (never printed).
 """
 import csv, json, os, re, subprocess, sys, tempfile

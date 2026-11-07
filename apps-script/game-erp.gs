@@ -1,16 +1,24 @@
 var GAME_MODULE_ACTIONS = GAME_MODULE_ACTIONS || {};
 var GAME_MODULE_MISSIONS = GAME_MODULE_MISSIONS || {};
 var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
+var CQ_PREFILL = CQ_PREFILL || {};
+var CQ_MODULE_DEFS = CQ_MODULE_DEFS || {};
 
 // ═══════════════════════════════════════════════════════════════════
 // LMCS Game Backend -- the ERP read module (V2 row #7). Scoped, read-only reads of the CyberSchoolManager data the extractor puts
 // into Uday's private campus Sheets (one Sheet per campus, Script properties ERP_SHEET_LMS1..ERP_SHEET_LMS6; Uday sets them, no
 // IDs in code). Contract: side-session-notes erp-read-contract.md (tabs, headers, actions, shapes, scopes).
-//   GET  erpread       ?what=scope|students|attendance|marks|dues|bus|staff&campus=&class=&section=&house=&subject=&exam=&bus=&from=&to=
+//   GET  erpread       ?what=scope|students|attendance|marks|dues|bus|staff|ties&campus=&class=&section=&house=&subject=&exam=&bus=&from=&to=
 //   POST erpdriverbus  {deviceToken}: a linked driver phone's own bus list (needs driver-token.gs in this project, else UNAVAILABLE)
 // Scope (erpAccess_): Owner every campus and dataset; Principal their campus; Fee Clerk their campus's students, dues and buses;
 // everyone else only through an Assignments row tying their employee code or email to a class-section (class teacher), a
 // class-section-subject (subject teacher) or a bus (in-charge). No tie = nothing. Coordinator has no ERP scope (not in the brief).
+// Confirmed ties only (Uday, 7 Nov: "wherever we have existing data, it should just confirm that from the actual staff in the game
+// quests"): a seeded Assignments row is UNCONFIRMED until its teacher confirms or corrects it in setup quest ERP_TIE_QUEST (the
+// game-confirm.gs engine, pre-filled here by 'erp.myTies'). A tie unlocks students only when confirmed WITH a section and with the
+// seeded class (a corrected class waits for the Principal); "Not my class" unlocks nothing (children's faces rule). what=ties shows
+// the Principal every row's state. Bus ties have no confirm step yet, so none count.
+// ponytail: bus ties fail closed until the quest gets a bus field (no bus in-charges are seeded yet).
 // Privacy: rows are PROJECTED to the contract's columns (an Aadhaar or phone column in a Sheet never leaves); no photo column, no
 // Drive read (children's faces rule: no student photos this week); logs carry counts only, never a name, enroll number or email.
 // Empty state: no Sheet ID = configured:false with no rows, never an error; a missing tab is listed in `missing`.
@@ -19,7 +27,7 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 // ═══════════════════════════════════════════════════════════════════
 
 var ERP_CAMPUSES = ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
-var ERP_WHATS = ['students', 'attendance', 'marks', 'dues', 'bus', 'staff'];
+var ERP_WHATS = ['students', 'attendance', 'marks', 'dues', 'bus', 'staff', 'ties'];
 // tab -> the only columns ever read from it (header names, matched ignoring case, spaces and underscores: enroll_no = enrollNo).
 // Tab names are the extractor's (vault work/active/csm-erp-extractor.md, Private-Drive export design); assignments is filled by hand.
 var ERP_TABS = {
@@ -28,10 +36,11 @@ var ERP_TABS = {
   Marks: ['session', 'term', 'exam', 'subject', 'enrollNo', 'maxMarks', 'marks'],
   Dues: ['enrollNo', 'feeHead', 'receivable', 'received', 'concession', 'balance'],
   Staff: ['empCode', 'name', 'designation', 'department', 'status', 'house'],
-  Assignments: ['empCode', 'email', 'kind', 'class', 'section', 'subject', 'bus'],
+  Assignments: ['empCode', 'email', 'kind', 'class', 'section', 'subject', 'bus', 'teacher', 'fix'],
 };
 var ERP_SHEET_TAB = { Students: 'students_now', Attendance: 'attendance', Marks: 'marks_summary', Dues: 'dues', Staff: 'staff', Assignments: 'assignments' };
-var ERP_NEEDS = { students: ['Students'], attendance: ['Students', 'Attendance'], marks: ['Students', 'Marks'], dues: ['Students', 'Dues'], bus: ['Students'], staff: ['Staff'] };
+var ERP_NEEDS = { students: ['Students'], attendance: ['Students', 'Attendance'], marks: ['Students', 'Marks'], dues: ['Students', 'Dues'], bus: ['Students'], staff: ['Staff'], ties: ['Assignments'] };
+var ERP_TIE_QUEST = 't2'; // the setup quest (game-confirm.gs) where a teacher confirms their seeded ties
 var ERP_MAX_DAYS = 31;
 var ERP_IST_MS = 330 * 60000;
 
@@ -76,15 +85,50 @@ function erpCodeOf_(caller) {
   try { return typeof tchCodeFor_ === 'function' ? erpNorm_(tchCodeFor_(caller)) : ''; } catch (err) { return ''; }
 }
 
-// Assignments rows (projected) -> this caller's ties [{kind, class, section, subject, bus}], matched by employee code or email
-function erpTies_(caller, assignRows) {
-  const code = erpCodeOf_(caller), email = String(caller.email || '').trim().toLowerCase();
-  return (assignRows || []).filter(function (a) {
-    return (code && erpNorm_(a.empCode) === code) || (email && String(a.email || '').trim().toLowerCase() === email);
-  }).map(function (a) {
+// Assignments rows (projected) -> the seeded ties [{owner, item, kind, class, label, section, subject, bus, teacher, fix, empCode, email}].
+// owner: the row's employee code, else its email; '' = a fix row that ties nobody. item: the row's setup-quest item, built from the
+// owner and the seeded values, so a Principal's edit to a row asks its teacher again.
+function erpTieSlug_(s, n) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, n); }
+function erpSeedTies_(assignRows) {
+  return (assignRows || []).map(function (a) {
     const cls = erpNorm_(a.class), suffix = (cls.match(/ - ([A-Z0-9]+)$/) || [])[1] || ''; // "X - A" ties section A, not all of X
-    return { kind: String(a.kind || '').trim().toLowerCase(), class: erpClassBase_(cls), section: erpNorm_(a.section) || suffix, subject: erpNorm_(a.subject), bus: erpBusKey_(a.bus) };
+    const owner = erpNorm_(a.empCode) || String(a.email || '').trim().toLowerCase();
+    const t = { owner: owner, empCode: erpNorm_(a.empCode), email: String(a.email || '').trim().toLowerCase(), kind: String(a.kind || '').trim().toLowerCase(),
+      class: erpClassBase_(cls), label: String(a.class || '').trim(), section: erpNorm_(a.section) || suffix, subject: erpNorm_(a.subject), bus: erpBusKey_(a.bus),
+      teacher: String(a.teacher || '').trim(), fix: String(a.fix || '').trim() };
+    t.item = ('e_' + owner.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '-' + t.kind.charAt(0) + '-' + erpTieSlug_(t.class, 10) + '-' + erpTieSlug_(t.section, 4) + '-' + erpTieSlug_(t.subject, 12)).slice(0, 64);
+    return t;
   }).filter(function (t) { return (t.kind === 'class' || t.kind === 'subject') ? !!t.class && (t.kind === 'class' || !!t.subject) : t.kind === 'bus' && !!t.bus; });
+}
+function erpTieIsMine_(caller, t) {
+  const code = erpCodeOf_(caller), email = String(caller.email || '').trim().toLowerCase();
+  return !!t.owner && ((code && t.empCode === code) || (email && t.email === email));
+}
+
+// the caller's own confirmations in the tie quest: { item: { field: { value, status } } }, or null when the engine isn't loaded
+function erpConfirmedFor_(caller) {
+  if (typeof cqRead_ !== 'function' || typeof cqStored_ !== 'function') return null;
+  return cqStored_(cqRead_(), ERP_TIE_QUEST, 'self:' + String(caller.email || '').trim().toLowerCase()).byItem;
+}
+
+// one seeded tie + its confirmation -> { state: pending|confirmed|corrected|notmine, section } (section: the one confirmed)
+function erpTieState_(t, c) {
+  const ok = function (f) { return !!c && !!c[f] && c[f].status === 'confirmed'; };
+  if (c && ((c.class && c.class.status === 'skipped') || (c.section && c.section.status === 'skipped'))) return { state: 'notmine', section: '' };
+  if (!ok('class') || !ok('section')) return { state: 'pending', section: '' };
+  const section = erpNorm_(c.section.value);
+  if (erpClassBase_(c.class.value) !== t.class && erpNorm_(c.class.value) !== erpNorm_(t.label)) return { state: 'corrected', section: section, classChanged: true };
+  return { state: section === t.section ? 'confirmed' : 'corrected', section: section };
+}
+
+// Assignments rows -> this caller's CONFIRMED ties [{kind, class, section, subject, bus}]: confirmed with a section and the seeded class
+function erpTies_(caller, assignRows, confirmed) {
+  if (!confirmed) return [];
+  return erpSeedTies_(assignRows).filter(function (t) { return t.kind !== 'bus' && erpTieIsMine_(caller, t); }).map(function (t) {
+    const st = erpTieState_(t, confirmed[t.item]);
+    return (st.state === 'confirmed' || st.state === 'corrected') && !st.classChanged && st.section
+      ? { kind: t.kind, class: t.class, section: st.section, subject: t.subject, bus: '' } : null;
+  }).filter(Boolean);
 }
 
 // -> { <what>: true (whole campus) | { sections: [{class, section, subject}] } | { buses: [key] } } for one campus the caller holds.
@@ -95,6 +139,7 @@ function erpAccess_(caller, campus, ties) {
   const all = function (whats) { whats.forEach(function (w) { acc[w] = true; }); };
   if (roles.indexOf('Owner') !== -1 || roles.indexOf('Principal') !== -1) all(ERP_WHATS);
   if (roles.indexOf('FeeClerk') !== -1) all(['students', 'dues', 'bus']);
+  // ties (the review of every teacher's confirmations) stays Owner/Principal only: add() below never grants it
   const add = function (w, key, item) {
     if (acc[w] === true) return;
     acc[w] = acc[w] || {};
@@ -264,7 +309,7 @@ function erpScope_(caller) {
   const campuses = [], ties = [];
   erpCallerCampuses_(caller).forEach(function (c) {
     let read = { configured: !!erpSheetId_(c), tabs: { Assignments: [] } }, mine = [];
-    if (read.configured && erpNeedsTies_(caller)) { read = erpReadTabs_(c, ['Assignments']); mine = erpTies_(caller, read.tabs.Assignments); }
+    if (read.configured && erpNeedsTies_(caller)) { read = erpReadTabs_(c, ['Assignments']); mine = erpTies_(caller, read.tabs.Assignments, erpConfirmedFor_(caller)); }
     const acc = erpAccess_(caller, c, mine);
     campuses.push({ campus: c, configured: read.configured, can: ERP_WHATS.filter(function (w) { return acc[w]; }) });
     mine.forEach(function (t) { ties.push(Object.assign({ campus: c }, t)); });
@@ -277,7 +322,7 @@ function erpRead_(caller, params) {
   try {
     const p = params || {}, what = String(p.what || '').trim().toLowerCase();
     if (what === 'scope') return erpScope_(caller);
-    if (ERP_WHATS.indexOf(what) === -1) return erpErr_('ERP_BAD_REQUEST', 'Unknown ERP read. Ask for scope, students, attendance, marks, dues, bus or staff.');
+    if (ERP_WHATS.indexOf(what) === -1) return erpErr_('ERP_BAD_REQUEST', 'Unknown ERP read. Ask for scope, students, attendance, marks, dues, bus, staff or ties.');
     const mine = erpCallerCampuses_(caller);
     let campus = erpNorm_(p.campus).replace(/\s/g, '');
     if (!campus && !erpIsOwner_(caller) && mine.length === 1) campus = mine[0];
@@ -288,7 +333,7 @@ function erpRead_(caller, params) {
     // roles alone first: a caller with no role grant and no Sheet yet is refused, never shown a "connected" empty list
     const needTies = erpNeedsTies_(caller) && !erpAccess_(caller, campus, [])[what];
     const read = erpReadTabs_(campus, ERP_NEEDS[what].concat(needTies ? ['Assignments'] : []));
-    const grant = erpAccess_(caller, campus, needTies ? erpTies_(caller, read.tabs.Assignments) : [])[what];
+    const grant = erpAccess_(caller, campus, needTies ? erpTies_(caller, read.tabs.Assignments, erpConfirmedFor_(caller)) : [])[what];
     if (!grant) {
       // an unconfigured Sheet can't hold ties yet: a teacher gets the empty state, not a refusal
       if (!read.configured && needTies && ['students', 'attendance', 'marks', 'bus'].indexOf(what) !== -1) return erpEmpty_(what, campus, read);
@@ -302,6 +347,7 @@ function erpRead_(caller, params) {
     else if (what === 'marks') out.rows = erpMarks_(grant, read.tabs, f);
     else if (what === 'dues') { const d = erpDues_(grant, read.tabs, f); out.rows = d.rows; out.totalPending = d.totalPending; out.classes = d.classes; }
     else if (what === 'bus') out.rows = erpBuses_(grant, read.tabs, f, false);
+    else if (what === 'ties') { const r = erpTiesReview_(read.tabs.Assignments); out.rows = r.rows; out.summary = r.summary; }
     else out.rows = erpStaff_(read.tabs);
     out.count = out.rows.length;
     erpLog_(what, campus, out.count);
@@ -310,6 +356,50 @@ function erpRead_(caller, params) {
     console.error('erpread failed: ERP_READ_FAILED'); // no message: it could carry a Sheet id
     return erpErr_('ERP_READ_FAILED', "The school's ERP data couldn't be read just now. Try again in a minute.");
   }
+}
+
+// what=ties (Owner/Principal; a supporting Principal reads the same, nothing here writes): every seeded row with its teacher's state.
+// Staff names only, never a student. -> { rows: [{teacher, empCode, kind, class, subject, seededSection, section, state, fix}], summary }
+function erpTiesReview_(assignRows) {
+  const byItem = {};
+  if (typeof cqRead_ === 'function') cqRead_().forEach(function (r) {
+    if (r.quest !== ERP_TIE_QUEST || !/^self:/.test(r.scope)) return;
+    (byItem[r.item] = byItem[r.item] || {})[r.field] = { value: r.value, status: r.status }; // append order: the latest row wins
+  });
+  const summary = { pending: 0, confirmed: 0, corrected: 0, notmine: 0, fix: 0 };
+  const rows = erpSeedTies_(assignRows).filter(function (t) { return t.kind !== 'bus'; }).map(function (t) {
+    const st = t.owner ? erpTieState_(t, byItem[t.item]) : { state: 'fix', section: '' };
+    summary[st.state]++;
+    return { teacher: t.teacher, empCode: t.empCode, kind: t.kind, class: t.label, subject: t.subject, seededSection: t.section, section: st.section,
+      classCorrected: !!st.classChanged, state: st.state, fix: t.owner ? '' : t.fix };
+  });
+  return { rows: rows, summary: summary };
+}
+
+// 'erp.myTies' pre-fill (game-confirm.gs engine): the caller's seeded ties as quest items { class, section, subject }.
+// opts.cacheOnly (Buddy/status paths): the per-campus rows from the script cache only, null when not cached.
+// ponytail: 10-minute cache per campus; a Principal's edit to the Sheet shows in the quest within 10 minutes.
+function erpAssignCached_(campus, cacheOnly) {
+  const cache = CacheService.getScriptCache(), key = 'erp_asg_' + campus, hit = cache.get(key);
+  if (hit) { try { return JSON.parse(hit); } catch (err) { /* read again */ } }
+  if (cacheOnly) return null;
+  const rows = erpReadTabs_(campus, ['Assignments']).tabs.Assignments;
+  try { cache.put(key, JSON.stringify(rows), 600); } catch (err) { /* too big to cache: read each time */ }
+  return rows;
+}
+function erpPrefillMyTies_(ctx, opts) {
+  const caller = ctx && ctx.caller, out = [];
+  if (!caller) return [];
+  const campuses = erpCallerCampuses_(caller);
+  for (let i = 0; i < campuses.length; i++) {
+    const rows = erpAssignCached_(campuses[i], !!(opts && opts.cacheOnly));
+    if (rows === null) return null;
+    erpSeedTies_(rows).forEach(function (t) {
+      if (t.kind === 'bus' || !erpTieIsMine_(caller, t)) return;
+      out.push({ item: t.item, fields: { class: t.label, section: t.section, subject: t.kind === 'subject' ? t.subject : 'Class teacher' } });
+    });
+  }
+  return out;
 }
 
 function erpEmpty_(what, campus, read) {
@@ -343,3 +433,15 @@ function erpDriverBus_(body) {
 
 // ── registration (this file's own functions only) ────────────────────
 GAME_MODULE_ACTIONS.erpread = erpRead_;
+CQ_PREFILL['erp.myTies'] = erpPrefillMyTies_;
+// the teacher's confirm quest (game-confirm.gs engine): each seeded tie, Confirm, change the section, or Not my class
+CQ_MODULE_DEFS[ERP_TIE_QUEST] = {
+  title: 'Confirm your classes and sections', task: 'Confirm your classes and sections',
+  intro: 'These come from the timetable. Check the section of each class and confirm it, change the section if it is wrong, or tap Not my class. You see your students once you confirm.',
+  roles: ['Teacher'], scope: 'self', selfOnly: true, prefill: 'erp.myTies', addable: false, skipLabel: 'Not my class', itemTitle: '{class} {section} · {subject}',
+  fields: [{ id: 'class', label: 'Class', type: 'text', required: true },
+    { id: 'section', label: 'Section', type: 'text', required: true, hint: 'A, B or C: the section you teach' },
+    { id: 'subject', label: 'Subject', type: 'text', required: false }],
+  sample: [{ item: 's1', fields: { class: 'VII', section: 'A', subject: 'Class teacher' } }, { item: 's2', fields: { class: 'VIII', section: 'B', subject: 'MATHS' } }],
+  active: true,
+};

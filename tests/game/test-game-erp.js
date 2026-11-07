@@ -45,7 +45,27 @@ const LMS4 = {
     ['A200', '', 'bus', '', '', '', 'TEST 01'],
     ['T999', '', 'class', '', '', '', '']], // malformed: no class -> ignored
 };
-const reset = () => { props = { ERP_SHEET_LMS4: 'book4' }; books = { book4: J(LMS4) }; failOpen = false; logs.length = 0; };
+// ---- the setup-quest store (game-confirm.gs Setup Data): cqRead_ rows, cqStored_ as the engine reads them (latest row wins)
+let setup = [];
+ctx.cqRead_ = () => setup;
+ctx.cqStored_ = (rows, q, scope) => {
+  const byItem = {}, order = [];
+  rows.forEach((r) => { if (r.quest !== q || r.scope !== scope) return; if (!byItem[r.item]) { byItem[r.item] = {}; order.push(r.item); } byItem[r.item][r.field] = { value: r.value, status: r.status }; });
+  return { order, byItem };
+};
+const asg = (empCode, email, kind, cls, section, subject) => ({ empCode, email, kind, class: cls, section, subject, bus: '' });
+// a teacher's answer in quest t2 for one seeded row: confirmed values, or status 'skipped' ("Not my class")
+function answer(email, row, fields, status) {
+  const item = J(ctx.erpSeedTies_([row]))[0].item;
+  ['class', 'section', 'subject'].forEach((f) => setup.push({ quest: 't2', scope: 'self:' + email.toLowerCase(), item, field: f, value: status === 'skipped' ? '' : fields[f] || '', status: status || 'confirmed' }));
+}
+// the fixture's teachers have confirmed their ties (the subject teacher named section A: a confirmed tie always has a section)
+function confirmFixture() {
+  setup = [];
+  answer('ct@test.invalid', asg('T100', '', 'class', '7', 'A', ''), { class: '7', section: 'A' });
+  answer('SUBJ@test.invalid', asg('', 'subj@test.invalid', 'subject', '7', '', 'maths'), { class: '7', section: 'A', subject: 'maths' });
+}
+const reset = () => { props = { ERP_SHEET_LMS4: 'book4' }; books = { book4: J(LMS4) }; failOpen = false; logs.length = 0; confirmFixture(); };
 reset();
 
 const owner = { email: 'owner@test.invalid', campusId: 'ALL', roles: ['Owner'] };
@@ -96,7 +116,7 @@ assert.strictEqual(read(owner, { what: 'marks', campus: 'lms 4' }).count, 4);
 r = read(owner, { what: 'scope' });
 assert.strictEqual(r.campuses.length, 6);
 assert.deepStrictEqual(r.campuses.filter((c) => c.configured).map((c) => c.campus), ['LMS4']);
-assert.deepStrictEqual(r.campuses[3].can, ['students', 'attendance', 'marks', 'dues', 'bus', 'staff']);
+assert.deepStrictEqual(r.campuses[3].can, ['students', 'attendance', 'marks', 'dues', 'bus', 'staff', 'ties']);
 
 // ---- Fee Clerk: students, dues, bus; never marks, attendance or staff. Dues shape: whole rupees, pending > 0 only, class roll-up
 r = read(clerk, { what: 'dues' });
@@ -122,13 +142,14 @@ r = read(classT, { what: 'attendance' });
 assert.deepStrictEqual(r.rows.map((a) => a.enrollNo + a.status), ['E001P', 'E002A']);
 assert.deepStrictEqual(r.summary[TODAY], { P: 1, A: 1, L: 0, H: 0, total: 2 });
 
-// ---- subject teacher (email, any case; tie with no section = the whole class): every 7 section, Maths marks only
+// ---- subject teacher (email, any case; seeded with no section, confirmed as section A): 7 A only, Maths marks only
 r = read(subjT, { what: 'marks' });
-assert.deepStrictEqual(r.rows.map((m) => m.enrollNo + m.subject), ['E001Maths', 'E003Maths']);
+assert.deepStrictEqual(r.rows.map((m) => m.enrollNo + m.subject), ['E001Maths']);
 assert.ok(denied(read(subjT, { what: 'marks', subject: 'English' })));
-assert.deepStrictEqual(read(subjT, { what: 'students' }).rows.map((s) => s.enrollNo), ['E001', 'E002', 'E003']);
+assert.deepStrictEqual(read(subjT, { what: 'students' }).rows.map((s) => s.enrollNo), ['E001', 'E002']);
 // the teacher module's code lookup is used when the caller carries no code
 ctx.tchCodeFor_ = () => 'T100';
+answer('other@test.invalid', asg('T100', '', 'class', '7', 'A', ''), { class: '7', section: 'A' });
 assert.strictEqual(read({ email: 'other@test.invalid', campusId: 'LMS4', roles: ['Teacher'] }, { what: 'students' }).count, 2);
 delete ctx.tchCodeFor_;
 
@@ -140,16 +161,11 @@ assert.strictEqual(r.configured, false); assert.deepStrictEqual(r.rows, []);
 r = read(lone, { what: 'scope' });
 assert.deepStrictEqual(r.campuses, [{ campus: 'LMS4', configured: true, can: [] }]); assert.deepStrictEqual(r.ties, []);
 
-// ---- bus in-charge: their bus only (registration spacing ignored), active students only, nothing else
-r = read(busI, { what: 'bus' });
-assert.strictEqual(r.count, 1);
-assert.strictEqual(r.rows[0].route, 'Route 1');
-assert.deepStrictEqual(r.rows[0].students.map((s) => s.pickupPoint + ':' + s.enrollNo), ['Stop A:E002', 'Stop B:E001']);
-assert.ok(denied(read(busI, { what: 'bus', bus: 'TEST02' })));
+// ---- bus in-charge: a bus tie has no confirm step yet, so it unlocks nothing (fail closed until the quest gets a bus field)
+assert.ok(denied(read(busI, { what: 'bus' })));
 assert.ok(denied(read(busI, { what: 'students' })));
 r = read(busI, { what: 'scope' });
-assert.deepStrictEqual(r.campuses[0].can, ['bus']);
-assert.deepStrictEqual(r.ties, [{ campus: 'LMS4', kind: 'bus', class: '', section: '', subject: '', bus: 'TEST01' }]);
+assert.deepStrictEqual(r.campuses[0].can, []); assert.deepStrictEqual(r.ties, []);
 
 // ---- union: a Principal who is also a class teacher keeps the whole campus
 assert.strictEqual(read(Object.assign({}, principal, { roles: ['Principal', 'Teacher'], employeeCode: 'T100' }), { what: 'students' }).count, 4);
@@ -191,7 +207,7 @@ delete ctx.dlkLink_;
 
 // ---- every log line so far: counts only (no name, enroll number or email ever)
 reset();
-[principal, owner, clerk, classT, subjT, busI].forEach((c) => ['scope', 'students', 'attendance', 'marks', 'dues', 'bus', 'staff'].forEach((w) => read(c, { what: w, campus: 'LMS4' })));
+[principal, owner, clerk, classT, subjT, busI].forEach((c) => ['scope', 'students', 'attendance', 'marks', 'dues', 'bus', 'staff', 'ties'].forEach((w) => read(c, { what: w, campus: 'LMS4' })));
 assert.ok(logs.length > 10);
 logs.forEach((l) => {
   assert.ok(!/Test Student|Test Teacher|E00\d|T10\d|@|TEST/.test(l), 'PII in a log line: ' + l);
@@ -208,13 +224,72 @@ books.book4.students_now = [LMS4.students_now[0],
   ['E104', 'Test Student 104', 'IX - A', 'A', '1', '', 'Active', '', '', '', '', '', '', '', '']];
 books.book4.assignments = [LMS4.assignments[0], ['T300', '', 'subject', 'X', '', 'Maths', ''], ['T301', '', 'class', 'X - B', '', '', ''], ['T302', '', 'class', 'M-I', '', '', ''], ['T303', '', 'class', 'M', '', '', '']];
 const csmT = (code) => ({ email: code + '@test.invalid', campusId: 'LMS4', roles: ['Teacher'], employeeCode: code });
-const ids = (r) => r.rows.map((x) => x.enrollNo).join(',');
-assert.strictEqual(ids(read(csmT('T300'), { what: 'students' })), 'E101,E102');
+const ids = (r) => (r.rows || []).map((x) => x.enrollNo).join(','); // a refused read shows nobody
+answer('T300@test.invalid', asg('T300', '', 'subject', 'X', '', 'Maths'), { class: 'X', section: '' }); // no section yet: nothing
+assert.strictEqual(ids(read(csmT('T300'), { what: 'students' })), '');
+answer('T300@test.invalid', asg('T300', '', 'subject', 'X', '', 'Maths'), { class: 'X', section: 'A', subject: 'Maths' });
+answer('T301@test.invalid', asg('T301', '', 'class', 'X - B', '', ''), { class: 'X - B', section: 'B' });
+answer('T302@test.invalid', asg('T302', '', 'class', 'M-I', '', ''), { class: 'M-I', section: 'A' });
+answer('T303@test.invalid', asg('T303', '', 'class', 'M', '', ''), { class: 'M', section: 'A' });
+assert.strictEqual(ids(read(csmT('T300'), { what: 'students' })), 'E101');
 assert.strictEqual(ids(read(csmT('T301'), { what: 'students' })), 'E102');
 assert.strictEqual(ids(read(csmT('T302'), { what: 'students' })), 'E103');
 assert.strictEqual(ids(read(csmT('T303'), { what: 'students' })), '');
 assert.strictEqual(ids(read(csmT('T300'), { what: 'students', class: 'X - A' })), 'E101');
-assert.strictEqual(ids(read(csmT('T300'), { what: 'students', class: 'X', section: '' })), 'E101,E102', 'the classroom chain filters by the tie class');
+assert.strictEqual(ids(read(csmT('T300'), { what: 'students', class: 'X', section: '' })), 'E101', 'the classroom chain filters by the tie class');
 assert.ok(denied(read(csmT('T301'), { what: 'students', class: 'X - A', section: 'A' })));
+
+// ---- confirmed ties only (Uday, 7 Nov; children's faces rule): a seeded tie shows no student until its teacher confirms it with a section
+reset();
+const t7 = asg('T100', '', 'class', '7', 'A', '');
+const faces = (r) => JSON.stringify(r).match(/Test Student|E00\d/g) || [];
+setup = []; // T100 has not answered: unconfirmed
+r = read(classT, { what: 'students' });
+assert.ok(denied(r)); assert.deepStrictEqual(faces(r), [], 'an unconfirmed tie returns no student');
+assert.deepStrictEqual(read(classT, { what: 'scope' }).ties, []);
+answer('ct@test.invalid', t7, {}, 'skipped'); // "Not my class"
+assert.ok(denied(read(classT, { what: 'students' })));
+setup = []; answer('ct@test.invalid', t7, { class: '7', section: '' }); // confirmed without a section
+assert.ok(denied(read(classT, { what: 'students' })));
+setup = []; answer('ct@test.invalid', t7, { class: '7', section: 'B' }); // corrected to B: B's students, not A's
+assert.strictEqual(ids(read(classT, { what: 'students' })), 'E003');
+setup = []; answer('ct@test.invalid', t7, { class: '8', section: 'A' }); // a corrected class waits for the Principal
+assert.ok(denied(read(classT, { what: 'students' })));
+setup = []; answer('other@test.invalid', t7, { class: '7', section: 'A' }); // someone else's answer never confirms T100's tie
+assert.ok(denied(read(classT, { what: 'students' })));
+setup = []; answer('ct@test.invalid', t7, { class: '7', section: 'A' }); answer('ct@test.invalid', t7, {}, 'skipped'); // the latest answer wins
+assert.ok(denied(read(classT, { what: 'students' })));
+delete ctx.cqRead_; // the engine isn't loaded: no tie at all
+assert.ok(denied(read(classT, { what: 'students' })));
+ctx.cqRead_ = () => setup;
+
+// ---- the pre-fill: the caller's own seeded ties, as quest items (no student data)
+ctx.CacheService = { getScriptCache: () => ({ get: () => null, put() {} }) };
+reset();
+let pf = J(ctx.CQ_PREFILL['erp.myTies']({ caller: classT }, {}));
+assert.deepStrictEqual(pf.map((x) => x.fields), [{ class: '7', section: 'A', subject: 'Class teacher' }]);
+assert.strictEqual(pf[0].item, J(ctx.erpSeedTies_([t7]))[0].item);
+assert.deepStrictEqual(J(ctx.CQ_PREFILL['erp.myTies']({ caller: lone }, {})), []);
+assert.strictEqual(ctx.CQ_PREFILL['erp.myTies']({ caller: classT }, { cacheOnly: true }), null, 'cache only and nothing cached');
+
+// ---- the Principal's review: every seeded row's state, staff names only; teachers can't read it
+reset();
+books.book4.assignments = [['emp_code', 'email', 'kind', 'class', 'section', 'subject', 'bus', 'teacher', 'fix'],
+  ['T100', '', 'class', '7', 'A', '', '', 'Test Teacher B', ''], ['T101', '', 'subject', '7', 'B', 'Maths', '', 'Test Teacher A', ''],
+  ['T102', '', 'subject', '8', 'A', 'Science', '', 'Test Teacher C', ''], ['T103', '', 'subject', '8', 'A', 'Hindi', '', 'Test Teacher D', ''],
+  ['', '', 'subject', 'X', '', 'English', '', 'Test Teacher E', 'class has 2 sections: set the section']];
+setup = [];
+answer('ct@test.invalid', asg('T100', '', 'class', '7', 'A', ''), { class: '7', section: 'A' });
+answer('t101@test.invalid', asg('T101', '', 'subject', '7', 'B', 'Maths'), { class: '7', section: 'A', subject: 'Maths' });
+answer('t102@test.invalid', asg('T102', '', 'subject', '8', 'A', 'Science'), {}, 'skipped');
+r = read(principal, { what: 'ties' });
+assert.strictEqual(r.success, true);
+assert.deepStrictEqual(r.rows.map((x) => x.teacher + ':' + x.state + ':' + x.section), ['Test Teacher B:confirmed:A', 'Test Teacher A:corrected:A', 'Test Teacher C:notmine:', 'Test Teacher D:pending:', 'Test Teacher E:fix:']);
+assert.deepStrictEqual(r.summary, { pending: 1, confirmed: 1, corrected: 1, notmine: 1, fix: 1 });
+assert.deepStrictEqual(faces(r), [], 'the review holds staff, never students');
+assert.strictEqual(read(owner, { what: 'ties', campus: 'LMS4' }).count, 5);
+[classT, clerk, busI].forEach((c) => assert.ok(denied(read(c, { what: 'ties' })), 'ties for ' + c.email));
+assert.ok(denied(read(Object.assign({}, principal, { campusId: 'LMS5' }), { what: 'ties', campus: 'LMS4' })), 'another school');
+assert.ok(logs.every((l) => !/Test Teacher|@/.test(l)), 'ties logs: counts only');
 
 console.log('test-game-erp: all passed');
