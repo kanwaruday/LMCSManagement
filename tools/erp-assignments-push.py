@@ -24,6 +24,7 @@ WORKBOOKS = {  # LMS1/LMS2: the newer of two workbooks (V1, 7 Nov)
     "LMS1": "UPDATED TIME TBALE", "LMS2": "LMS-2 TT Redone 2026f", "LMS3": "LMS 3 TT",
     "LMS4": "LMS4 Period Allotment 2026", "LMS5": "LMS 5 TIME TABLE", "LMS6": "LMS-6 Timetable Aug 2026",
 }
+SECTION_FIX = re.compile(r"sections?: set the section|no sections for this class")
 HEADER = ["emp_code", "kind", "class", "section", "subject", "bus", "teacher", "fix"]
 ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
 TEACHING = re.compile(r"^(?:P\s*D?\s*)?\d+$", re.I)  # PD1, PD 1, P1, 1: not assembly, lunch, break, dispersal
@@ -79,15 +80,12 @@ def rows_for(campus, whole_class=False):
             elif r[0]:
                 r[7] = f"class has {len(secs)} sections: set the section, then the code {r[0]}" if secs else f"no sections for this class in the ERP yet: set the section, then the code {r[0]}"
                 r[0] = ""
-                r.append("section")  # counted, then dropped
     rows = sorted(out.values(), key=lambda x: (x[2], x[1], x[4], x[6]))
     return rows
 
 
 def counts(rows):
-    ok, section_fix = [r for r in rows if r[0]], sum(len(r) > len(HEADER) for r in rows)
-    for r in rows:
-        del r[len(HEADER):]
+    ok, section_fix = [r for r in rows if r[0]], sum(SECTION_FIX.search(r[7]) is not None for r in rows)
     return {"rows": len(rows), "teachers": len({r[0] for r in ok}), "class_sections": len({r[2] for r in ok}),
             "class_teachers": sum(r[1] == "class" for r in ok), "buses_with_in_charge": 0,
             "to_fix_rows": len(rows) - len(ok), "to_fix_for_section": section_fix, "to_fix_teachers": len({r[6].upper() for r in rows if not r[0]})}
