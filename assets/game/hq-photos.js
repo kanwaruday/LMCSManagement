@@ -1,4 +1,4 @@
-// 🏛️ Photograph LMCS HQ and pin it (hq-photos/index.html; backend apps-script/game-hq-photos.gs: hqphotosget, POST hqphotossave).
+// Photograph LMCS HQ and pin it (hq-photos/index.html; backend apps-script/game-hq-photos.gs: hqphotosget, POST hqphotossave).
 // The quest's holder takes the building's outside photos (3 required, a 4th optional, no people), pins HQ on the map (this phone's
 // location, or a pasted Google Maps link or "lat, lng"), ticks "no people" and sends. Text reaches the page as text nodes only.
 //   LMCSHqPhotos.parsePin(text) -> {lat, lng} | null   (pure, tested)
@@ -14,6 +14,7 @@ var LMCSHqPhotos = (function () {
     var lat = Number(m[1]), lng = Number(m[2]);
     return isFinite(lat) && isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat: lat, lng: lng } : null;
   }
+  function em(k) { return window.LMCSEmoji ? LMCSEmoji.get(k) + ' ' : ''; } // the shared emoji map (assets/game/emoji.js)
   function inArea(p) { return !!p && p.lat >= 31 && p.lat <= 33 && p.lng >= 75.5 && p.lng <= 78; } // the server checks the same box
 
   function el(tag, attrs, kids) {
@@ -88,13 +89,13 @@ var LMCSHqPhotos = (function () {
         return el('li', { class: 'hq-shot' + (s.taken ? ' is-done' : '') }, [
           el('div', { class: 'hq-shot-h' }, [el('span', { class: 'hq-n', 'aria-hidden': 'true', text: s.taken ? '✓' : String(i + 1) }), el('b', { text: s.label })]),
           S.local[s.id] ? el('img', { class: 'hq-img', src: S.local[s.id], alt: '' }) : null,
-          d.sent ? null : el('label', { class: 'gb-btn hq-take' }, [s.taken ? 'Take it again' : '📷 Take the photo', input])]);
+          d.sent ? null : el('label', { class: 'gb-btn hq-take' }, [s.taken ? 'Take it again' : em('photo') + 'Take the photo', input])]);
       }));
       root.appendChild(list);
       var pinIn = el('input', { type: 'text', class: 'gb-input', id: 'hq-pin', inputmode: 'url', autocomplete: 'off', placeholder: 'A Google Maps link, or latitude, longitude', value: S.pinText, disabled: locked,
         on: { input: function () { S.pinText = pinIn.value; } } });
       root.appendChild(el('section', { class: 'hq-pinbox', 'aria-labelledby': 'hq-pinh' }, [
-        el('h2', { id: 'hq-pinh', text: d.pin ? '📍 Pinned' : '📍 Pin LMCS HQ' }),
+        el('h2', { id: 'hq-pinh', text: em('realMap') + (d.pin ? 'Pinned' : 'Pin LMCS HQ') }),
         d.pin ? el('p', {}, [String(d.pin.lat) + ', ' + String(d.pin.lng) + ' · ', el('a', { href: 'https://www.google.com/maps?q=' + d.pin.lat + ',' + d.pin.lng, target: '_blank', rel: 'noopener', text: 'check it on Google Maps' })]) : null,
         d.sent ? null : el('div', { class: 'hq-row' }, [el('button', { type: 'button', class: 'gb-btn', disabled: locked, text: 'Use my location (stand at HQ)', on: { click: here } })]),
         d.sent ? null : el('div', { class: 'gb-field' }, [el('label', { for: 'hq-pin', text: 'Or paste where it is' }), pinIn,

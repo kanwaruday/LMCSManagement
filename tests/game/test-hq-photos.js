@@ -206,6 +206,7 @@ test('wiring: POST only (one doPost line), the GET read registered, the page and
   const page = fs.readFileSync(__dirname + '/../../hq-photos/index.html', 'utf8'), js = fs.readFileSync(__dirname + '/../../assets/game/hq-photos.js', 'utf8');
   assert.ok(page.includes('assets/game/hq-photos.js') && /LMCSHqPhotos\.mount/.test(page) && /No people in the photos/.test(js) && /noPeople: true/.test(js));
   assert.ok(!/innerHTML/.test(js), 'text as text nodes');
+  assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(js) && /em\('photo'\)/.test(js) && /em\('realMap'\)/.test(js), 'emoji from the shared map (emoji.js), none typed');
 });
 
 let fail = 0;
