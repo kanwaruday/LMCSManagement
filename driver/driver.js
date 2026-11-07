@@ -320,7 +320,7 @@
     if ($('routeMap').dataset.on) return; // the World: their own bus's route, loaded once (it costs data and a map)
     $('routeMap').dataset.on = '1';
     if (DEMO) { $('routeMap').textContent = 'डेमो में रूट नहीं दिखता · The demo has no route.'; return; }
-    LMCSRouteMap.mount($('routeMap'), Object.assign({ backendUrl: ROSTER_URL, mode: 'city' }, VIEW ? { driverView: view } : { driverToken: live.token }));
+    LMCSRouteMap.mount($('routeMap'), Object.assign({ backendUrl: ROSTER_URL, coordUrl: COORD_URL, mode: 'city' }, VIEW ? { driverView: view } : { driverToken: live.token })); // coordUrl: the driver's own run (transportrun)
   });
 
   function showWaiting() {

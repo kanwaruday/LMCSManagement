@@ -41,6 +41,7 @@
 .rr h3{margin:0;font-size:17px}.rr h4{margin:18px 0 8px;font-size:15px}
 .rr-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .rr-head .gb-btn,.rr-back{min-height:44px}
+.rr-pick{display:block;margin:8px 0}.rr-pick select{min-height:44px;margin-left:6px;max-width:100%}
 .rr-media{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .rr-vid video{width:100%;display:block;border-radius:6px;background:#000;aspect-ratio:16/9}
 .rr-map{height:300px;border:1px solid var(--border,#ddd);border-radius:6px}

@@ -22,10 +22,11 @@ const ctx = { console, Date, Object, String, Math, JSON, Array, Number, isFinite
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k === 'TRANSPORT_PUSH_SECRET' ? 'S' : null) }) },
-  Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } };
+  Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) },
+  ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ getContent: () => t, setMimeType() { return this; } }) } };
 vm.createContext(ctx);
 const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8').replace(/^const /gm, 'var '), ctx);
-load('coordinator.gs'); load('coordinator-approvals.gs'); load('coordinator-transport.gs'); load('coordinator-transport-gps.gs'); load('coordinator-world.gs'); load('driver-token.gs'); load('../coordinator/capture/fleet-quests.js'); // the Coordinator project carries it
+load('coordinator.gs'); load('coordinator-approvals.gs'); load('coordinator-transport.gs'); load('coordinator-transport-gps.gs'); load('coordinator-world.gs'); load('driver-token.gs'); load('supporting-charge.gs'); load('../coordinator/capture/fleet-quests.js'); // the Coordinator project carries it
 const run = c => vm.runInContext(c, ctx);
 const realRefresh = ctx.gpsRefresh_, realVisible = ctx.coordVisibleCampuses_; // later sections stub them; the capture sections need the real ones
 
@@ -477,14 +478,34 @@ assert.deepStrictEqual(J(run('gpsRows_("Parts Catalog")')).filter(r => r.model =
   assert.strictEqual(tr({ email: 'c@x.org', campusId: 'LMS5', roles: ['Coordinator'] }, 'HP1').bus.reg, 'HP1', 'a Coordinator of the district');
   assert.strictEqual(tr({ email: 'c@x.org', campusId: 'LMS2', roles: ['Coordinator'] }, 'HP1').error, 'No such bus in your schools', 'another district: refused');
   assert.strictEqual(tr({ email: 'c@x.org', campusId: 'LMS2', roles: ['Coordinator'] }, 'HP99').error, 'No such bus in your schools', 'an unknown bus reads the same');
-  assert.strictEqual(tr({ email: 'k@x.org', campusId: 'LMS4', roles: ['FeeClerk'], feeClerkOnly: true }, 'HP1').error, 'Not authorized', 'never a Fee Clerk');
-  assert.strictEqual(tr({ email: 'p@x.org', campusId: 'LMS4', principal: true }, 'HP1').error, 'Not authorized', 'never a Principal');
+  const clerk = { email: 'k@x.org', campusId: 'LMS4', roles: ['FeeClerk'], feeClerkOnly: true };
+  assert.deepStrictEqual([tr(clerk, 'HP1').run.runId, tr(clerk, 'HP1').bus.driver], ['HP1-20261030-150452-rv01', 'Driver One'], 'a Fee Clerk: their own school\'s bus');
+  assert.strictEqual(tr(clerk, 'HP7').error, 'No such bus in your schools', 'a Fee Clerk is refused another school\'s run');
+  const prin = { email: 'p@x.org', campusId: 'LMS4', principal: true, supporting: ['LMS1'] };
+  const pv = tr(prin, 'HP1');
+  assert.deepStrictEqual([pv.run.runId, pv.bus.driver, pv.ticket.runId], ['HP1-20261030-150452-rv01', '', 'HP1-20261030-150452-rv01'], 'a Principal: their own school, a ticket, no driver name');
+  assert.strictEqual(tr(prin, 'HP7').error, 'No such bus in your schools', 'a Principal is refused another school\'s run');
+  assert.strictEqual(J(run('coordWorldRun_(supportActAs_(' + JSON.stringify(prin) + ', "LMS1"), "HP7")')).bus.reg, 'HP7', 'a supporting Principal (actAs): the school they support');
+  assert.strictEqual(J(run('coordWorldRun_(supportActAs_(' + JSON.stringify(prin) + ', "LMS1"), "HP1")')).error, 'No such bus in your schools', 'and only that school while acting as it');
   assert.strictEqual(tr(null, 'HP1').error, 'Not authorized');
+  // a driver phone: POST transportrun {deviceToken}, its own bus only (dlkLink_ stubbed; the real one reads Driver Devices)
+  const realLink = ctx.dlkLink_;
+  ctx.dlkLink_ = (t) => (t === 'a'.repeat(64) ? { reg: 'HP1', campus: 'LMS4' } : null);
+  const post = (b) => J(JSON.parse(run('doPost({ postData: { contents: ' + JSON.stringify(JSON.stringify(b)) + ' } }).getContent()')));
+  assert.strictEqual(post({ action: 'transportrun', deviceToken: 'a'.repeat(64), reg: 'HP1' }).run.runId, 'HP1-20261030-150452-rv01', 'a driver: their own bus\'s run');
+  assert.strictEqual(post({ action: 'transportrun', deviceToken: 'a'.repeat(64), reg: 'HP7' }).error, 'No such bus in your schools', 'a driver is refused another bus\'s run');
+  assert.strictEqual(post({ action: 'transportrun', deviceToken: 'b'.repeat(64), reg: 'HP1' }).error, 'Not authorized', 'an unlinked phone: nothing');
+  ctx.dlkLink_ = realLink;
+  // the run picker: newest first, a runId from the list opens that run (and its ticket), anything else the newest
+  assert.deepStrictEqual(o.runs.map(r => r.runId), ['HP1-20261030-150452-rv01', 'HP1-20261029-150452-old1'], 'the bus\'s runs, newest first');
+  const older = J(run('coordWorldRun_(' + JSON.stringify({ email: 'o@x.org', campusId: 'ALL', roles: ['Owner'] }) + ', "HP1", "HP1-20261029-150452-old1")'));
+  assert.deepStrictEqual([older.run.runId, older.ticket.runId], ['HP1-20261029-150452-old1', 'HP1-20261029-150452-old1'], 'a picked run and its own ticket');
+  assert.strictEqual(J(run('coordWorldRun_(' + JSON.stringify({ email: 'o@x.org', campusId: 'ALL', roles: ['Owner'] }) + ', "HP1", "HP7-20261029-150452-xxxx")')).run.runId, 'HP1-20261030-150452-rv01', 'another bus\'s run id: the newest of this bus');
   const none = tr({ email: 'o@x.org', campusId: 'ALL', roles: ['Owner'] }, 'HP7');
   assert.deepStrictEqual([none.run, 'ticket' in none, none.plan], [null, false, []], 'a bus with no processed run: no run, no ticket');
   book(run('COORD_TRANSPORT_FORM_ID')).getSheetByName('Capture Runs')._rows().find(r => r[0] === 'HP1-20261030-150452-rv01')[12] = 'closed';
   const gone = tr({ email: 'o@x.org', campusId: 'ALL', roles: ['Owner'] }, 'HP1');
-  assert.deepStrictEqual([gone.run, 'ticket' in gone, gone.plan.length], [null, false, 2], 'a discarded run that still has a Capture Stops row: no stop list, no ticket; the plan still shows');
+  assert.deepStrictEqual([gone.run.runId, gone.runs.map(r => r.runId)], ['HP1-20261029-150452-old1', ['HP1-20261029-150452-old1']], 'a discarded run that still has a Capture Stops row is never listed or opened');
   ctx.coordVisibleCampuses_ = stubVisible;
 }
 console.log('transport gps: all checks passed');

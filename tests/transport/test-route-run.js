@@ -28,7 +28,9 @@ assert.deepStrictEqual(J(runFacts(run, pts, [])).diffs, [], 'no plan: nothing to
 assert.deepStrictEqual(J(runFacts(null, [], plan)).chapters, [], 'no run: the plan alone');
 // mount(): the map is drawn for everyone; only the Owner and Coordinators get "See the run" (the reviewer's comment-swallowed arrow)
 const src = fs.readFileSync(path.join(__dirname, '../../coordinator/route-map.js'), 'utf8');
-const line = src.split('\n').find((l) => /state\.onRun =/.test(l));
-assert.ok(line && line.indexOf('//') === -1 && /state\.onRun = \(reg\) => run\(/.test(line), 'onRun is code, not a comment');
+const lines = src.split('\n').filter((l) => /state\.onRun =/.test(l));
+assert.strictEqual(lines.length, 2, 'two onRun lines: a driver phone and a signed-in viewer');
+lines.forEach((l) => assert.ok(l.indexOf('//') === -1 && /state\.onRun = \(reg\) => run\(/.test(l), 'onRun is code, not a comment'));
+assert.ok(/opts\.driverToken && opts\.coordUrl/.test(lines[0]) && /deviceToken: opts\.driverToken/.test(lines[0]), 'a driver phone asks the Coordinator with its device token');
 assert.ok(/\n\s*TransportViews\.render\(el, d, opts\.mode, state\);\n\s*\} catch/.test(src), 'the map is drawn for every caller');
 console.log('route run: all checks passed');

@@ -78,8 +78,11 @@ window.LMCSRouteMap = (function () {
         if (!d.stops.length) { say(el, hi ? 'अभी रूट नहीं बना है। कुछ दिन बस चलने के बाद दिखेगा · No route yet. It appears after the bus has run its route for a few days.' : 'No bus routes recorded here yet. They appear once the buses\' trackers have run their routes for a few days.'); return; }
         el.textContent = '';
         const who = opts.session || (window.LMCS && LMCS.getSession());
-        // the Owner and Coordinators get "See the run" (UI only: transportrun checks again)
-        if (!hi && window.LMCS && LMCS.canViewCoordinatorPortal(who)) state.onRun = (reg) => run(el, { session: opts.session, backendUrl: opts.backendUrl, reg, back: () => { el.textContent = ''; TransportViews.render(el, d, opts.mode, state); } });
+        // "See the run" for whoever sees these buses (transportrun checks again: the Owner, Coordinators, the Principal, the Fee Clerk,
+        // a driver phone its own bus); a staff view of a driver's page has its own World instead
+        const again = () => { el.textContent = ''; TransportViews.render(el, d, opts.mode, state); };
+        if (opts.driverToken && opts.coordUrl) state.onRun = (reg) => run(el, { backendUrl: opts.coordUrl, deviceToken: opts.driverToken, reg, back: again });
+        else if (!hi && who && who.idToken) state.onRun = (reg) => run(el, { session: opts.session, backendUrl: opts.backendUrl, reg, back: again });
         TransportViews.render(el, d, opts.mode, state);
       } catch (e) {
         if (e.refused && opts.refused) { say(el, opts.refused); return; }
@@ -137,9 +140,11 @@ window.LMCSRouteMap = (function () {
     const s = o.session || (window.LMCS && LMCS.getSession());
     let r;
     try {
-      r = await (await fetch(o.backendUrl + '?action=transportrun&reg=' + encodeURIComponent(o.reg) + '&idToken=' + encodeURIComponent((s && s.idToken) || ''), { cache: 'no-store' })).json();
+      r = await (await (o.deviceToken // a driver phone: POST, its own bus only
+        ? fetch(o.backendUrl, { method: 'POST', body: JSON.stringify({ action: 'transportrun', deviceToken: o.deviceToken, reg: o.reg, runId: o.runId || '' }) })
+        : fetch(o.backendUrl + '?action=transportrun&reg=' + encodeURIComponent(o.reg) + (o.runId ? '&runId=' + encodeURIComponent(o.runId) : '') + (s && s.actAs ? '&actAs=' + encodeURIComponent(s.actAs) : '') + '&idToken=' + encodeURIComponent((s && s.idToken) || ''), { cache: 'no-store' }))).json();
     } catch (e) { r = { success: false, error: 'No connection. Try again when you have signal.' }; }
-    if (!r.success) { say(el, r.error === 'Not authorized' ? 'Only the Owner and Coordinators see a bus\'s run.' : r.error || 'Could not load the run.', () => run(el, o)); back(el, o); return; }
+    if (!r.success) { say(el, r.error === 'Not authorized' ? 'This bus\'s run is not open to you.' : r.error || 'Could not load the run.', () => run(el, o)); back(el, o); return; }
     const roster = (part, extra) => fetch(r.rosterUrl, { method: 'POST', body: JSON.stringify(Object.assign({ action: 'capturerunview', ticket: r.ticket, part }, extra || {})) }).then((x) => x.json());
     const [pathR] = r.run ? await Promise.all([roster('path').catch(() => ({ success: false })), script(LEAFLET + 'leaflet.min.js', () => !!window.L, SRI.js), css(LEAFLET + 'leaflet.min.css', SRI.css)]) : [null];
     const points = pathR && pathR.success ? pathR.points : [];
@@ -149,6 +154,8 @@ window.LMCSRouteMap = (function () {
     const p0 = r.plan[0] || {};
     el.innerHTML = '<div class="rr">' +
       '<div class="rr-head"><button type="button" class="gb-btn rr-back">‹ All routes</button><h3>' + esc(b.reg) + (b.route ? ' · ' + esc(b.route) : '') + '</h3></div>' +
+      ((r.runs || []).length > 1 ? '<label class="rr-pick">Run <select>' + r.runs.map((x) => '<option value="' + esc(x.runId) + '"' + (rn && x.runId === rn.runId ? ' selected' : '') + '>' +
+        (x.startedAt ? day(x.startedAt) + ', ' + hm(x.startedAt) : esc(x.runId)) + ' · ' + x.frames + ' frames</option>').join('') + '</select></label>' : '') +
       (rn ? '<p class="note">' + esc(b.campus) + (b.driver ? ' · Driver ' + esc(b.driver) : '') + (rn.startedAt ? ' · ' + day(rn.startedAt) + ', ' + hm(rn.startedAt) + (rn.endedAt ? '–' + hm(rn.endedAt) : '') : '') + '</p>' : '<p class="status">No route video recorded for this bus yet. The plan is below.</p>') +
       (rn ? '<section class="rr-run" aria-label="The run"><h4>The run</h4><div class="rr-media"><div class="rr-vid"><p class="status">Loading the video…</p></div><div class="rr-map" role="region" aria-label="Map of the run"></div></div>' +
         (f.chapters.length ? '<ol class="rr-chapters">' + f.chapters.map((c, i) => '<li><button type="button" data-ch="' + i + '"' + (c.frame < 0 ? ' disabled' : '') + '><b>' + (i + 1) + '</b> ' + esc(c.name || 'Stop ' + (i + 1)) + (c.at && isFinite(Date.parse(c.at)) ? ' · ' + hm(Date.parse(c.at)) : '') + (c.boardOn || c.boardOff ? ' · ' + c.boardOn + ' on, ' + c.boardOff + ' off' : '') + '</button></li>').join('') + '</ol>' : '<p class="note">No stops were marked on this run.</p>') +
@@ -167,6 +174,8 @@ window.LMCSRouteMap = (function () {
         (f.chapters.some((c) => c.photo) ? '<div class="rr-photos">' + f.chapters.map((c, i) => c.photo ? '<figure data-ph="' + i + '"><figcaption>' + esc(c.name || 'Stop ' + (i + 1)) + '</figcaption></figure>' : '').join('') + '</div>' : '') +
       '</section></div>';
     back(el, o, el.querySelector('.rr-back'));
+    const pick = el.querySelector('.rr-pick select');
+    if (pick) pick.addEventListener('change', () => { if (el._rrFree) el._rrFree(); el._rrFree = null; run(el, Object.assign({}, o, { runId: pick.value })); });
     if (!rn) return;
     // the map: the whole path, the part driven so far, and where the video is now
     const ll = points.filter(Boolean).map((p) => [p[0], p[1]]);

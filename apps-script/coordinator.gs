@@ -143,11 +143,11 @@ function doGet(e) {
   try {
     const action = String(e.parameter.action || '').toLowerCase();
     if (action === 'principalissues') return coordJson_(coordPrincipalIssuesGet_(e.parameter.idToken, e.parameter.actAs)); // its own gates (coordinator-principal.gs)
-    if (action === 'transportworld') return coordJson_(coordWorld_(coordWorldCaller_(e.parameter.idToken))); // its own gate: transport staff or a Principal (coordinator-world.gs)
+    if (action === 'transportworld') return coordJson_(coordWorld_(coordWorldCaller_(e.parameter.idToken, e.parameter.actAs))); // its own gate: transport staff or a Principal (coordinator-world.gs)
+    if (action === 'transportrun') return coordJson_(coordWorldRun_(coordWorldCaller_(e.parameter.idToken, e.parameter.actAs), e.parameter.reg, e.parameter.runId)); // the route view of one bus: the World's callers, each their own buses (coordinator-world.gs)
     const caller = coordVerifyCaller_(e.parameter.idToken);
     if (!caller) return coordJson_({ success: false, error: 'Not authorized' });
     if (caller.feeClerkOnly && ['coordinatortransport', 'coordinatorbuslive', 'coordinatorbuschecks', 'coordinatortransportloadout', 'coordinatortransportfleet', 'coordinatortransportrollcall'].indexOf(action) === -1) return coordJson_({ success: false, error: 'Not authorized' }); // Fee Clerks: transport data only
-    if (action === 'transportrun') return coordJson_(coordWorldRun_(caller, e.parameter.reg)); // the route view of one bus: Owner and Coordinators (coordinator-world.gs)
     if (action === 'coordinatortasks') return coordJson_(coordTasksList_(caller, e.parameter.idToken));
     if (action === 'coordinatoracademics') return coordJson_(coordAcademics_(caller, e.parameter.window));
     if (action === 'coordinatordocuments') return coordJson_(coordDocuments_(caller));
@@ -177,6 +177,7 @@ function doPost(e) {
     // the drive-index sync on Uday's Mac pushes transport data here with a shared secret, not a Google ID token
     if (String(body.action || '').toLowerCase() === 'transportpush') return coordJson_(coordTransportPush_(body));
     if (String(body.action || '').toLowerCase() === 'driverbus') return coordJson_(coordDriverBus_(body)); // a linked driver phone, deviceToken (coordinator-driverbus.gs)
+    if (String(body.action || '').toLowerCase() === 'transportrun') return coordJson_(coordWorldRun_(coordRunDriver_(body.deviceToken), body.reg, body.runId)); // a linked driver phone: its own bus's run only (coordinator-world.gs)
     if (String(body.action || '').toLowerCase() === 'pdrpush') return coordJson_(coordPdrPush_(body));
     if (String(body.action || '').toLowerCase() === 'pdrtagpush') return coordJson_(coordPdrTagPush_(body));
     if (String(body.action || '').toLowerCase() === 'transportgpsconfig') return coordJson_(coordBusConfig_(body));
