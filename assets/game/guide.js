@@ -57,7 +57,7 @@ window.LMCSGuide = {
     'owner/index.html': {
       purpose: "HQ Home: Approvals, Money today, People and Game settings, then Today with Buddy and every module.", roles: ['Owner'],
       tour: [
-        { target: '#welcome-strip', text: "Your name and the whole school, at a glance. Home and Kingdom switch at the top." },
+        { target: '#welcome-strip', text: "Your name and the whole school, at a glance. Home and Map switch at the top." },
         { target: '#hq-tiles', text: "Four doors: Approvals, Money today, People, and Game settings (how much of Set up the game is done)." },
         { target: '#game-root', text: "This is Today. It also holds Set up the game: six short steps that switch the game on for everyone." },
         { target: '#modules', text: "Every module across all campuses sits here." },
