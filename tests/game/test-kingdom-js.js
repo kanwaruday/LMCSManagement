@@ -135,7 +135,7 @@ assert.ok(/ctl\.err\.textContent = /.test(src), 'server sentence shown as text')
 assert.strictEqual(K.guideGo({ guide: 'setup-signin' }), 'guide/index.html#setup-signin', 'I1: a step gets a How link');
 assert.strictEqual(K.guideGo({ guide: 'x"><b' }), '', 'I1: a non-id guide never becomes a link');
 assert.strictEqual(K.guideGo({}), '');
-assert.ok(/var how = guideGo\(s\)/.test(src) && /goLink\(how, 'How'\)/.test(src) && /goLink\(how, 'Show me how'/.test(src), 'I1: every setup step renders its How link (the next one as a button)');
+assert.ok(/var how = guideGo\(s\)/.test(src) && /goLink\(how, s\.goText \|\| 'How'\)/.test(src) && /goLink\(how, s\.goText \|\| 'Show me how'/.test(src), 'I1: every setup step renders its How link (the next one as a button)');
 const sentTo = (tier, base) => K.assignBody(tier, base, 'a@x.org', '').campus;
 assert.strictEqual(sentTo({ questId: 'p1', campus: 'LMS4' }, 'HES'), 'LMS4', 'M3: tier.campus wins over the base');
 assert.strictEqual(sentTo({ questId: 'p3', campus: '' }, 'LMS4'), '', 'M3: network quest sends empty campus');

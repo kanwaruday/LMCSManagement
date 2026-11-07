@@ -103,7 +103,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   }
   // Buddy's line for a next action (warm, short, no pressure; names the place)
   function nextText(a) {
-    if (a.kind === 'setup') return 'Next in Set up the game: ' + a.step.title + '.' + (editKind(a.step) ? ' You can do it right here.' : guideGo(a.step) ? ' My guide walks you through it.' : '');
+    if (a.kind === 'setup') return 'Next in Set up the game: ' + a.step.title + '. Every setup step is on your Home.';
     if (a.kind === 'assign') return 'Hand out ' + a.tier.label + ' at ' + a.base.name + '. Pick who sets it up, and it lands in their Today list.';
     if (a.kind === 'follow') return 'An approved request is waiting for someone to follow it up: ' + a.card.title + '.';
     if (a.kind === 'wait') return 'Next at ' + a.base.name + ': ' + a.tier.label + ' (' + a.building.name + ')' + (a.tier.owner && a.tier.owner.name ? ', with ' + a.tier.owner.name : '') + '.';
@@ -202,7 +202,26 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   // until the real data lands. The Kingdom is Owner-only, so Fees shows here.
   var SOON = [{ e: 'staffPresent', t: 'Staff present' }, { e: 'dailyReport', t: 'Daily report' }, { e: 'issues', t: 'Open issues' },
     { e: 'fees', t: 'Fees' }, { e: 'bus', t: 'Buses ready' }, { e: 'supportSession', t: 'SS this month' }];
-  var api = { SOON: SOON, questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText, bulkItems: bulkItems, bulkSummary: bulkSummary, bulkResult: bulkResult, removeSchools: removeSchools, questPeople: questPeople,
+  // ── Owner Home's setup list (owner/index.html, Uday 6 Nov: "the home for everything that needs a setup"): one list, the next step on top ──
+  // the HQ "Set up the game" steps: the darbar's tier that carries steps (Owner only; empty for anyone else)
+  function hqSteps(d) {
+    var hq = ((d && d.kingdom && d.kingdom.campuses) || []).filter(function (c) { return c.darbar; })[0], out = [];
+    ((hq && hq.buildings) || []).forEach(function (b) { (b.tiers || []).forEach(function (t) { if (!out.length && (t.steps || []).length) out = t.steps; }); });
+    return out;
+  }
+  // the People step, from peoplelist: Coordinators added, and every Principal on one school (or the whole network)
+  function peopleStep(p) {
+    if (!p) return null;
+    var prs = p.principals || [];
+    return { id: 'people', title: 'Add your Coordinators and give each Principal a school', go: 'owner/people.html', goText: 'Open People',
+      done: (p.coordinators || []).length > 0 && prs.every(function (x) { return /^(LMS[1-6]|ALL)$/.test(String(x.campus || '')); }) };
+  }
+  // every setup step, the ones still to do first (in their own order), the done ones after
+  function homeSteps(d, p) {
+    var all = [peopleStep(p)].filter(Boolean).concat(hqSteps(d));
+    return all.filter(function (s) { return !s.done; }).concat(all.filter(function (s) { return s.done; }));
+  }
+  var api = { SOON: SOON, hqSteps: hqSteps, peopleStep: peopleStep, homeSteps: homeSteps, questPlace: questPlace, questGroups: questGroups, questFilter: questFilter, questHolder: questHolder, questAge: questAge, nudgeText: nudgeText, reassignText: reassignText, bulkItems: bulkItems, bulkSummary: bulkSummary, bulkResult: bulkResult, removeSchools: removeSchools, questPeople: questPeople,
     gdNetworkText: gdNetworkText, gdSchoolLine: gdSchoolLine, gdBadgeText: gdBadgeText, tierText: tierText, buildingState: buildingState, baseBadge: baseBadge, sortBases: sortBases, safeGo: safeGo, baseOfGo: baseOfGo, pos: pos,
     openCount: openCount, countText: countText, baseLabel: baseLabel, assignBody: assignBody, allocateBody: allocateBody, defaultDue: defaultDue, suggestHead: suggestHead,
     deptFunction: KINGDOM_DEPT_FUNCTION, guideGo: guideGo, cardText: cardText, fnLabels: fnLabels, progressOf: progressOf, progressText: progressText,
@@ -268,10 +287,10 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   function stepList(steps) {
     var next = steps.filter(function (s) { return !s.done; })[0];
     return h('ol', { class: 'kg-steps' }, steps.map(function (s) {
-      var how = guideGo(s), isNext = s === next, ed = editKind(s), now = ed ? setupValueText(s.edit) : '';
+      var how = guideGo(s) || (/^[\w./-]+\.html$/.test(String(s.go || '')) ? s.go : ''), isNext = s === next, ed = editKind(s), now = ed ? setupValueText(s.edit) : '';
       // a step filled in the portal: its own button (the next step's is the primary), its current value, and How as a plain link
       var act = ed ? h('button', { type: 'button', class: 'kg-btn kg-sbtn' + (isNext ? ' kg-primary' : ''), onclick: function (e) { openSetupEdit(s, e.currentTarget); } }, [s.done ? 'Change' : setupVerb(s.edit)])
-        : how ? (isNext ? goLink(how, 'Show me how', 'kg-btn kg-primary kg-sbtn') : goLink(how, 'How')) : null;
+        : how ? (isNext ? goLink(how, s.goText || 'Show me how', 'kg-btn kg-primary kg-sbtn') : goLink(how, s.goText || 'How')) : null;
       return h('li', { class: s.done ? 'kg-sd' : isNext ? 'kg-snext' : '' }, [
         h('span', { class: 'kg-sm', 'aria-hidden': 'true' }, [s.done ? '✓' : '']),
         h('span', { class: 'kg-stt' }, [isNext ? h('b', { class: 'kg-tag' }, ['Next']) : null, s.title, s.done ? h('span', { class: 'kg-sr' }, [' (done)']) : null,
@@ -327,7 +346,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     if (t.state === 'open' && !(t.steps && t.steps.length)) kids.push(goLink(t.go, isNext ? 'Open' : 'Go', isNext && !t.assignable ? 'kg-btn kg-primary kg-tbtn' : null));
     if (t.state === 'done') kids.push(goLink(t.go, 'View'));
     if (t.owner && t.owner.name) kids.push(h('span', { class: 'kg-with' }, ['With ' + t.owner.name]));
-    if (t.steps && t.steps.length && t.state !== 'done') kids.push(stepList(t.steps));
+    if (t.steps && t.steps.length && t.state !== 'done') kids.push(goLink('owner/index.html#hq-setup', 'Set up the game on your Home', 'kg-btn kg-primary kg-sbtn')); // the steps themselves live on Home
     if (extra) kids.push(extra);
     return h('li', { class: 'kg-tier' + (isNext ? ' kg-tnext' : '') }, kids);
   }
@@ -405,7 +424,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   // Buddy's card: the one next step with one button, and the Kingdom's progress bar
   function nextCard(d, a) {
     var p = progressOf((d.kingdom && d.kingdom.campuses) || []), act = null;
-    if (a.kind === 'setup') act = editKind(a.step) ? h('button', { type: 'button', class: 'kg-btn kg-primary', onclick: function (e) { openSetupEdit(a.step, e.currentTarget); } }, [setupVerb(a.step.edit)]) : goLink(guideGo(a.step), 'Show me how', 'kg-btn kg-primary');
+    if (a.kind === 'setup') act = goLink('owner/index.html#hq-setup', 'Set it up on Home', 'kg-btn kg-primary');
     else if (a.kind === 'assign') act = h('button', { type: 'button', class: 'kg-btn kg-primary', onclick: function (e) { openAssign(a.tier, a.base, e.currentTarget); } }, ['Pick who sets it up']);
     else if (a.kind === 'follow') act = h('button', { type: 'button', class: 'kg-btn kg-primary', onclick: function (e) { openFollow(a.card, e.currentTarget); } }, ['Pick who follows up']);
     var open = a.base ? h('button', { type: 'button', class: 'kg-btn', onclick: function (e) { openBase(a.base.id, e.currentTarget); } }, ['Open ' + a.base.name]) : null;
@@ -440,7 +459,7 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
   }
   function message(text, retry) {
     return h('div', { class: 'kg-msg', role: 'alert' }, [buddyImg('winter-formal-neutral'), h('div', {}, [h('p', {}, [text]),
-      retry ? h('button', { type: 'button', class: 'kg-btn kg-primary', onclick: load }, ['Try again']) : null])]);
+      retry ? h('button', { type: 'button', class: 'kg-btn kg-primary', onclick: function () { (S.reload || load)(); } }, ['Try again']) : null])]);
   }
   // level-ups since this browser's last visit: one dismissable card (stored per person; a first visit only stores)
   var LV_KEY = 'kg-levels-v1';
@@ -658,9 +677,9 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
       if (!d || !d.success) { var se = new Error((d && d.error) || SEND_ERR); se.server = true; throw se; } // only the server's own sentence is shown
       var msg = ctl.done(d);
       closeLayer(); toast(msg);
-      return load().then(function () {
+      return (S.reload || load)().then(function () {
         if (ctl.after) return ctl.after(); // e.g. back to the All quests list
-        var h1 = S.el && S.el.querySelector('h1'); // the opener is gone after a re-render: focus the page heading
+        var h1 = S.el && (S.el.querySelector('h1') || S.el.querySelector('h2')); // the opener is gone after a re-render: focus the page heading
         if (h1) { h1.setAttribute('tabindex', '-1'); h1.focus(); }
       });
     }).catch(function (e) {
@@ -949,6 +968,36 @@ var LMCSKingdom = window.LMCSKingdom = (function () {
     return h('div', { class: 'kg-acts kg-enter' }, [h('button', { type: 'button', class: 'kg-btn', onclick: function (e) { openEnter(base, e.currentTarget); } }, ['Enter as Principal'])]);
   };
 
+  // Owner Home: the setup list only (gamekingdom for the HQ steps and their date pickers, peoplelist for the People step).
+  // opts.onData(d) gets the gamekingdom response too, so the page's own tiles need no second read.
+  function homeLoad() {
+    var q = function (a) { return fetch(S.url + (S.url.indexOf('?') === -1 ? '?' : '&') + 'action=' + a + '&idToken=' + encodeURIComponent((S.session || {}).idToken || ''), { cache: 'no-store' }).then(function (r) { return r.json(); }); };
+    return Promise.all([q('gamekingdom'), q('peoplelist').catch(function () { return null; })]).then(function (r) {
+      var d = r[0];
+      if (!d || !d.success) throw new Error((d && d.error) || LOAD_ERR);
+      S.data = d; homeDraw(d, r[1] && r[1].success ? r[1] : null);
+      if (S.onData) S.onData(d);
+    }).catch(function (e) {
+      if (S.data) return; // keep the last good list when a refresh fails
+      S.el.textContent = ''; S.el.appendChild(message((e && e.message) || LOAD_ERR, true));
+    });
+  }
+  function homeDraw(d, p) {
+    var steps = homeSteps(d, p), done = steps.filter(function (s) { return s.done; }).length;
+    S.el.textContent = '';
+    S.el.hidden = !steps.length;
+    if (!steps.length) return;
+    S.el.appendChild(h('div', { class: 'kg kg-home' }, [h('h2', { class: 'gb-h2', id: 'hq-setup-h', tabindex: '-1' }, ['Set up']),
+      h('p', { class: 'kg-quiet' }, [done === steps.length ? 'Everything is set up. Shabash.' : done + ' of ' + steps.length + ' done. The next step is on top.']), stepList(steps)]));
+  }
+  function mountHome(el, opts) {
+    opts = opts || {};
+    S.el = el; S.session = opts.session; S.url = opts.backendUrl || ''; S.root = opts.root || ''; S.data = null;
+    S.reload = homeLoad; S.onData = opts.onData || null;
+    if (!S.url) { el.hidden = true; return Promise.resolve(); }
+    return homeLoad();
+  }
+  api.mountHome = mountHome;
   api.mount = mount; api.refresh = function () { return load(); }; api.last = function () { return S.data; };
   api.openBase = function (id, op) { openBase(id, op); }; api.openReviews = function (op) { openReviews(op); }; api.close = closeLayer; api.state = S;
   if (location.hostname === 'localhost') { api._render = function (d, el) { if (el) S.el = el; render(d); }; } // browser checks with a sample response; never on the live site

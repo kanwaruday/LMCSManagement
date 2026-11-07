@@ -9,10 +9,13 @@
   <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
   <link rel="stylesheet" href="../assets/game/game.css?v=37f754ac" />
   <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
+  <link rel="stylesheet" href="../assets/game/kingdom.css?v=c383b814" />
+  <style>@media (max-width: 959px) { .gb-shell { grid-template-areas:"next" "stage" "panels"; } } /* phones: Set up first, the tools shelf after */</style>
 </head>
 <body class="gb gb-app">
 
-  <!-- The screen skeleton (assets/game/base.css). HQ Home: four tiles (Approvals, Money today, People, Game settings), then Today
+  <!-- The screen skeleton (assets/game/base.css). HQ Home: Set up first (every setup step, the next on top: kingdom.js mountHome),
+       then four tiles (Approvals, Money today, People, Game settings), then Today
        (game.js, which carries its own next step), and the All tools shelf in the panels. The header switches Home ⇄ Map. -->
   <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" aria-current="page" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="realMap">Map</a></nav></div></header>
   <div class="gb-shell">
@@ -24,6 +27,7 @@
         <div id="gate-slot"></div>
       </section>
       <div id="app-root" style="display:none">
+        <section class="gb-section" id="hq-setup" aria-labelledby="hq-setup-h"></section>
         <ul class="gb-grid hq-tiles" id="hq-tiles" aria-label="HQ Home"></ul>
         <section id="game-root" aria-label="Today with Buddy" hidden></section>
       </div>
@@ -43,6 +47,7 @@
 
   <script src="../assets/auth.js?v=e5117a31"></script>
   <script src="../assets/game/game.js?v=d0493723"></script>
+  <script src="../assets/game/kingdom.js?v=80776241"></script>
   <script src="../assets/appointments.js?v=5dfa5b13"></script>
   <script src="../assets/game/emoji.js?v=9abef414"></script>
   <script src="../assets/game/rail.js?v=716e2ce0"></script>
@@ -84,7 +89,7 @@
           small: cards ? cards + (cards === 1 ? ' approved request waits' : ' approved requests wait') + ' for a follow-up' : k ? 'Requests waiting for your decision. Nothing approved is waiting for a follow-up.' : 'Requests waiting for your decision' },
         { e: 'dayBook', name: 'Money today', url: '../office/daybook.html', small: "The Day Book: today's cash and entries" },
         { e: 'heads', name: 'People', url: 'people.html', small: 'Coordinators: their school and what they look after' },
-        { e: 'settings', name: 'Game settings', url: 'kingdom.html#base-HES', count: steps && done < steps.length ? steps.length - done : null,
+        { e: 'settings', name: 'Game settings', url: '#hq-setup', count: steps && done < steps.length ? steps.length - done : null,
           small: steps ? 'Set up the game: ' + done + ' of ' + steps.length + ' done' : 'Set up the game' },
       ];
     }
@@ -100,13 +105,10 @@
         a.href = t.url; a.appendChild(span); li.appendChild(a); ul.appendChild(li);
       });
     }
+    // one gamekingdom read feeds both the Set up list (kingdom.js) and the tiles; the tiles already show as links before it lands
     function loadTiles(session) {
       renderTiles(null);
-      if (!GAME_BACKEND_URL) return;
-      fetch(GAME_BACKEND_URL + '?action=gamekingdom&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
-        .then(function (r) { return r.json(); })
-        .then(function (d) { if (d && d.success) renderTiles(d); })
-        .catch(function (e) { console.warn('hq tiles', e); }); // the tiles already show as links
+      LMCSKingdom.mountHome(document.getElementById('hq-setup'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', onData: renderTiles });
     }
 
     function hello(name) {

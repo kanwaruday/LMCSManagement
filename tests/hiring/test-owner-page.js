@@ -6,6 +6,7 @@ const els = {}, made = [];
 const node = (tag) => { const n = { tag, style: {}, textContent: '', className: '', children: [], appendChild(c) { this.children.push(c); return c; }, addEventListener() {}, setAttribute() {} };
   Object.defineProperty(n, 'innerHTML', { set(v) { made.push(String(v)); }, get() { return ''; } }); return n; };
 const el = (id) => els[id] || (els[id] = node('#' + id));
+let mounted = null;
 const session = { name: '<img src=x onerror=alert(1)>', campusName: '"><b>All</b>', role: 'Owner', campusId: 'ALL' };
 vm.runInContext(inline, vm.createContext({
   document: { getElementById: el, createElement: node, createTextNode: (t) => ({ text: String(t) }) },
@@ -13,10 +14,12 @@ vm.runInContext(inline, vm.createContext({
   LMCS: { getSession: () => session, canViewOwnerPortal: () => true, signOut() {} },
   LMCSAppts: { mount() {} },
   LMCSRail: { mount() {} },
+  LMCSKingdom: { mountHome(el, o) { mounted = o; } },
   window: {},
 }));
 assert.ok(els['hub-hello'].textContent.includes('<img'), 'the name goes in as text');
 assert.ok(!made.some((h) => /<img|<b>All/.test(h)), 'no session value is written as markup');
 assert.strictEqual(els['modules-grid'].children.length, 6, 'the six Owner tools render as rows');
 assert.strictEqual(els['hq-tiles'].children.length, 4, 'HQ Home: four tiles before the read answers');
+assert.ok(mounted && mounted.root === '../' && typeof mounted.onData === 'function', 'the Set up list mounts with the tiles as its data hook');
 console.log('ok  - owner page puts session.name in as text');
