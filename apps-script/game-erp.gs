@@ -82,7 +82,8 @@ function erpTies_(caller, assignRows) {
   return (assignRows || []).filter(function (a) {
     return (code && erpNorm_(a.empCode) === code) || (email && String(a.email || '').trim().toLowerCase() === email);
   }).map(function (a) {
-    return { kind: String(a.kind || '').trim().toLowerCase(), class: erpNorm_(a.class), section: erpNorm_(a.section), subject: erpNorm_(a.subject), bus: erpBusKey_(a.bus) };
+    const cls = erpNorm_(a.class), suffix = (cls.match(/ - ([A-Z0-9]+)$/) || [])[1] || ''; // "X - A" ties section A, not all of X
+    return { kind: String(a.kind || '').trim().toLowerCase(), class: erpClassBase_(cls), section: erpNorm_(a.section) || suffix, subject: erpNorm_(a.subject), bus: erpBusKey_(a.bus) };
   }).filter(function (t) { return (t.kind === 'class' || t.kind === 'subject') ? !!t.class && (t.kind === 'class' || !!t.subject) : t.kind === 'bus' && !!t.bus; });
 }
 
@@ -110,10 +111,13 @@ function erpAccess_(caller, campus, ties) {
 }
 
 // a row's class/section (and subject, for marks) inside a sections grant; a tie with no section covers the whole class
+// CSM writes a class with its section ("X - A", "M-I - B"); a tie names the class alone ("X") or with that suffix. ' - ' needs the
+// spaces, so "M-I" itself is never cut.
+function erpClassBase_(v) { return erpNorm_(v).replace(/ - [A-Z0-9]+$/, ''); }
 function erpInSections_(grant, row, subject) {
   if (grant === true) return true;
   return (grant.sections || []).some(function (s) {
-    return s.class === erpNorm_(row.class) && (!s.section || s.section === erpNorm_(row.section)) && (!s.subject || subject === undefined || s.subject === erpNorm_(subject));
+    return s.class === erpClassBase_(row.class) && (!s.section || s.section === erpNorm_(row.section)) && (!s.subject || subject === undefined || s.subject === erpNorm_(subject));
   });
 }
 
@@ -139,8 +143,9 @@ function erpStudentKey_(s) { return [erpNorm_(s.class), erpNorm_(s.section), ('0
 
 // ── the shapes, pure: (access grant, projected tabs, filters) -> rows ──
 // f = request filters, already normalized: {class, section, house, subject, exam, bus, from, to}
+// a class filter "X" (a whole-class tie) finds "X - A" and "X - B"; "X - A" finds only that section
 function erpMatchF_(row, f) {
-  return (!f.class || erpNorm_(row.class) === f.class) && (!f.section || erpNorm_(row.section) === f.section);
+  return (!f.class || erpNorm_(row.class) === f.class || erpClassBase_(row.class) === f.class) && (!f.section || erpNorm_(row.section) === f.section);
 }
 
 function erpStudents_(grant, tabs, f) {
@@ -248,7 +253,7 @@ function erpFilterAllowed_(what, grant, f) {
   if (grant === true) return true;
   if (what === 'bus') return !f.bus || (grant.buses || []).indexOf(f.bus) !== -1;
   return (grant.sections || []).some(function (s) {
-    return (!f.class || s.class === f.class) && (!f.section || !s.section || s.section === f.section) && (!f.subject || !s.subject || s.subject === f.subject);
+    return (!f.class || s.class === erpClassBase_(f.class)) && (!f.section || !s.section || s.section === f.section) && (!f.subject || !s.subject || s.subject === f.subject);
   });
 }
 

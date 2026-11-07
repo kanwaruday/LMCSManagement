@@ -198,4 +198,23 @@ logs.forEach((l) => {
   assert.ok(/^erpread \w+ (LMS\d|all) rows=\d+$/.test(l) || /failed: ERP_READ_FAILED$/.test(l), 'log shape: ' + l);
 });
 
+// CSM writes the section into the class ("X - A"): a whole-class tie "X" covers every X section, a tie "X - B" only B,
+// a class filter taken from a student row ("X - A") is allowed, and "M-I" is never cut to "M".
+reset();
+books.book4.students_now = [LMS4.students_now[0],
+  ['E101', 'Test Student 101', 'X - A', 'A', '1', '', 'Active', '', '', '', '', '', '', '', ''],
+  ['E102', 'Test Student 102', 'X - B', 'B', '1', '', 'Active', '', '', '', '', '', '', '', ''],
+  ['E103', 'Test Student 103', 'M-I - A', 'A', '1', '', 'Active', '', '', '', '', '', '', '', ''],
+  ['E104', 'Test Student 104', 'IX - A', 'A', '1', '', 'Active', '', '', '', '', '', '', '', '']];
+books.book4.assignments = [LMS4.assignments[0], ['T300', '', 'subject', 'X', '', 'Maths', ''], ['T301', '', 'class', 'X - B', '', '', ''], ['T302', '', 'class', 'M-I', '', '', ''], ['T303', '', 'class', 'M', '', '', '']];
+const csmT = (code) => ({ email: code + '@test.invalid', campusId: 'LMS4', roles: ['Teacher'], employeeCode: code });
+const ids = (r) => r.rows.map((x) => x.enrollNo).join(',');
+assert.strictEqual(ids(read(csmT('T300'), { what: 'students' })), 'E101,E102');
+assert.strictEqual(ids(read(csmT('T301'), { what: 'students' })), 'E102');
+assert.strictEqual(ids(read(csmT('T302'), { what: 'students' })), 'E103');
+assert.strictEqual(ids(read(csmT('T303'), { what: 'students' })), '');
+assert.strictEqual(ids(read(csmT('T300'), { what: 'students', class: 'X - A' })), 'E101');
+assert.strictEqual(ids(read(csmT('T300'), { what: 'students', class: 'X', section: '' })), 'E101,E102', 'the classroom chain filters by the tie class');
+assert.ok(denied(read(csmT('T301'), { what: 'students', class: 'X - A', section: 'A' })));
+
 console.log('test-game-erp: all passed');

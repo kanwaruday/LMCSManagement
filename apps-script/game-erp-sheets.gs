@@ -12,16 +12,17 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //   POST erppush       caller-less, gated by Script property ERP_PUSH_SECRET (Uday sets it; the transportpush pattern). Modes:
 //                      check (says whether the secret matches, writes nothing), replace (whole tab, in parts through a staging tab
 //                      swapped in on the last part, so readers never see half a tab), upsert (by key columns).
-// Guards: game Sheets take only the known tabs (never `assignments`, which is filled by hand; never salary_totals, which goes to
-// the sensitive Sheet) and refuse a header naming a sensitive column (Aadhaar/UID, PAN, bank, phone, DOB, address, photo, caste,
+// Guards: game Sheets take only the known tabs (never salary_totals, which goes to the sensitive Sheet). `assignments` is
+// seeded once from the timetables (tools/erp-assignments-push.py, Uday 7 Nov via V1); after that Principals fix it by hand, so
+// a replace of a filled assignments tab is refused unless the push says overwrite: true and refuse a header naming a sensitive column (Aadhaar/UID, PAN, bank, phone, DOB, address, photo, caste,
 // religion, health, salary…). The sensitive Sheets take any tab, but only while
 // Script property ERP_SENS_PUSH is exactly "on" (Uday's own switch). Size limits per call. Logs: counts only.
 // ponytail: no script lock (the Mac pushes one call at a time); add LockService if two pushers ever run at once.
 // ═══════════════════════════════════════════════════════════════════
 
 var ERP_FOLDER_NAME = 'ERP Data (private)';
-var ERP_PUSH_TABS = ['students_now', 'attendance', 'marks_summary', 'dues', 'staff', 'last_pushed']; // salary_totals: sensitive Sheet only (G2, 6 Nov)
-// the headers erpSetupSheets writes into a new game Sheet (the push may replace them; assignments is only ever set up here)
+var ERP_PUSH_TABS = ['students_now', 'attendance', 'marks_summary', 'dues', 'staff', 'last_pushed', 'assignments']; // salary_totals: sensitive Sheet only (G2, 6 Nov)
+// the headers erpSetupSheets writes into a new game Sheet (the push may replace them)
 var ERP_SETUP_HEADERS = {
   students_now: ['enroll_no', 'name', 'class', 'section', 'roll_no', 'house', 'status', 'bus', 'route', 'pickup_point', 'way'],
   dues: ['enroll_no', 'fee_head', 'receivable', 'received', 'concession', 'balance'],
@@ -126,7 +127,7 @@ function erpPushCheckBody_(b) {
     }
     out.push(cells);
   }
-  const req = { campus: campus, tab: tab, sens: sens, mode: mode, header: header.map(String), keys: keys, rows: out };
+  const req = { campus: campus, tab: tab, sens: sens, mode: mode, header: header.map(String), keys: keys, rows: out, overwrite: b.overwrite === true };
   if (mode === 'replace') {
     req.part = b.part === undefined ? 1 : b.part; req.parts = b.parts === undefined ? 1 : b.parts;
     if (!(Number.isInteger(req.parts) && req.parts >= 1 && req.parts <= ERP_MAX_PARTS && Number.isInteger(req.part) && req.part >= 1 && req.part <= req.parts)) return { error: 'part/parts: whole numbers, 1 <= part <= parts <= ' + ERP_MAX_PARTS };
@@ -176,6 +177,8 @@ function erpReplace_(book, req) {
   const stageName = req.tab + ERP_STAGE_SUFFIX, cache = CacheService.getScriptCache(), ck = 'erp_stage_' + (req.sens ? 's_' : '') + req.campus + '_' + req.tab;
   let stage = book.getSheetByName(stageName);
   if (req.part === 1) {
+    const filled = req.tab === 'assignments' && !req.sens && book.getSheetByName(req.tab);
+    if (filled && filled.getLastRow() > 1 && !req.overwrite) return { error: 'assignments already holds rows (Principals may have fixed them): push with overwrite: true to replace' };
     if (stage) stage.clear(); else stage = book.insertSheet(stageName);
     erpWriteText_(stage, 1, [req.header].concat(req.rows));
   } else {

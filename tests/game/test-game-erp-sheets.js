@@ -114,7 +114,7 @@ assert.ok(/key/.test(push({ campus: 'LMS4', tab: 'dues', mode: 'upsert', key: ['
 
 // ---- guards: tabs, sensitive columns, sizes, shapes
 const bad = (b) => { const x = push(Object.assign({ campus: 'LMS4', tab: 'students_now', mode: 'replace', header: H, rows: [] }, b)); assert.strictEqual(x.success, false, JSON.stringify(b).slice(0, 80)); return x.error; };
-bad({ tab: 'assignments' }); bad({ tab: 'Students' }); bad({ campus: 'LMS9' }); bad({ campus: 'HES' }); bad({ mode: 'append' });
+bad({ tab: 'Students' }); bad({ campus: 'LMS9' }); bad({ campus: 'HES' }); bad({ mode: 'append' });
 ['aadhaar', 'Aadhar No', 'Adhar No', 'adhaar', 'UID', 'uid_no', 'PAN', 'pan_no', 'bank_account', 'IFSC', 'mobile', 'father_phone', 'DOB', 'date_of_birth', 'address', 'photo', 'image_ref', 'email', 'parent_name',
   'caste', 'Religion', 'blood_group', 'medical_notes', 'health', 'disability', 'salary', 'gross', 'net_pay', 'deduction'].forEach((c) => {
   assert.ok(/not allowed/.test(bad({ header: H.concat([c]), rows: [] })), c);
@@ -132,6 +132,19 @@ bad({ part: 0, parts: 1 }); bad({ part: 2, parts: 1 }); bad({ part: 1, parts: 20
 assert.strictEqual(push({ campus: 'LMS4', tab: 'students_now', mode: 'replace', header: H, rows: [row(7).slice(0, -1).concat([null])] }).success, true, 'null cells are empty');
 
 // ---- the sensitive Sheet: only while ERP_SENS_PUSH is exactly "on"; any tab name; never the game Sheet
+// assignments: seeded once from the timetables; a filled tab (Principals' fixes) is replaced only with overwrite: true
+const AH = ['emp_code', 'kind', 'class', 'section', 'subject', 'bus', 'teacher', 'fix'];
+const seed = (extra) => push(Object.assign({ campus: 'LMS4', tab: 'assignments', mode: 'replace', header: AH, rows: [['T1', 'subject', 'X', '', 'Maths', '', 'Test Teacher 1', '']] }, extra));
+r = seed();
+assert.strictEqual(r.success, true, JSON.stringify(r));
+assert.deepStrictEqual(J(book4().getSheetByName('assignments').data[1]), ['T1', 'subject', 'X', '', 'Maths', '', 'Test Teacher 1', '']);
+r = seed();
+assert.strictEqual(r.success, false); assert.ok(/overwrite: true/.test(r.error), r.error);
+assert.strictEqual(book4().getSheetByName('assignments').data.length, 2, 'refused push left the tab as it was');
+r = seed({ overwrite: true, rows: [['T2', 'class', 'IX', '', '', '', 'Test Teacher 2', '']] });
+assert.strictEqual(r.success, true); assert.strictEqual(book4().getSheetByName('assignments').data[1][0], 'T2');
+assert.strictEqual(push({ campus: 'LMS4', tab: 'assignments', mode: 'replace', header: ['emp_code', 'email'], rows: [], overwrite: true }).success, false, 'no email column in a pushed assignments tab');
+
 const S = { campus: 'LMS4', sensitive: true, tab: 'students_full', mode: 'replace', header: ['enroll_no', 'aadhaar'], rows: [['E1', '000000000000']] };
 assert.ok(/switched off/.test(push(S).error));
 props.ERP_SENS_PUSH = 'yes'; assert.ok(/switched off/.test(push(S).error));
