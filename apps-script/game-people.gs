@@ -284,5 +284,10 @@ function gameActAs_(caller, actAs) {
   }
 }
 
+// The game GETs a switched (supporting) Principal may run: view-as's reads plus the reads the Principal pages make. Every one is read-only
+// (scout only caches a per-school summary); anything else, setupsave, gamedecide, gametourseen, teacherplanactivity included, is refused.
+var GAME_SUPPORT_EXTRA_READS = ['gametownhall', 'roomsget', 'gamescout', 'classroomget', 'erpread', 'workplaceget', 'workplaceimage'];
+function gameSupportRead_(action) { return GAME_VIEW_AS_ACTIONS.indexOf(action) !== -1 || GAME_SUPPORT_EXTRA_READS.indexOf(action) !== -1; }
+
 // ── registration (this file's own functions only) ───────────────────
 GAME_MODULE_ACTIONS.peoplelist = peopleList_;

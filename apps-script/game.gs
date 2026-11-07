@@ -246,7 +246,10 @@ function doGet(e) {
     caller.idToken = String(e.parameter.idToken); // modules call their own backends with it, so those apply their own scope
     const action = String(e.parameter.action || '').toLowerCase();
     let params = e.parameter;
-    if (e.parameter.actAs) caller = gameActAs_(caller, e.parameter.actAs); // a supporting Principal reading a school they support (game-people.gs); never on POST
+    if (e.parameter.actAs) { // a supporting Principal reading a school they support (game-people.gs): reads only, peek, as view-as below
+      caller = gameActAs_(caller, e.parameter.actAs);
+      if (caller.supportingAt) { if (!gameSupportRead_(action)) return gameJson_(SUPPORT_READ_ONLY); params = Object.assign({}, e.parameter, { peek: '1' }); }
+    }
     caller = gameViewAs_(caller, e.parameter.asCampus);
     if (caller.viewAs) {
       if (GAME_VIEW_AS_ACTIONS.indexOf(action) === -1) { console.warn('view-as refused: GAME_VIEW_READ_ONLY'); return gameJson_(GAME_VIEW_READ_ONLY); }

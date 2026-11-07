@@ -432,7 +432,7 @@ test('support in the game backend: a read at a supported school; outside the Sup
   assert.strictEqual(J(ctx.gameActAs_(J(P3), 'LMS4')).campusId, 'LMS3', 'no charge: home');
   // doGet only: the one line sits before view-as and dispatch; doPost never calls it
   const g = fs.readFileSync(dir + 'game.gs', 'utf8'), get = g.slice(g.indexOf('function doGet'), g.indexOf('function doPost')), post = g.slice(g.indexOf('function doPost'));
-  assert.ok(/if \(e\.parameter\.actAs\) caller = gameActAs_\(caller, e\.parameter\.actAs\);/.test(get) && get.indexOf('gameActAs_') < get.indexOf('gameDispatch_'));
+  assert.ok(/caller = gameActAs_\(caller, e\.parameter\.actAs\);/.test(get) && get.indexOf('gameActAs_') < get.indexOf('gameDispatch_'));
   assert.ok(!/gameActAs_/.test(post.slice(0, post.indexOf('\nfunction '))), 'never on POST: a POST with actAs is refused instead (tests/apps-script/test-support-writes.js)');
   // a game write aimed at the supported school: refused before any handler (G2: fail closed), even before the caller check
   const saved = ctx.gameVerifyCaller_;
@@ -441,6 +441,29 @@ test('support in the game backend: a read at a supported school; outside the Sup
     const r = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ action: 'roomssave', idToken: 't', actAs: 'LMS3', campus: 'LMS3', rooms: [{ name: 'Lab', type: 'lab', staff: '' }] }) } }).body);
     assert.deepStrictEqual([r.success, r.code], [false, 'SUPPORT_READ_ONLY'], JSON.stringify(r));
   } finally { ctx.gameVerifyCaller_ = saved; }
+});
+
+test('support in the game backend: switched GETs run only the read list, with peek; setupsave and gamedecide are refused, nothing written', () => {
+  go(); store.clear();
+  assert.strictEqual(support(OWN, { email: 'p4@example.org', schools: ['LMS3'] }).success, true);
+  const saved = ctx.gameVerifyCaller_, spy = ctx.GAME_MODULE_ACTIONS.roomsget, seen = [];
+  ctx.gameVerifyCaller_ = () => J(P4);
+  ctx.GAME_MODULE_ACTIONS.roomsget = (caller, params) => { seen.push([caller.campusId, caller.supportingAt, params.peek]); return { success: true }; };
+  const get = (p) => JSON.parse(ctx.doGet({ parameter: Object.assign({ idToken: 't' }, p) }).body);
+  try {
+    const before = JSON.stringify(book.tabs) + JSON.stringify(A), rowsBefore = audit().length;
+    for (const action of ['setupsave', 'gamedecide', 'gametourseen', 'teacherplanactivity', 'kingdomquests', 'somethingnew']) {
+      assert.strictEqual(get({ action, actAs: 'LMS3', id: 'x', value: 'y' }).code, 'SUPPORT_READ_ONLY', action);
+    }
+    assert.strictEqual(JSON.stringify(book.tabs) + JSON.stringify(A), before, 'nothing written');
+    assert.strictEqual(audit().length, rowsBefore);
+    assert.strictEqual(get({ action: 'roomsget', actAs: 'LMS3' }).success, true);
+    assert.deepStrictEqual(seen.pop(), ['LMS3', 'LMS3', '1'], 'a read at the supported school, as a peek');
+    assert.strictEqual(get({ action: 'roomsget', actAs: 'LMS5' }).success, true);
+    assert.deepStrictEqual(seen.pop(), ['LMS4', undefined, undefined], 'not on the Supporting cell: home school, an ordinary read');
+    for (const a of ['gametoday', 'gamekingdom', 'gameevent', 'setupget', 'gametownhall', 'roomsget', 'gamescout', 'classroomget', 'erpread', 'workplaceget', 'workplaceimage']) assert.ok(ctx.gameSupportRead_(a), a);
+    for (const a of ['setupsave', 'gamedecide', 'gametourseen', 'teacherplanactivity']) assert.ok(!ctx.gameSupportRead_(a), a);
+  } finally { ctx.gameVerifyCaller_ = saved; ctx.GAME_MODULE_ACTIONS.roomsget = spy; }
 });
 
 let fail = 0;
