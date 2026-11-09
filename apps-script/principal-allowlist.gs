@@ -133,6 +133,22 @@ function invalidateCache_() {
   CacheService.getScriptCache().remove(CACHE_KEY);
 }
 
+// 2026-11-10: a direct edit in the "LMCS Principal Allowlist" sheet (how Uday changes roles) used to wait out the 10-min cache,
+// because only the People page's writes called invalidateCache_(). This installable onEdit trigger busts the cache on any sheet edit,
+// so the next allowlist_list read (and the keep-warm ping) re-reads the sheet.
+// SETUP: run allowlistInstallEditTrigger ONCE from the editor (it asks for the trigger permission); re-running replaces the old one.
+function allowlistOnEdit() {
+  invalidateCache_();
+}
+
+function allowlistInstallEditTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'allowlistOnEdit') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('allowlistOnEdit').forSpreadsheet(SHEET_ID).onEdit().create();
+  Logger.log('Allowlist edit trigger installed: any sheet edit clears the allowlist cache');
+}
+
 function findRowIndex(sheet, email) {
   const values = sheet.getDataRange().getValues();
   const target = String(email).trim().toLowerCase();
