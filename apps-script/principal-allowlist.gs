@@ -107,8 +107,12 @@ function getSheet() {
 function readEntries() {
   const cache = CacheService.getScriptCache();
   const hit = cache.get(CACHE_KEY);
-  if (hit) return JSON.parse(hit);
-
+  if (hit) {
+    const c = JSON.parse(hit);
+    if (Array.isArray(c)) return c; // an entry cached by the code before 2026-11-10 (no stamp): served until its TTL ends
+    if (!allowlistSheetChanged_(cache, c.at)) return c.entries;
+  }
+  const at = Date.now();
   const rows = getSheet().getDataRange().getValues();
   const entries = [];
   for (let i = 1; i < rows.length; i++) {
@@ -125,7 +129,7 @@ function readEntries() {
       entries.push(entry);
     }
   }
-  cache.put(CACHE_KEY, JSON.stringify(entries), CACHE_TTL_SECONDS);
+  cache.put(CACHE_KEY, JSON.stringify({ at: at, entries: entries }), CACHE_TTL_SECONDS);
   return entries;
 }
 
@@ -133,20 +137,17 @@ function invalidateCache_() {
   CacheService.getScriptCache().remove(CACHE_KEY);
 }
 
-// 2026-11-10: a direct edit in the "LMCS Principal Allowlist" sheet (how Uday changes roles) used to wait out the 10-min cache,
-// because only the People page's writes called invalidateCache_(). This installable onEdit trigger busts the cache on any sheet edit,
-// so the next allowlist_list read (and the keep-warm ping) re-reads the sheet.
-// SETUP: run allowlistInstallEditTrigger ONCE from the editor (it asks for the trigger permission); re-running replaces the old one.
-function allowlistOnEdit() {
-  invalidateCache_();
-}
-
-function allowlistInstallEditTrigger() {
-  ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'allowlistOnEdit') ScriptApp.deleteTrigger(t);
-  });
-  ScriptApp.newTrigger('allowlistOnEdit').forSpreadsheet(SHEET_ID).onEdit().create();
-  Logger.log('Allowlist edit trigger installed: any sheet edit clears the allowlist cache');
+// 2026-11-10: any edit to the sheet reaches the feed within ALLOWLIST_CHECK_SECONDS. Before, only this file's own writes called
+// invalidateCache_(); a direct sheet edit (how Uday changes roles) or a write from the Game Backend's People room (another Apps Script
+// project, so another script cache) waited out the 10-min cache. The cached entries carry the time they were read; at most once per
+// ALLOWLIST_CHECK_SECONDS a read asks Drive when the sheet last changed (one cheap metadata call, not the 2-40 s sheet read) and re-reads
+// only if it changed since. If Drive can't answer, the cache is served as before.
+const ALLOWLIST_CHECK_SECONDS = 30;
+function allowlistSheetChanged_(cache, at) {
+  if (cache.get('allowlist_checked')) return false;
+  cache.put('allowlist_checked', '1', ALLOWLIST_CHECK_SECONDS);
+  try { return DriveApp.getFileById(SHEET_ID).getLastUpdated().getTime() > at; }
+  catch (err) { return false; }
 }
 
 function findRowIndex(sheet, email) {
