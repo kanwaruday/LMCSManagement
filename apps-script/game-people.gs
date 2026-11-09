@@ -19,22 +19,31 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 //                      lock, when missing): a comma list of LMS1-6, never ALL, never their own school; [] clears it. Only a row holding
 //                      Principal with no Owner or Coordinator role and its own school LMS1-6 (supporting-charge.gs supportEligible_). Same
 //                      rights and order as peopleprincipal. What a supporting Principal may do there is decided by each backend (supportActAs_).
+//   peopleowner        POST only: grant or take away the Owner role (Uday, 10 Nov: "there is no owner tag/ option, add that"). Only the accounts in
+//                      PEOPLE_OWNER_ADMINS may call it (other Owners see the Owners read-only); same rights and order as peoplecoordinator. Adds a row
+//                      for a new email; else adds Owner to, or takes it out of, the Roles cell and keeps the other roles. Never your own Owner row,
+//                      never the last Owner. A row left with no role at all is deleted (a role-less row must not linger, as a Coordinator remove).
 // What peoplecoordinator may touch, and nothing else: the Coordinator role, that row's campus and its functions from PEOPLE_FUNCTIONS (any other
 // function already in the cell is kept). It never edits or removes a row holding Owner, never grants Owner, and leaves a row that holds
 // any other role (Principal, Accounts, ...) to the sheet. One row per email (two rows for one email: refused). A new row is plain text.
-// ponytail: other backends cache the allowlist (game 5 min, roster 10 min), so a change reaches sign-in within ~10 minutes.
+// Sign-in (principal-allowlist.gs) notices a sheet change within ~30 s; this backend caches a caller 5 min (gameVerifyCaller_), so a role
+// change reaches the game layer within 5 minutes. ponytail: a removed Owner keeps game-backend Owner rights until that cache ends.
 // Logs carry codes, never people. Only this file's own functions are used at top level (load order).
 // ═══════════════════════════════════════════════════════════════════
 
 var PEOPLE_FUNCTIONS = ['Fees & Accounts', 'Transport', 'Academics', 'HR', 'Events', 'Systems'];
 var PEOPLE_CAMPUSES = ['ALL', 'LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'];
 var PEOPLE_EMAIL = /^[a-z0-9][a-z0-9._%+\-]{0,63}@[a-z0-9\-]{1,63}(\.[a-z0-9\-]{1,63})*\.[a-z]{2,24}$/;
+// SECURITY SETTING: who may grant or take away the Owner role (peopleowner). Owner is every right in every portal, so this is a code change
+// reviewed like one, never a sheet or Game Config value. Other Owners get the Owners list read-only.
+var PEOPLE_OWNER_ADMINS = ['uday.kanwar@lms.org.in'];
 var PEOPLE_NOT_YOURS = { success: false, code: 'PEOPLE_NOT_YOURS', error: 'The People room is for the Owner.' };
 var PEOPLE_CODES = { PEOPLE_BAD_EMAIL: 'That email does not look right.', PEOPLE_BAD_NAME: 'Add their name (letters, up to 80).',
   PEOPLE_OWNER_ROW: "The Owner's own row can't be changed here.", PEOPLE_OTHER_ROLES: 'This person has other roles too. Change them in the allowlist sheet.',
   PEOPLE_NOT_FOUND: 'That person is not a Coordinator.', PEOPLE_NOT_PRINCIPAL: 'That person is not a Principal.', PEOPLE_NOT_OFFICE: 'That person is not a Fee Clerk or Accounts.',
   PEOPLE_CANT_SUPPORT: 'Only a Principal at one school (not an Owner or Coordinator) can support another school.', PEOPLE_OWN_SCHOOL: "A Principal can't support their own school.",
   PEOPLE_ONE_SCHOOL: 'Only a plain Fee Clerk can cover all schools. Choose one school.', PEOPLE_NO_FUNCTIONS_COLUMN: 'The allowlist has no Functions column yet, so functions cannot be saved.',
+  PEOPLE_NOT_OWNER: 'That person is not an Owner.', PEOPLE_SELF_OWNER: "You can't remove your own Owner role.", PEOPLE_LAST_OWNER: "That is the last Owner. Add another Owner first.",
   PEOPLE_DUPLICATE: 'That email is on the allowlist more than once. Fix the sheet first.', PEOPLE_CHANGED: 'The allowlist changed just now. Nothing was removed; please try again.', PEOPLE_ERROR: 'Something went wrong. Nothing was changed.' };
 
 function peopleFail_(code) { return { success: false, code: code, error: PEOPLE_CODES[code] || KINGDOM_CODES[code] || PEOPLE_CODES.PEOPLE_ERROR }; }
@@ -62,7 +71,10 @@ function peopleList_(caller, params) {
       const roles = peopleRoles_(r[3]);
       return { email: gameLower_(r[0]), name: String(r[1] || '').trim(), campus: String(r[2] || '').trim().toUpperCase(), roles: roles, editable: roles.indexOf('Owner') === -1, mayAll: peopleOnlyFeeClerk_(roles) };
     });
-    return { success: true, coordinators: list, principals: principals, office: office, functions: PEOPLE_FUNCTIONS.slice(), campuses: PEOPLE_CAMPUSES.slice(), hasFunctions: peopleFnAt_(header) !== -1,
+    const owners = v.slice(1).filter(function (r) { return gameLower_(r[0]) && peopleRoles_(r[3]).indexOf('Owner') !== -1; }).map(function (r) {
+      return { email: gameLower_(r[0]), name: String(r[1] || '').trim(), campus: String(r[2] || '').trim().toUpperCase(), roles: peopleRoles_(r[3]) };
+    });
+    return { success: true, coordinators: list, principals: principals, office: office, owners: owners, canEditOwners: peopleOwnerAdmin_(caller), functions: PEOPLE_FUNCTIONS.slice(), campuses: PEOPLE_CAMPUSES.slice(), hasFunctions: peopleFnAt_(header) !== -1,
       canEdit: kingdomCan_(caller, 'allocate', cqLoadCfg_()) };
   } catch (err) {
     console.error('peoplelist: ' + (err && err.message));
@@ -145,6 +157,70 @@ function peopleCoordinator_(caller, body) {
     });
   } catch (err) {
     console.error('peoplecoordinator: ' + (err && err.message));
+    return peopleFail_('PEOPLE_ERROR');
+  }
+}
+
+function peopleOwnerAdmin_(caller) { return !!caller && !caller.viewAs && (caller.roles || []).indexOf('Owner') !== -1 && PEOPLE_OWNER_ADMINS.indexOf(gameLower_(caller.email)) !== -1; }
+
+// POST {email, name? (a new row only), remove?: true} -> {success, owner: {email, name, campus, roles} | removed, unchanged?}
+function peopleOwner_(caller, body) {
+  try {
+    const noRight = function (why) {
+      console.warn('people_owner refused: ' + why);
+      kingdomAuditRefusal_([gameNow_().toISOString(), gameLower_(caller && caller.email), body && body.remove === true ? 'people_owner_remove' : 'people_owner', 'allowlist', '', '', '', '', '', 'done', 'refused', 'KINGDOM_NO_RIGHT']);
+      return peopleFail_('KINGDOM_NO_RIGHT');
+    };
+    if (!caller || (caller.roles || []).indexOf('Owner') === -1) return noRight('not the Owner');
+    if (!peopleOwnerAdmin_(caller)) return noRight('not an Owner admin');
+    if (!kingdomCan_(caller, 'allocate', cqLoadCfg_())) return noRight('no allocate right');
+    body = body && typeof body === 'object' ? body : {};
+    const remove = body.remove === true, by = gameLower_(caller.email), at = gameNow_().toISOString();
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const row = function (phase, result, code) {
+      return [at, by, remove ? 'people_owner_remove' : 'people_owner', 'allowlist', kingdomCell_(email, 200), '', kingdomCell_(email, 200), '', '', phase, result, kingdomCell_(String(code), 200)];
+    };
+    const refuse = function (code) { kingdomAuditRefusal_(row('done', 'refused', code)); return peopleFail_(code); };
+    if (!PEOPLE_EMAIL.test(email) || email.length > 254) return refuse('PEOPLE_BAD_EMAIL');
+    if ((body.remove !== undefined && typeof body.remove !== 'boolean') || (body.name !== undefined && typeof body.name !== 'string')) return refuse('KINGDOM_BAD_INPUT');
+    if (!remove && name && (name.length > 80 || /[\d<>{}=+@\r\n]/.test(name))) return refuse('PEOPLE_BAD_NAME');
+    if (remove && email === by) return refuse('PEOPLE_SELF_OWNER');
+    return kingdomLocked_(function () {
+      kingdomAudit_(row('requested', '', ''), true);
+      const refuseHeld = function (code) { kingdomAudit_(row('done', 'refused', code), true); return peopleFail_(code); };
+      const sh = peopleSheet_(), v = sh.getDataRange().getValues(), header = v[0] || [], at_ = []; // read under the lock
+      for (let i = 1; i < v.length; i++) if (gameLower_(v[i][0]) === email) at_.push(i);
+      if (at_.length > 1) return refuseHeld('PEOPLE_DUPLICATE');
+      if (!at_.length) { // a new person: an Owner covers every school
+        if (remove) return refuseHeld('PEOPLE_NOT_OWNER');
+        if (!name) return refuseHeld('PEOPLE_BAD_NAME');
+        const out = []; for (let k = 0; k < Math.max(header.length, 5); k++) out.push('');
+        out[0] = email; out[1] = name; out[2] = 'ALL'; out[3] = 'Owner';
+        gameAppendText_(sh, [out]);
+        kingdomAudit_(row('done', 'ok', 'added'), true);
+        return { success: true, owner: { email: email, name: name, campus: 'ALL', roles: ['Owner'] } };
+      }
+      const i = at_[0], roles = peopleRoles_(v[i][3]), has = roles.indexOf('Owner') !== -1;
+      const out = { email: email, name: String(v[i][1] || '').trim(), campus: String(v[i][2] || '').trim().toUpperCase(), roles: roles };
+      if (!remove && has) { kingdomAudit_(row('done', 'ok', 'unchanged'), true); return { success: true, unchanged: true, owner: out }; }
+      if (remove && !has) return refuseHeld('PEOPLE_NOT_OWNER');
+      if (remove) { // the last Owner stays: count the Owner rows (one per email) as they are under the lock
+        const owners = v.slice(1).filter(function (r) { return gameLower_(r[0]) && peopleRoles_(r[3]).indexOf('Owner') !== -1; }).length;
+        if (owners <= 1) return refuseHeld('PEOPLE_LAST_OWNER');
+      }
+      // the row as it is this instant, before any write (the roster backend and hand edits touch the sheet without our lock)
+      const now = sh.getRange(i + 1, 1, 1, 4).getValues()[0];
+      if (gameLower_(now[0]) !== email || String(now[3]) !== String(v[i][3])) return refuseHeld('PEOPLE_CHANGED');
+      const next = remove ? roles.filter(function (r) { return r !== 'Owner'; }) : roles.concat(['Owner']);
+      if (!next.length) { sh.deleteRow(i + 1); kingdomAudit_(row('done', 'ok', 'removed'), true); return { success: true, removed: true }; }
+      sh.getRange(i + 1, 4).setNumberFormat('@').setValue(next.join(', '));
+      kingdomAudit_(row('done', 'ok', remove ? 'removed' : 'granted'), true);
+      out.roles = next;
+      return remove ? { success: true, removed: true, owner: out } : { success: true, owner: out };
+    });
+  } catch (err) {
+    console.error('people_owner: ' + (err && err.message));
     return peopleFail_('PEOPLE_ERROR');
   }
 }

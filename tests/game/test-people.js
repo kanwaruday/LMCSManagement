@@ -301,7 +301,7 @@ test('principal: POST dispatch only; the page posts it behind Confirm', () => {
   const g = fs.readFileSync(dir + 'game.gs', 'utf8');
   assert.ok(/if \(action === 'peopleprincipal'\) return gameJson_\(peoplePrincipal_\(caller, body\)\);/.test(g) && !('peopleprincipal' in ctx.GAME_MODULE_ACTIONS));
   const pp = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
-  assert.ok(/\{ email: p\.email, campus: campus\.value \}, 'peopleprincipal'\)/.test(pp) && /id="pp-plist"/.test(pp));
+  assert.ok(/\{ email: p\.email, campus: campus\.value \}, 'peopleprincipal'\)/.test(pp) && /id="pp-list"/.test(pp));
   assert.ok(/const schools = DATA\.campuses\.filter\(function \(c\) \{ return c !== 'ALL'; \}\)/.test(pp) && /schools\.map\(/.test(pp), 'the Principal select offers one school only, no All schools');
 });
 // the proof that a People edit reaches sign-in within ~10 min: sign-in (auth.js) reads allowlist_list from principal-allowlist.gs, which
@@ -420,7 +420,7 @@ test('support: POST dispatch only; the page offers other schools only, behind Co
   const g = fs.readFileSync(dir + 'game.gs', 'utf8'), page = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
   assert.ok(/action === 'peoplesupport'\) return gameJson_\(peopleSupport_\(caller, body\)\)/.test(g));
   assert.ok(!/peoplesupport/.test(g.slice(0, g.indexOf('function doPost'))), 'never a GET');
-  assert.ok(/c !== 'ALL' && c !== p\.campus/.test(page) && /'peoplesupport'\)/.test(page) && /p\.canSupport \?/.test(page));
+  assert.ok(/c !== 'ALL' && c !== p\.campus/.test(page) && /'peoplesupport'\)/.test(page) && /if \(pr\.canSupport\) ed\.push/.test(page));
 });
 
 test('support in the game backend: a read at a supported school; outside the Supporting cell the home school; a write there refused', () => {
@@ -464,6 +464,83 @@ test('support in the game backend: switched GETs run only the read list, with pe
     for (const a of ['gametoday', 'gamekingdom', 'gameevent', 'setupget', 'gametownhall', 'roomsget', 'gamescout', 'classroomget', 'erpread', 'workplaceget', 'workplaceimage']) assert.ok(ctx.gameSupportRead_(a), a);
     for (const a of ['setupsave', 'gamedecide', 'gametourseen', 'teacherplanactivity']) assert.ok(!ctx.gameSupportRead_(a), a);
   } finally { ctx.gameVerifyCaller_ = saved; ctx.GAME_MODULE_ACTIONS.roomsget = spy; }
+});
+
+// Owners (Uday, 10 Nov): peoplelist lists them; peopleowner grants / takes away Owner, only for PEOPLE_OWNER_ADMINS
+const ownerW = (c, b) => J(ctx.peopleOwner_(c, b));
+const ADMIN_EMAIL = 'uday.kanwar@lms.org.in'; // the one real address allowed: the admin constant itself
+const ADMIN = mk({ email: ADMIN_EMAIL, roles: ['Owner'], primaryRole: 'Owner' });
+const goAdmin = () => { go(); A.push([ADMIN_EMAIL, 'Admin', 'ALL', 'Owner', 'TRUE', '']); };
+test('owners: peoplelist lists every Owner row with roles; canEditOwners for the admin only', () => {
+  goAdmin();
+  let r = J(ctx.peopleList_(OWN, {}));
+  assert.deepStrictEqual(r.owners.map((p) => [p.email, p.campus, p.roles.join('+')]),
+    [['owner@example.org', 'ALL', 'Owner'], ['oc@example.org', 'ALL', 'Owner+Coordinator'], [ADMIN_EMAIL, 'ALL', 'Owner']]);
+  assert.strictEqual(r.canEditOwners, false, 'another Owner reads only');
+  assert.strictEqual(J(ctx.peopleList_(ADMIN, {})).canEditOwners, true);
+  assert.deepStrictEqual(J(vm.runInContext('PEOPLE_OWNER_ADMINS', ctx)), [ADMIN_EMAIL]);
+});
+test('owners: a non-admin Owner (and anyone else) is refused, audited without the target, nothing written', () => {
+  goAdmin();
+  const before = JSON.stringify(A);
+  for (const c of [OWN, COORD, P4, Object.assign({}, ADMIN, { viewAs: true, roles: ['Principal'] })]) {
+    assert.strictEqual(ownerW(c, { email: 'c1@example.org' }).code, 'KINGDOM_NO_RIGHT');
+    assert.strictEqual(ownerW(c, { email: 'owner@example.org', remove: true }).code, 'KINGDOM_NO_RIGHT');
+  }
+  assert.strictEqual(JSON.stringify(A), before);
+  assert.ok(audit().length === 8 && audit().every((x) => col(x, 'Code') === 'KINGDOM_NO_RIGHT' && col(x, 'SourceId') === ''), 'refusals audited, no target');
+  assert.strictEqual(J(ctx.peopleCoordinator_(OWN, { email: 'c1@example.org', campus: 'LMS1', functions: [], roles: 'Owner' })).coordinator.email, 'c1@example.org');
+  assert.strictEqual(rowOf('c1@example.org')[3], 'Coordinator', 'peoplecoordinator still never grants Owner');
+});
+test('owners: a grant keeps the other roles; a new email gets an Owner row; again is a no-op', () => {
+  goAdmin();
+  A.push(['pc@example.org', 'Princ Coord', 'LMS2', 'Principal, Coordinator', '', 'HR']);
+  let r = ownerW(ADMIN, { email: ' PC@example.org ' });
+  assert.strictEqual(r.success, true, JSON.stringify(r));
+  assert.deepStrictEqual(rowOf('pc@example.org'), ['pc@example.org', 'Princ Coord', 'LMS2', 'Principal, Coordinator, Owner', '', 'HR'], 'other roles, campus, name, functions stay');
+  assert.strictEqual(ownerW(ADMIN, { email: 'pc@example.org' }).unchanged, true);
+  r = ownerW(ADMIN, { email: 'new.owner@example.org', name: 'New Owner' });
+  assert.deepStrictEqual(rowOf('new.owner@example.org'), ['new.owner@example.org', 'New Owner', 'ALL', 'Owner', '', '']);
+  assert.strictEqual(ownerW(ADMIN, { email: 'nameless@example.org' }).code, 'PEOPLE_BAD_NAME', 'a new person needs a name');
+  assert.deepStrictEqual(audit().slice(0, 2).map((x) => [col(x, 'Action'), col(x, 'Phase'), col(x, 'Code')]), [['people_owner', 'requested', ''], ['people_owner', 'done', 'granted']]);
+  // remove keeps the other roles; an Owner-only row goes
+  assert.strictEqual(ownerW(ADMIN, { email: 'pc@example.org', remove: true }).success, true);
+  assert.strictEqual(rowOf('pc@example.org')[3], 'Principal, Coordinator');
+  assert.deepStrictEqual(ownerW(ADMIN, { email: 'new.owner@example.org', remove: true }), { success: true, removed: true });
+  assert.strictEqual(rowOf('new.owner@example.org'), undefined);
+  assert.strictEqual(ownerW(ADMIN, { email: 'c1@example.org', remove: true }).code, 'PEOPLE_NOT_OWNER');
+  assert.ok(!logs.concat(warns).some((m) => /@/.test(m)), 'no people in logs');
+});
+test('owners: never your own Owner row, never the last Owner; a row that changed meanwhile; bad input', () => {
+  goAdmin();
+  const before = JSON.stringify(A);
+  assert.strictEqual(ownerW(ADMIN, { email: ' ' + ADMIN_EMAIL.toUpperCase(), remove: true }).code, 'PEOPLE_SELF_OWNER');
+  assert.ok(audit().some((x) => col(x, 'Code') === 'PEOPLE_SELF_OWNER'), 'audited');
+  // only the admin and one other Owner left: removing the other is fine (the admin stays)
+  A = A.filter((r) => r[0] !== 'oc@example.org');
+  assert.strictEqual(ownerW(ADMIN, { email: 'owner@example.org', remove: true }).success, true);
+  assert.strictEqual(ownerW(ADMIN, { email: ADMIN_EMAIL, remove: true }).code, 'PEOPLE_SELF_OWNER', 'the last Owner is the admin: still refused');
+  // the last-Owner check on its own: a sheet where one other person is the only Owner
+  go(); A = A.filter((r) => r[0] !== 'oc@example.org'); // owner@example.org is now the only Owner, the admin has no row
+  assert.strictEqual(ownerW(ADMIN, { email: 'owner@example.org', remove: true }).code, 'PEOPLE_LAST_OWNER');
+  assert.strictEqual(rowOf('owner@example.org')[3], 'Owner');
+  goAdmin();
+  onReadRow = () => { rowOf('owner@example.org')[3] = 'Teacher'; };
+  assert.strictEqual(ownerW(ADMIN, { email: 'owner@example.org', remove: true }).code, 'PEOPLE_CHANGED');
+  onReadRow = null; rowOf('owner@example.org')[3] = 'Owner';
+  assert.strictEqual(JSON.stringify(A), before, 'nothing written');
+  for (const [b, code] of [[{ email: 'bad' }, 'PEOPLE_BAD_EMAIL'], [{ email: 'n@example.org', name: '=X()' }, 'PEOPLE_BAD_NAME'], [{ email: 'n@example.org', remove: 'yes' }, 'KINGDOM_BAD_INPUT']]) assert.strictEqual(ownerW(ADMIN, b).code, code);
+  A.push(['owner@example.org', 'Dup', 'ALL', 'Owner', '', '']);
+  assert.strictEqual(ownerW(ADMIN, { email: 'owner@example.org', remove: true }).code, 'PEOPLE_DUPLICATE');
+});
+test('owners: POST dispatch only, never a GET; the page shows Owner writes to the admin only', () => {
+  const g = fs.readFileSync(dir + 'game.gs', 'utf8'), page = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
+  assert.ok(/action === 'peopleowner'\) return gameJson_\(peopleOwner_\(caller, body\)\)/.test(g) && !/peopleowner/.test(g.slice(0, g.indexOf('function doPost'))));
+  assert.ok(!('peopleowner' in ctx.GAME_MODULE_ACTIONS));
+  assert.ok(/'peopleowner'\)/.test(page) && /DATA\.canEditOwners/.test(page));
+  assert.ok(/\['all', 'All'\], \['owner', 'Owner'\], \['coord', 'Coordinator'\], \['principal', 'Principal'\], \['office', 'Fee Clerk'\]/.test(page), 'filter chips');
+  assert.ok(/class: 'pp-ib', 'aria-label': 'Change ' \+ who/.test(page) && /class: 'pp-ib', 'aria-label': 'Remove ' \+ who/.test(page) && /\.pp-ib \{[^}]*width:44px; height:44px/.test(page), 'icon buttons: labelled, 44 px');
+  assert.ok(/within about a minute/.test(page) && !/15 minutes|10 minutes/.test(page), 'timing notes say about a minute');
 });
 
 let fail = 0;

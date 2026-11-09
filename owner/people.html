@@ -18,37 +18,42 @@
     .pp-fns legend { font-weight:700; margin:0 0 4px; padding:0; }
     .pp-fns label { display:flex; align-items:center; gap:10px; min-height:44px; }
     .pp-fns input { width:22px; height:22px; }
-    .pp-row small { display:block; }
     .pp-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    /* one compact row per person: name · role chips · school, then function chips; small icon buttons on the right */
+    .pp-top { display:flex; align-items:center; gap:8px; margin:8px 0; }
+    .pp-chips { display:flex; gap:6px; overflow-x:auto; flex:1; min-width:0; scrollbar-width:none; }
+    .pp-chips button { flex:none; min-height:44px; padding:0 12px; border:1.5px solid var(--gb-line); border-radius:999px; background:var(--gb-paper); color:var(--gb-ink); font:700 14px/1 var(--gb-font); cursor:pointer; }
+    .pp-chips button[aria-pressed="true"] { background:var(--gb-ink); border-color:var(--gb-ink); color:#fff; }
+    .pp-row { display:flex; align-items:center; gap:4px; padding:6px 4px 6px 12px; }
+    .pp-who { flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; }
+    .pp-who b { overflow-wrap:anywhere; }
+    .pp-who .gb-muted { font-size:13px; }
+    .pp-fn { font-size:12px; font-weight:600; padding:0 8px; background:var(--gb-gold-soft); }
+    .pp-ib { flex:none; width:44px; height:44px; padding:0; border:0; border-radius:10px; background:transparent; font-size:18px; cursor:pointer; }
+    .pp-ib:hover, .pp-ib:focus-visible { background:var(--gb-gold-soft); }
+    .pp-menu { display:flex; flex-direction:column; gap:8px; margin-bottom:8px; }
+    .pp-menu .gb-btn { justify-content:flex-start; }
     @media (max-width:640px) { .pp-dlg { width:100vw; max-width:100vw; margin:auto 0 0; border-radius:16px 16px 0 0; } }
   </style>
 </head>
 <body class="gb gb-app">
 
-  <!-- 👑 The People room (Owner only): the Coordinators and Principals on the allowlist, from the game backend (peoplelist). Add a
-       Coordinator, or change one's school and functions (peoplecoordinator); change a Principal's school (peopleprincipal), or a Fee Clerk's or Accounts person's (peopleoffice). Every write is
-       a POST behind a confirm, and the server checks the Owner again on every call. The allowlist sheet stays the one store. -->
-  <header class="gb-head"><div><div><h1>People</h1><p>Coordinators, Principals, Fee Clerks and Accounts across LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="realMap">Map</a></nav></div></header>
+  <!-- 👑 The People room (Owner only): everyone on the allowlist with an Owner, Coordinator, Principal, Fee Clerk or Accounts role, from the game
+       backend (peoplelist), one compact row each. Add / change / remove a Coordinator (peoplecoordinator); change a Principal's school and
+       supporting charge (peopleprincipal, peoplesupport) or a Fee Clerk's or Accounts person's (peopleoffice); grant or take away Owner
+       (peopleowner, the admin account only: the server checks PEOPLE_OWNER_ADMINS). Every write is a POST behind a confirm, and the server
+       checks the Owner again on every call. The allowlist sheet stays the one store. -->
+  <header class="gb-head"><div><div><h1>People</h1><p>Who runs LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="realMap">Map</a></nav></div></header>
   <div class="gb-shell">
     <main class="gb-stage">
       <section class="hero" id="auth-root" style="padding-top:24px;"><div id="gate-slot"></div></section>
       <div id="app-root" style="display:none">
         <p id="pp-status" class="gb-muted" role="status"></p>
-        <section class="gb-section" aria-labelledby="pp-h">
-          <h2 class="gb-h2" id="pp-h">Coordinators</h2>
+        <section class="gb-section" aria-label="People">
+          <div class="pp-top"><div class="pp-chips" id="pp-chips" role="group" aria-label="Show"></div>
+            <button type="button" class="gb-btn gb-btn-primary" id="pp-add" hidden>+ Add</button></div>
           <ul class="gb-list" id="pp-list"></ul>
-          <div class="pp-acts"><button type="button" class="gb-btn gb-btn-primary" id="pp-add" hidden>Add a Coordinator</button></div>
-          <p class="gb-muted" id="pp-note">A change reaches their portal within about 15 minutes. A Coordinator who also holds another role (Accounts, ...) is changed in the allowlist sheet; a Principal's school is changed below.</p>
-        </section>
-        <section class="gb-section" aria-labelledby="pp-ph">
-          <h2 class="gb-h2" id="pp-ph">Principals</h2>
-          <ul class="gb-list" id="pp-plist"></ul>
-          <p class="gb-muted">Change sets their school only; their roles stay as they are. It reaches their portal within about 15 minutes.</p>
-        </section>
-        <section class="gb-section" aria-labelledby="pp-oh">
-          <h2 class="gb-h2" id="pp-oh">Fee Clerks and Accounts</h2>
-          <ul class="gb-list" id="pp-olist"></ul>
-          <p class="gb-muted">Change sets their school only; their roles stay as they are. Only a plain Fee Clerk can cover all schools; Accounts, or anyone with another role too, gets one school. It reaches their portal within about 15 minutes.</p>
+          <p class="gb-muted" id="pp-note">Changes reach the portal within about a minute. Someone who also holds another role is changed in the allowlist sheet. A Principal gets one school; only a plain Fee Clerk can cover all schools.</p>
         </section>
       </div>
     </main>
@@ -65,41 +70,107 @@
     function place(c) { return c === 'ALL' ? 'All schools' : String(c || '').replace(/^LMS(\d)$/, 'LMS $1') || 'No school set'; }
     function fnText(f) { return (f || []).length ? f.join(', ') : 'No functions'; }
 
+    // everyone once, merged by email from the four lists; each list's own record keeps its own rules (editable, mayAll, canSupport)
+    const FILTERS = [['all', 'All'], ['owner', 'Owner'], ['coord', 'Coordinator'], ['principal', 'Principal'], ['office', 'Fee Clerk']];
+    let FILTER = 'all';
+    function roleText(roles) { return roles.map(function (r) { return r === 'FeeClerk' ? 'Fee Clerk' : r; }).join(', '); }
+    function everyone() {
+      const by = {}, out = [];
+      [['owner', DATA.owners], ['coord', DATA.coordinators], ['principal', DATA.principals], ['office', DATA.office]].forEach(function (l) {
+        (l[1] || []).forEach(function (r) {
+          let p = by[r.email];
+          if (!p) { p = by[r.email] = { email: r.email, name: r.name, campus: r.campus, roles: null }; out.push(p); }
+          p[l[0]] = r;
+          if (r.roles) p.roles = r.roles;
+        });
+      });
+      out.forEach(function (p) { if (!p.roles) p.roles = ['Coordinator']; });
+      return out.sort(function (x, y) { return (x.name || x.email).localeCompare(y.name || y.email); });
+    }
+    // what this caller may do to one person: [label, run(opener)]; edits and removes kept apart for the two icon buttons
+    function actsOf(p) {
+      const ed = [], rm = [], c = p.coord, pr = p.principal, of = p.office;
+      if (DATA.canEdit && c && c.editable) {
+        ed.push(['Coordinator: school and functions', function (o) { edit(c, o); }]);
+        rm.push(['Remove as Coordinator', function (o) { remove(c, o); }]);
+      }
+      if (DATA.canEdit && pr && pr.editable) {
+        ed.push(['Principal: school', function (o) { editPrincipal(pr, o); }]);
+        if (pr.canSupport) ed.push(['Supporting schools', function (o) { editSupport(pr, o); }]);
+      }
+      if (DATA.canEdit && of && of.editable) ed.push([roleText(of.roles.filter(function (r) { return r === 'FeeClerk' || r === 'Accounts'; })) + ': school', function (o) { editOffice(of, o); }]);
+      if (DATA.canEditOwners && p.owner && p.email !== String(SESSION.email || '').toLowerCase()) rm.push(['Take away Owner', function (o) { removeOwner(p, o); }]);
+      return { ed: ed, rm: rm };
+    }
+    // one action runs at once; several open a small menu sheet first
+    function pick(title, acts, opener) {
+      if (acts.length === 1) return acts[0][1](opener);
+      const s = sheet(title, [], opener);
+      s.dlg.appendChild(h('div', { class: 'pp-menu' }, acts.map(function (a) {
+        return h('button', { type: 'button', class: 'gb-btn', onclick: function () { s.close(); a[1](opener); } }, [a[0]]);
+      }).concat([h('button', { type: 'button', class: 'gb-btn gb-btn-quiet', onclick: s.close }, ['Cancel'])])));
+      s.dlg.querySelector('button').focus();
+    }
     function render() {
+      const all = everyone(), shown = all.filter(function (p) { return FILTER === 'all' || p[FILTER]; });
+      const chips = document.getElementById('pp-chips');
+      chips.textContent = '';
+      FILTERS.forEach(function (f) {
+        const n = f[0] === 'all' ? all.length : all.filter(function (p) { return p[f[0]]; }).length;
+        chips.appendChild(h('button', { type: 'button', 'aria-pressed': FILTER === f[0] ? 'true' : 'false', onclick: function () { FILTER = f[0]; render(); } }, [f[1] + ' ' + n]));
+      });
+      document.getElementById('pp-add').hidden = !(DATA.canEdit || DATA.canEditOwners);
       const ul = document.getElementById('pp-list');
       ul.textContent = '';
-      document.getElementById('pp-add').hidden = !DATA.canEdit;
-      if (!DATA.coordinators.length) ul.appendChild(h('li', { class: 'gb-card' }, ['No Coordinators on the allowlist yet.']));
-      DATA.coordinators.forEach(function (p) {
-        const acts = DATA.canEdit && p.editable ? h('div', { class: 'pp-acts' }, [
-          h('button', { type: 'button', class: 'gb-btn', onclick: function (e) { edit(p, e.currentTarget); } }, ['Change']),
-          h('button', { type: 'button', class: 'gb-btn gb-btn-danger', onclick: function (e) { remove(p, e.currentTarget); } }, ['Remove'])]) : null;
-        ul.appendChild(h('li', { class: 'gb-card pp-row' }, [h('b', {}, [p.name || p.email]), h('small', {}, [p.email]),
-          h('small', {}, [place(p.campus) + ' · ' + fnText(p.functions)]), p.editable ? null : h('small', { class: 'gb-muted' }, ['Also holds another role: change in the allowlist sheet']), acts]));
-      });
-      const pl = document.getElementById('pp-plist'), prs = DATA.principals || [];
-      pl.textContent = '';
-      if (!prs.length) pl.appendChild(h('li', { class: 'gb-card' }, ['No Principals on the allowlist yet.']));
-      prs.forEach(function (p) {
-        const other = p.roles.filter(function (r) { return r !== 'Principal'; });
-        pl.appendChild(h('li', { class: 'gb-card pp-row' }, [h('b', {}, [p.name || p.email]), h('small', {}, [p.email]),
-          h('small', {}, [place(p.campus) + (other.length ? ' · also ' + other.join(', ') : '')]),
-          (p.supporting || []).length ? h('small', {}, ['Supporting ' + p.supporting.map(place).join(', ')]) : null,
-          DATA.canEdit && p.editable ? h('div', { class: 'pp-acts' }, [h('button', { type: 'button', class: 'gb-btn', onclick: function (e) { editPrincipal(p, e.currentTarget); } }, ['Change school']),
-            p.canSupport ? h('button', { type: 'button', class: 'gb-btn', onclick: function (e) { editSupport(p, e.currentTarget); } }, ['Supporting schools']) : null]) : null]));
+      if (!shown.length) ul.appendChild(h('li', { class: 'gb-card' }, ['Nobody here yet.']));
+      shown.forEach(function (p) {
+        const who = p.name || p.email, a = actsOf(p), fns = (p.coord && p.coord.functions) || [];
+        const sheetOnly = DATA.canEdit && !a.ed.length && !a.rm.length && !p.owner;
+        ul.appendChild(h('li', { class: 'gb-card pp-row' }, [
+          h('div', { class: 'pp-who' }, [h('b', { title: p.email }, [who]),
+            p.roles.map(function (r) { return h('span', { class: 'gb-pill' + (r === 'Owner' ? ' gb-pill-warn' : '') }, [roleText([r])]); }),
+            h('span', { class: 'gb-muted' }, [place(p.campus)]),
+            fns.map(function (f) { return h('span', { class: 'gb-pill pp-fn' }, [f]); }),
+            p.principal && (p.principal.supporting || []).length ? h('span', { class: 'gb-muted' }, ['+ supports ' + p.principal.supporting.map(place).join(', ')]) : null,
+            sheetOnly ? h('span', { class: 'gb-muted' }, ['· change in the allowlist sheet']) : null]),
+          a.ed.length ? h('button', { type: 'button', class: 'pp-ib', 'aria-label': 'Change ' + who, title: 'Change', onclick: function (e) { pick('Change ' + who, a.ed, e.currentTarget); } }, ['✏️']) : null,
+          a.rm.length ? h('button', { type: 'button', class: 'pp-ib', 'aria-label': 'Remove ' + who, title: 'Remove', onclick: function (e) { pick('Remove ' + who, a.rm, e.currentTarget); } }, ['🗑️']) : null]));
       });
     }
-    // Fee Clerks and Accounts: one card each, Change school (All schools for a plain Fee Clerk only, the server checks it again)
-    function roleText(roles) { return roles.map(function (r) { return r === 'FeeClerk' ? 'Fee Clerk' : r; }).join(', '); }
-    function renderOffice() {
-      const ol = document.getElementById('pp-olist'), ps = DATA.office || [];
-      ol.textContent = '';
-      if (!ps.length) ol.appendChild(h('li', { class: 'gb-card' }, ['No Fee Clerks or Accounts on the allowlist yet.']));
-      ps.forEach(function (p) {
-        ol.appendChild(h('li', { class: 'gb-card pp-row' }, [h('b', {}, [p.name || p.email]), h('small', {}, [p.email]),
-          h('small', {}, [place(p.campus) + ' · ' + roleText(p.roles)]),
-          DATA.canEdit && p.editable ? h('div', { class: 'pp-acts' }, [h('button', { type: 'button', class: 'gb-btn', onclick: function (e) { editOffice(p, e.currentTarget); } }, ['Change school'])]) : null]));
-      });
+    // + Add: a Coordinator (as before), or an Owner for the admin account only (the server refuses everyone else)
+    function add(opener) {
+      const acts = [];
+      if (DATA.canEdit) acts.push(['A Coordinator', function (o) { edit(null, o); }]);
+      if (DATA.canEditOwners) acts.push(['An Owner', function (o) { addOwner(o); }]);
+      if (acts.length) pick('Add', acts, opener);
+    }
+    // an Owner: someone already listed, or someone new (name + email)
+    function addOwner(opener) {
+      const s = sheet('Add an Owner', [], opener);
+      const others = everyone().filter(function (p) { return !p.owner; });
+      const who = h('select', { id: 'pp-owho', class: 'gb-input' }, [h('option', { value: '' }, ['Someone new'])].concat(
+        others.map(function (p) { return h('option', { value: p.email }, [(p.name || p.email) + ' (' + roleText(p.roles) + ')']); })));
+      const name = h('input', { id: 'pp-oname', class: 'gb-input', type: 'text', maxlength: '80', autocomplete: 'off' });
+      const email = h('input', { id: 'pp-oemail', class: 'gb-input', type: 'email', maxlength: '254', autocomplete: 'off' });
+      const fresh = h('div', {}, [h('div', { class: 'gb-field' }, [h('label', { for: 'pp-oname' }, ['Name']), name]), h('div', { class: 'gb-field' }, [h('label', { for: 'pp-oemail' }, ['Email']), email])]);
+      who.onchange = function () { fresh.hidden = !!who.value; };
+      const err = h('p', { class: 'gb-field-err', role: 'alert' }, []);
+      const next = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Next']);
+      s.dlg.appendChild(h('div', {}, [h('div', { class: 'gb-field' }, [h('label', { for: 'pp-owho' }, ['Person']), who]), fresh,
+        h('p', { class: 'gb-muted' }, ['An Owner can see and change everything in every portal. Their other roles stay.']), err,
+        h('div', { class: 'pp-acts' }, [next, h('button', { type: 'button', class: 'gb-btn', onclick: s.close }, ['Cancel'])])]));
+      who.focus();
+      next.onclick = function () {
+        const old = others.filter(function (p) { return p.email === who.value; })[0];
+        const em = old ? old.email : email.value.trim().toLowerCase(), nm = old ? (old.name || old.email) : name.value.trim();
+        if (!old && !nm) { err.textContent = 'Add their name.'; name.focus(); return; }
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { err.textContent = 'That email does not look right.'; email.focus(); return; }
+        confirmStep(s, 'Make ' + nm + ' (' + em + ') an Owner? They can see and change everything in every portal.', { email: em, name: old ? undefined : nm }, 'peopleowner');
+      };
+    }
+    function removeOwner(p, opener) {
+      const s = sheet('Take away Owner', [], opener), only = p.roles.length === 1;
+      confirmStep(s, 'Take the Owner role away from ' + (p.name || p.email) + '? ' + (only ? 'Owner is their only role, so their allowlist row goes.' : 'Their other roles stay.'), { email: p.email, remove: true }, 'peopleowner');
     }
     function editOffice(p, opener) {
       const s = sheet('Change ' + (p.name || p.email) + "'s school", [], opener);
@@ -123,7 +194,7 @@
       return fetch(GAME_BACKEND_URL + '?action=peoplelist&idToken=' + encodeURIComponent(SESSION.idToken || ''), { cache: 'no-store' })
         .then(function (r) { return r.json(); }).then(function (d) {
           if (!d || !d.success) throw new Error((d && d.error) || '');
-          DATA = d; status(''); render(); renderOffice();
+          DATA = d; status(''); render();
         }).catch(function (e) { status((e && e.message) || "Couldn't load the People room. Check the connection, then try again."); });
     }
 
@@ -150,7 +221,7 @@
           .then(function (r) { return r.json(); }).then(function (d) {
             if (!d || !d.success) { const e = new Error((d && d.error) || ''); e.server = true; throw e; }
             BUSY = false; s.close();
-            const said = body.remove ? 'Removed.' : d.unchanged ? 'Nothing to change.' : 'Saved. It reaches their portal within about 15 minutes.';
+            const said = body.remove ? 'Removed.' : d.unchanged ? 'Nothing to change.' : 'Saved. It reaches their portal within about a minute.';
             return load().then(function () { if (DATA) status(said); }); // after the reload, which clears the line
           }).catch(function (e) {
             BUSY = false; go.disabled = back.disabled = false; go.textContent = 'Confirm';
@@ -224,14 +295,14 @@
     }
     function remove(p, opener) {
       const s = sheet('Remove ' + (p.name || p.email), [], opener);
-      confirmStep(s, 'Remove ' + (p.name || p.email) + ' as a Coordinator? Their allowlist row goes, so they lose Coordinator access within about 10 minutes.', { email: p.email, remove: true });
+      confirmStep(s, 'Remove ' + (p.name || p.email) + ' as a Coordinator? Their allowlist row goes, so they lose Coordinator access within about a minute.', { email: p.email, remove: true });
     }
 
     function show(session) {
       SESSION = session;
       document.getElementById('auth-root').style.display = 'none';
       document.getElementById('app-root').style.display = '';
-      document.getElementById('pp-add').addEventListener('click', function (e) { edit(null, e.currentTarget); });
+      document.getElementById('pp-add').addEventListener('click', function (e) { add(e.currentTarget); });
       load();
     }
     function gate(session) {
