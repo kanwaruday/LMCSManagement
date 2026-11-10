@@ -450,6 +450,14 @@ assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
     assert.deepStrictEqual([rv({ ticket: t, part: 'video' }).base64, rv({ ticket: t, part: 'video' }).mime], [Buffer.from([5, 6]).toString('base64'), 'video/mp4'], 'the blurred phone copy');
     assert.strictEqual(rv({ ticket: t, part: 'photo', seq: 4 }).base64, Buffer.from([7, 7]).toString('base64'), 'the blurred stop photo, never the original');
     assert.strictEqual(rv({ ticket: t, part: 'photo', seq: '4/../x' }).error, 'Bad stop');
+    assert.deepStrictEqual(p1.seqs, ['00000', '00001', '00002'], 'each point\'s frame number, in the path\'s order');
+    assert.deepStrictEqual(rv({ ticket: t, part: 'path' }).seqs, p1.seqs, 'kept beside path.json');
+    out.files.find((f) => f.name === 'frame-00001.jpg').blob.bytes = [4, 2];
+    runDir.files.find((f) => f.name === 'frame-00001.jpg').blob.bytes = [6, 6];
+    assert.strictEqual(rv({ ticket: t, part: 'frame', seq: '00001' }).base64, Buffer.from([4, 2]).toString('base64'), 'the photo viewer gets the blurred frame, never the original');
+    assert.strictEqual(rv({ ticket: t, part: 'frame', seq: 3 }).error, 'No photo for this point', 'a late original is never served');
+    assert.strictEqual(rv({ ticket: t, part: 'frame', seq: '../1' }).error, 'Bad frame');
+    assert.strictEqual(rv({ ticket: Object.assign({}, t, { runId: 'HP659511-20261025-071500-ab12' }), part: 'frame', seq: 1 }).error, 'Not authorized', 'a frame needs the run\'s own ticket');
     assert.strictEqual(rv({ ticket: sign('HP659511', 'HP659511-20261026-071500-cd34', t.exp), part: 'path' }).error, 'This run has no processed video yet');
   }
   { // the Roster router sends capturerunview to the route view, and capturerun still to the run manifest

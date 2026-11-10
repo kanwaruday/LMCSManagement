@@ -47,4 +47,12 @@ assert.ok(!/key=|student|name/i.test(streetView(pts, 2)), 'no key, nothing but t
 assert.ok(!/roster\('video'\)|createElement\('video'\)|<video/.test(src), 'no video in the route view');
 assert.ok(!/dragging: !L\.Browser\.mobile/.test(src) && /map\.on\('click'/.test(src) && /type="range"/.test(src), 'the map drags on phones too, a tap and a slider move along the run');
 
+// Uday, 10 Nov: step through the run's own photos beside the map: only the blurred frame (part 'frame'), by the path's own frame numbers
+assert.ok(/roster\('frame', \{ seq: seqs\[k\] \}\)/.test(src), 'the viewer asks for the blurred frame by its number');
+assert.ok(/pathR\.seqs\.length === points\.length \? pathR\.seqs : null/.test(src) && /fig\.hidden = !seqs/.test(src), 'an older Roster with no frame numbers: no viewer, the map still works');
+assert.ok(/if \(want !== j\) return;/.test(src), 'a late photo never replaces the one the viewer now wants');
+assert.ok(/photo\(j\);/.test(src) && /rr-prev/.test(src) && /rr-next/.test(src), 'the slider, a tap on the map and ‹ › all move the photo');
+// first visit: route-map.css may land after the map is made; the map then refits instead of opening fully zoomed in
+assert.ok(/if \(!mapEl\.clientHeight && window\.ResizeObserver\)/.test(src) && /map\.invalidateSize\(\); fit\(\);/.test(src), 'the map refits once it has a size');
+
 console.log('route run: all checks passed');

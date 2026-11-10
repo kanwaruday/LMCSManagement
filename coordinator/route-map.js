@@ -178,7 +178,10 @@ window.LMCSRouteMap = (function () {
       ((r.runs || []).length > 1 ? '<label class="rr-pick">Run <select>' + r.runs.map((x) => '<option value="' + esc(x.runId) + '"' + (rn && x.runId === rn.runId ? ' selected' : '') + '>' +
         (x.startedAt ? day(x.startedAt) + ', ' + hm(x.startedAt) : esc(x.runId)) + ' · ' + x.frames + ' frames</option>').join('') + '</select></label>' : '') +
       (rn ? '<p class="note">' + esc(b.campus) + (b.driver ? ' · Driver ' + esc(b.driver) : '') + (rn.startedAt ? ' · ' + day(rn.startedAt) + ', ' + hm(rn.startedAt) + (rn.endedAt ? '–' + hm(rn.endedAt) : '') : '') + '</p>' : '<p class="status">No run recorded for this bus yet. The plan is below.</p>') +
-      (rn ? '<section class="rr-run" aria-label="The run"><h4>The run</h4><div class="rr-map" role="region" aria-label="Map of the run: drag, zoom, tap the route"></div>' +
+      (rn ? '<section class="rr-run" aria-label="The run"><h4>The run</h4><div class="rr-view"><div class="rr-map" role="region" aria-label="Map of the run: drag, zoom, tap the route"></div>' +
+        '<figure class="rr-photo" hidden><div class="rr-img"><img alt=""><p class="rr-wait">Loading the photo…</p></div><figcaption>' +
+        '<button type="button" class="gb-btn rr-prev" aria-label="Previous photo">‹</button><span class="rr-pcap">The bus\'s own photo, blurred</span>' +
+        '<button type="button" class="gb-btn rr-next" aria-label="Next photo">›</button></figcaption></figure></div>' +
         '<div class="rr-scrub" hidden><label>Along the run <input type="range" min="0" value="0" step="1"></label><span class="rr-at" aria-live="polite"></span>' +
         '<a class="gb-btn rr-sv" target="_blank" rel="noopener">Open in Street View ↗</a></div>' +
         (f.chapters.length ? '<ol class="rr-chapters">' + f.chapters.map((c, i) => '<li><button type="button" data-ch="' + i + '"' + (c.frame < 0 ? ' disabled' : '') + '><b>' + (i + 1) + '</b> ' + esc(c.name || 'Stop ' + (i + 1)) + (c.at && isFinite(Date.parse(c.at)) ? ' · ' + hm(Date.parse(c.at)) : '') + (c.boardOn || c.boardOff ? ' · ' + c.boardOn + ' on, ' + c.boardOff + ' off' : '') + '</button></li>').join('') + '</ol>' : '<p class="note">No stops were marked on this run.</p>') +
@@ -202,14 +205,38 @@ window.LMCSRouteMap = (function () {
     if (!rn) return;
     // the map: the whole path, the part driven so far, and the bus at the chosen point; drag, zoom and tap anywhere
     const ll = points.filter(Boolean).map((p) => [p[0], p[1]]);
-    const map = L.map(el.querySelector('.rr-map'), { tap: true });
+    const mapEl = el.querySelector('.rr-map'), map = L.map(mapEl, { tap: true });
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
     const whole = L.polyline(ll, { color: '#8a939c', weight: 6, opacity: 0.6 }).addTo(map), done = L.polyline([], { color: '#1a1a1a', weight: 5, interactive: false }).addTo(map);
     const here = ll.length ? L.circleMarker(ll[0], { radius: 9, color: '#fff', weight: 3, fillColor: '#CE0000', fillOpacity: 1, interactive: false }).addTo(map) : null; // no path: no "the bus is here" dot
-    if (ll.length) map.fitBounds(whole.getBounds(), { padding: [16, 16] }); else map.setView([31.85, 77.15], 9);
+    const fit = () => { if (ll.length) map.fitBounds(whole.getBounds(), { padding: [16, 16] }); else map.setView([31.85, 77.15], 9); };
+    fit();
+    if (!mapEl.clientHeight && window.ResizeObserver) { // route-map.css not applied yet (first visit): the map had no size and opened fully zoomed in
+      const ro = new ResizeObserver(() => { if (!mapEl.clientHeight) return; ro.disconnect(); map.invalidateSize(); fit(); });
+      ro.observe(mapEl);
+    }
     if (!ll.length) el.querySelector('.rr-map').insertAdjacentHTML('afterend', '<p class="note">' + esc(pathR && pathR.error ? pathR.error : 'This run has no GPS points on record.') + '</p>');
     const scrub = el.querySelector('.rr-scrub'), slider = scrub.querySelector('input'), at = scrub.querySelector('.rr-at'), sv = scrub.querySelector('.rr-sv');
     slider.max = String(Math.max(0, points.length - 1));
+    // the photo viewer (Uday, 10 Nov): the run's own BLURRED frame at the chosen point; steps with the slider, the map and ‹ ›
+    const seqs = pathR && Array.isArray(pathR.seqs) && pathR.seqs.length === points.length ? pathR.seqs : null; // an older Roster: no viewer
+    const fig = el.querySelector('.rr-photo'), img = fig.querySelector('img'), wait = fig.querySelector('.rr-wait'), shots = new Map();
+    let want = -1, timer = 0;
+    const shot = (k) => { // a frame's data URL, at most once per frame; ponytail: kept for the page's life, ~1,500 small JPEGs at most
+      if (!shots.has(k)) shots.set(k, roster('frame', { seq: seqs[k] }).then((x) => x.success ? 'data:' + x.mime + ';base64,' + x.base64 : '').catch(() => { shots.delete(k); return ''; }));
+      return shots.get(k);
+    };
+    const photo = (j) => {
+      if (!seqs) return;
+      want = j; wait.hidden = false; wait.textContent = 'Loading the photo…';
+      clearTimeout(timer);
+      timer = setTimeout(() => shot(j).then((u) => { // a short wait: dragging the slider asks only for where it stops
+        if (want !== j) return;
+        if (!u) { wait.textContent = 'No photo for this point.'; return; }
+        img.src = u; img.alt = 'The bus\'s photo ' + (j + 1) + ' of ' + points.length + ', blurred'; wait.hidden = true;
+        [j + 1, j + 2].forEach((k) => { if (k < points.length) shot(k); }); // the next two, for ›
+      }), 200);
+    };
     const show = (i, pan) => {
       let j = Math.max(0, Math.min(points.length - 1, i));
       while (j > 0 && !points[j]) j--; // a frame with no position: the last known one
@@ -220,6 +247,7 @@ window.LMCSRouteMap = (function () {
       slider.value = String(j);
       at.textContent = (t > 0 ? hm(t) + ' · ' : '') + 'photo ' + (j + 1) + ' of ' + points.length;
       sv.href = streetView(points, j);
+      photo(j);
       if (pan && !map.getBounds().contains(p)) map.panTo(p);
     };
     const nearest = (latlng) => { // the run's frame nearest a tapped place
@@ -228,7 +256,9 @@ window.LMCSRouteMap = (function () {
       return best;
     };
     if (ll.length) {
-      scrub.hidden = false;
+      scrub.hidden = false; fig.hidden = !seqs;
+      fig.querySelector('.rr-prev').addEventListener('click', () => show(+slider.value - 1, true));
+      fig.querySelector('.rr-next').addEventListener('click', () => show(+slider.value + 1, true));
       map.on('click', (e) => show(nearest(e.latlng))); // a tap anywhere: the bus where it passed nearest
       slider.addEventListener('input', () => show(+slider.value, true));
       show(0);

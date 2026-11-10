@@ -35,15 +35,17 @@
 //   phone's run never writes it (Captured By already names the driver).
 // POST {action:'capturediscard', secret, reg, runId} -> {success}. The Coordinator's Discard on that shelf: Capture/<REG>/<runId>/
 //   goes to the Drive bin (recoverable 30 days) and the run's Status becomes 'closed', so the Mac's pull never lists it again.
-// POST {action:'capturerunview', ticket:{reg, runId, exp, sig}, part:'path'|'video'|'photo', seq?} -> the route view's Drive side
+// POST {action:'capturerunview', ticket:{reg, runId, exp, sig}, part:'path'|'video'|'photo'|'frame', seq?} -> the route view's Drive side
 //   (Uday, 7 Nov). The Coordinator backend's transportrun signs the ticket after its own Owner / Coordinator district check
 //   (coordinator-world.gs); nothing here decides who may see a bus, and a ticket opens one run for 30 minutes.
 //   path  {points:[[lat, lng, takenAt] | null]}: one per processed/frame-NNNNN.jpg in seq order, exactly the frames route.mp4 was
 //         stitched from (capture.py), so a video frame's index is its point. Positions come from the matching original's description,
 //         read once and kept as processed/path.json,
 //         because the originals are deleted 30 days after processing. null: a frame with no position on record.
+//   path also gives seqs: each point's frame number (processed/frames.json, kept like path.json), for part 'frame'.
 //   video {base64, mime}: the BLURRED processed/route-web.mp4 (capture.py's 360 px phone copy); photo {base64, mime}: the BLURRED
-//         processed/stop-<seq>.jpg. Never an original frame or photo.
+//         processed/stop-<seq>.jpg; frame {base64, mime}: the BLURRED processed/frame-<seq>.jpg, the route view's photo viewer
+//         (Uday, 10 Nov: step through the run's own pictures beside the map). Never an original frame or photo.
 // ═══════════════════════════════════════════════════════════════════
 
 const CAP_TAB_ = 'Capture Runs';
@@ -338,15 +340,24 @@ function captureRunView_(body) {
     const v = first('route-web.mp4'); // never route.mp4: too big to send through here
     return v ? send(v, 'video/mp4') : { success: false, error: 'The phone copy of this video is not made yet. It is made on the next daily run.' };
   }
-  if (body.part === 'photo') {
-    const n = Number(body.seq);
-    if (!(n >= 0 && n <= 99999 && n === Math.floor(n))) return { success: false, error: 'Bad stop' };
-    const p = first('stop-' + ('00000' + n).slice(-5) + '.jpg');
-    return p ? send(p, 'image/jpeg') : { success: false, error: 'No photo for this stop' };
+  if (body.part === 'photo' || body.part === 'frame') {
+    const n = Number(body.seq), stop = body.part === 'photo';
+    if (!(n >= 0 && n <= 99999 && n === Math.floor(n))) return { success: false, error: stop ? 'Bad stop' : 'Bad frame' };
+    const p = first((stop ? 'stop-' : 'frame-') + ('00000' + n).slice(-5) + '.jpg');
+    return p ? send(p, 'image/jpeg') : { success: false, error: stop ? 'No photo for this stop' : 'No photo for this point' };
   }
   if (body.part !== 'path') return { success: false, error: 'Unknown part' };
+  const seqsOf = function () { // the blurred frames route.mp4 was stitched from: their numbers, in order (not the originals')
+    const keptSeqs = first('frames.json');
+    if (keptSeqs) return JSON.parse(keptSeqs.getBlob().getDataAsString());
+    const s = [], made = out.getFiles();
+    while (made.hasNext()) { const m = /^frame-(\d{5})\.jpg$/.exec(made.next().getName()); if (m) s.push(m[1]); }
+    s.sort();
+    if (s.length) out.createFile('frames.json', JSON.stringify(s), 'application/json'); // ponytail: like path.json, two first opens may both write it
+    return s;
+  };
   const kept = first('path.json');
-  if (kept) return { success: true, points: JSON.parse(kept.getBlob().getDataAsString()) };
+  if (kept) return { success: true, points: JSON.parse(kept.getBlob().getDataAsString()), seqs: seqsOf() };
   const bySeq = {}, files = f.getFiles(); // the run folder's originals; a Drive conflict copy " (1)" stands in only where the original is missing, as in capture.py
   while (files.hasNext()) {
     const file = files.next(), m = /^frame-(\d{5})( \(\d+\))?\.jpg$/.exec(file.getName());
@@ -355,11 +366,10 @@ function captureRunView_(body) {
     try { d = JSON.parse(file.getDescription() || 'null'); } catch (e) { d = null; }
     bySeq[m[1]] = d && isFinite(Number(d.lat)) && isFinite(Number(d.lng)) && d.lat !== '' && d.lng !== '' ? [Number(d.lat), Number(d.lng), Number(d.takenAt) || null] : null;
   }
-  const inVideo = [], made = out.getFiles(); // the blurred frames route.mp4 was stitched from: their set and order, not the originals'
-  while (made.hasNext()) { const m = /^frame-(\d{5})\.jpg$/.exec(made.next().getName()); if (m) inVideo.push(m[1]); }
-  const points = inVideo.sort().map(function (k) { return k in bySeq ? bySeq[k] : null; });
+  const inVideo = seqsOf();
+  const points = inVideo.map(function (k) { return k in bySeq ? bySeq[k] : null; });
   if (points.length) out.createFile('path.json', JSON.stringify(points), 'application/json'); // ponytail: two first opens at once may both write it; the first one found is used
-  return { success: true, points: points };
+  return { success: true, points: points, seqs: inVideo };
 }
 
 /** POST captureprocessed (see the header): ids of the processed (blurred) files, looked up by path; creates nothing. */
