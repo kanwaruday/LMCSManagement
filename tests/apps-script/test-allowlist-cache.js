@@ -8,6 +8,7 @@ const ctx = {
   DriveApp: { getFileById: () => ({ getLastUpdated: () => ({ getTime: () => lastUpdated }) }) },
   SpreadsheetApp: { openById: () => ({ getSheets: () => [{ getDataRange: () => ({ getValues: () => { sheetReads++; return rows; } }) }] }) },
   supportSchools_: () => [], Date: { now: () => now },
+  staffFunctionsOf_: (h, r) => { const at = h.map((x) => String(x).trim().toLowerCase()).indexOf('functions'); return at === -1 ? [] : String(r[at] || '').split(',').map((f) => f.trim()).filter(Boolean); },
 };
 const src = fs.readFileSync(__dirname + '/../../apps-script/principal-allowlist.gs', 'utf8');
 const f = new Function(...Object.keys(ctx), src + '\nreturn { readEntries, invalidateCache_ };');
@@ -20,4 +21,9 @@ now += 10000; assert.strictEqual(readEntries()[0].role, 'Principal', 'inside the
 now += 30000; assert.strictEqual(readEntries()[0].role, 'Owner', 'after the window: the edit shows'); assert.strictEqual(sheetReads, 2);
 now += 31000; readEntries(); assert.strictEqual(sheetReads, 2, 'checked again, unchanged: no re-read');
 store.allowlist_entries.v = JSON.stringify([{ email: 'old', role: 'x' }]); assert.strictEqual(readEntries()[0].email, 'old', 'pre-stamp cache entry is served');
+// 2026-11-10: the Functions column rides along on every entry ([] when blank)
+rows = [['email', 'name', 'campus', 'role', 'Functions'], ['c@x', 'C', 'ALL', 'Coordinator', 'Fees & Accounts, Transport'], ['p@x', 'P', 'LMS2', 'Principal', '']];
+delete store.allowlist_entries; // the pre-stamp entry above would otherwise be served until its TTL
+const e = readEntries();
+assert.deepStrictEqual(e[0].functions, ['Fees & Accounts', 'Transport']); assert.deepStrictEqual(e[1].functions, [], 'blank Functions: [] (the key is always sent)');
 console.log('allowlist cache: all checks passed');

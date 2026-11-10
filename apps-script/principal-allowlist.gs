@@ -126,6 +126,7 @@ function readEntries() {
       };
       const supporting = supportSchools_(rows[0], rows[i]); // 2026-11-07: a Principal's supporting charge (supporting-charge.gs), only when set
       if (supporting.length) entry.supporting = supporting;
+      entry.functions = staffFunctionsOf_(rows[0], rows[i]); // 2026-11-10: the Functions column (staff-management-api.gs, same project), [] when blank: lms-game routes coordinators by it (Uday: "A, sheet column") and reads a missing key on every entry as the old endpoint
       entries.push(entry);
     }
   }
