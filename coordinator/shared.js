@@ -325,7 +325,7 @@ window.Coord = (function () {
   // one opened} -- the Fee Clerk Portal reuses this view with tabs: ['matrix'].
   function transportView(body, opts) {
     opts = opts || {};
-    const T = { sel: null, tier: 'all', q: '', tab: (opts.tabs && opts.tabs[0]) || 'matrix', pay: 'after', pk: 'result', pd: 1, data: null, busy: {}, upErr: {} };
+    const T = { sel: null, tier: 'all', q: '', tab: (opts.tabs && opts.tabs[0]) || (typeof location !== 'undefined' ? location.hash.slice(1) : '') || 'matrix', pay: 'after', pk: 'result', pd: 1, data: null, busy: {}, upErr: {} }; // a game door opens a tab: #list #matrix #pnl #drivers (render falls back)
     const UP_MAX = 10 * 1024 * 1024, UP_MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' };
     const LATE_H = 6; // a portal upload not read after this many hours: the AI Coordinator (the Mac) is probably off
     body.innerHTML = '<h2 class="pagetitle">Transport fleet</h2><p class="pagesub">Document compliance for every vehicle, and what each bus earns and costs.</p><div class="tr-pick"></div><div class="tr-body"></div>';
@@ -358,6 +358,8 @@ window.Coord = (function () {
 
     function render() {
       const d = T.data, now = new Date(); now.setHours(0, 0, 0, 0);
+      const avail = ['list', 'matrix'].concat(d && d.pnl && d.pnl.length ? ['pnl'] : [], d && d.people && d.people.length ? ['drivers'] : []).filter(x => !opts.tabs || opts.tabs.indexOf(x) !== -1);
+      if (avail.indexOf(T.tab) === -1) T.tab = avail.indexOf('matrix') !== -1 ? 'matrix' : avail[0]; // an unknown or unavailable tab: the page's home tab
       const days = iso => Math.round((new Date(iso + 'T00:00:00') - now) / 86400000);
       const when = (iso, t) => !iso ? '-' : days(iso) < 0 ? -days(iso) + ' days ago' : days(iso) === 0 ? 'Today' : 'in ' + days(iso) + ' days';
       const todayIso = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);

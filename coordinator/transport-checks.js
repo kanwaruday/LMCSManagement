@@ -79,7 +79,7 @@ window.TransportChecks = (function () {
   // ── Coordinator / Owner ──
   function mount(el, session, opts) {
     opts = opts || {};
-    const S = { tab: opts.owner ? 'overview' : 'checks', bus: '', d: null, mapMounted: false };
+    const S = { tab: (typeof location !== 'undefined' ? location.hash.slice(1) : '') || (opts.owner ? 'overview' : 'checks'), bus: '', d: null, mapMounted: false }; // a game door opens a tab by its id (render falls back)
     el.innerHTML = '<h2 class="pagetitle">' + (opts.owner ? 'Transport: what the GPS shows' : 'Transport checks') + '</h2>' +
       '<p class="pagesub">' + (opts.owner ? 'Leakage, who is acting on it, and proposals. Depth below.' : 'Each item says what to do and by when. Close it with what you did.') + '</p>' +
       (opts.owner ? '<div class="tc-pick"></div>' : '') + '<div class="tc-body"><div class="status">Loading...</div></div><div class="tc-map" hidden></div>';
@@ -103,6 +103,7 @@ window.TransportChecks = (function () {
       const views = window.TransportViews ? (opts.views || Object.keys(TransportViews.VIEWS)) : [];
       const tabs = (opts.owner ? [['overview', 'Overview']] : []).concat([['checks', 'Follow-ups (' + open.length + ')']], views.map(v => [v, TransportViews.VIEWS[v][0]]),
         [['map', 'Live map'], ['trackers', 'Trackers'], ['driving', 'Driving'], ['fuel', 'Fuel'], ['stops', 'Stop times']]);
+      if (!tabs.some(x => x[0] === S.tab)) S.tab = tabs[0][0]; // an unknown hash: the page's home tab
       const synced = d.syncedAt ? new Date(d.syncedAt) : null, ageH = synced ? (Date.now() - synced) / 3600000 : null;
       body.innerHTML = '<p class="note">GPS facts as of ' + (synced ? '<b' + (ageH > 30 ? ' class="stale"' : '') + '>' + synced.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + '</b>' + (ageH > 30 ? ' (the daily GPS sync on the Mac has not run; numbers may be old)' : '') : '<b class="stale">never: the GPS sync has not run yet</b>') + '.</p>' +
         '<div class="ctl"><span class="seg tc-tabs">' + tabs.map(x => '<button data-tab="' + x[0] + '" class="' + (S.tab === x[0] ? 'on' : '') + '" aria-pressed="' + (S.tab === x[0]) + '">' + x[1] + '</button>').join('') + '</span></div>' +

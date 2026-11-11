@@ -437,6 +437,7 @@
     const h = location.hash.slice(1), m = /^fuel-(\d)$/.exec(h), n = m ? Math.min(CHECK, Math.max(1, Number(m[1]))) : 0;
     if (S.sending && h !== 'fuel-' + CHECK) { location.hash = 'fuel-' + CHECK; return; } // never leave a send half-way
     if (VIEW && h && !ACT()) { location.hash = ''; return; } // a read-only staff view (a Principal) is home only: no fuel step, nothing sent
+    if (h === 'route' && !S.sending) { history.replaceState(null, '', location.pathname + location.search); route(); $('viewRoute').click(); return; } // the game door to My route: home with the route open
     $('home').hidden = !!(n || h === 'sent'); $('fuel').hidden = !n; $('sent').hidden = h !== 'sent';
     $('panels').hidden = !!(n || h === 'sent'); // the panels belong to home; a fuel step shows only the step
     window.scrollTo(0, 0);

@@ -38,6 +38,14 @@ const S = (campusId) => ({ idToken: 't', email: 'c@lms.test', campusId });
     };
     let { box, pick } = await run();
     assert.ok(!/tr-campus/.test(box.innerHTML), 'no campus <select>');
+    // game doors (12 Nov): Fleet Command opens the tab named in the hash; unknown or unavailable falls back to the home tab
+    const onTab = async (hash, tabs) => { const { body, box: b } = makeBody('.tr-body'); const c = makeCtx({ session: S('ALL'), data }); c.location = { hash };
+      c.Coord.transportView(body, tabs ? { tabs } : {}); await tick(); await tick(); return (/data-tab="(\w+)" class="on"/.exec(b.innerHTML) || [])[1]; };
+    assert.strictEqual(await onTab('#pnl'), 'pnl', '#pnl opens Bus P&L');
+    assert.strictEqual(await onTab('#list'), 'list', '#list opens the action list');
+    assert.strictEqual(await onTab('#nope'), 'matrix', 'an unknown hash: the home tab');
+    assert.strictEqual(await onTab('#drivers'), 'matrix', 'a tab with no data (no people): the home tab');
+    assert.strictEqual(await onTab('#pnl', ['matrix']), 'matrix', 'the Fee Clerk page keeps its one tab whatever the hash');
     assert.ok(['HP01', 'HP02', 'HP03'].every((r) => box.innerHTML.includes(r)), 'All: every bus');
     chip(pick, 'LMS3').click();
     assert.ok(box.innerHTML.includes('HP03') && !box.innerHTML.includes('HP01') && !box.innerHTML.includes('HP02'), 'LMS3 only');
