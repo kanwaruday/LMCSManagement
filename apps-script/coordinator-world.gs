@@ -11,6 +11,7 @@
 //   POST gameworld      {key, campuses: ['LMS2'] | '*'}: lms-game's read-only transport Edge Function, server to server (Lane T, Jarvis
 //                       11 Nov: "yes, go with A"). key = Script property GAME_READ_KEY, compared in constant time; unset or wrong:
 //                       Not authorized. Buses, stops (place, time only, no text), the newest day's tracks and live fixes: see coordGameWorld_.
+//                       With run: {reg, runId}, instead {ticket, rosterUrl} for that one processed run: see coordGameRunTicket_.
 // Never where a bus parks at night (GPS Meta bases: often a driver's home).
 // The page side is coordinator/route-map.js (LMCSRouteMap.mount), which draws it with coordinator/transport-views.js.
 
@@ -109,6 +110,19 @@ function coordRunTicket_(reg, runId, exp) {
   return { reg: reg, runId: runId, exp: exp, sig: Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature('runview|' + reg + '|' + runId + '|' + exp, secret)) }; // 'runview|': this signature means nothing anywhere else
 }
 
+/** gameworld {run:{reg, runId}} (Lane T slice 2, photo replay): a 30-minute ticket for one processed run of a bus in the campuses asked
+ *  for, and the Roster URL. The game's Edge Function asks only after its own per-caller scope check. The client then POSTs
+ *  capturerunview {ticket, part, seq} to the Roster, which serves processed/ (blurred) frames only: no frame bytes pass through here. */
+function coordGameRunTicket_(run, regs) {
+  const reg = FleetQuests.normReg(run && run.reg), runId = String((run && run.runId) || '');
+  const sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE);
+  const closed = (sh ? sh.getDataRange().getValues().slice(1) : []).some(function (r) { return String(r[0]) === runId && String(r[12]) === 'closed'; });
+  const ok = reg && regs[reg] && /^[A-Za-z0-9_-]{1,64}$/.test(runId) && !closed
+    && gpsRows_(GPS_TAB_CAPTURE).some(function (r) { return r.reg === reg && String(r.runId) === runId; });
+  if (!ok) return { success: false, error: 'No such run' };
+  return { success: true, ticket: coordRunTicket_(reg, runId, Date.now() + 30 * 60000), rosterUrl: COORD_ROSTER_URL };
+}
+
 /** Constant-time string compare: a wrong key takes as long as a nearly right one. */
 function coordSameKey_(want, got) {
   want = String(want); got = String(got);
@@ -131,6 +145,7 @@ function coordGameWorld_(body) {
     .map(function (b) { return { reg: b.reg, campusId: gpsCampusId_(b.campus), route: String(b.route || '') }; });
   const regs = {}, nights = {};
   vehicles.forEach(function (v) { regs[v.reg] = true; nights[v.reg] = []; });
+  if (body.run) return coordGameRunTicket_(body.run, regs);
   const night = function (reg, lat, lng) { lat = Number(lat); lng = Number(lng); if (nights[reg] && isFinite(lat) && isFinite(lng) && (lat || lng)) nights[reg].push([lat, lng]); };
   gpsRows_(GPS_TAB_DAILY).forEach(function (d) { if (d.date > gpsAddDays_(today, -30)) night(d.reg, d.nightLat, d.nightLng); });
   (meta.bases || []).forEach(function (b) { if (b) night(b.reg, b.lat, b.lng); });

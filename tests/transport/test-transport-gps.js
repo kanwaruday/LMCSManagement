@@ -559,6 +559,31 @@ assert.deepStrictEqual(J(run('gpsRows_("Parts Catalog")')).filter(r => r.model =
   book(run('COORD_TRANSPORT_FORM_ID')).getSheetByName('Capture Runs')._rows().find(r => r[0] === 'HP1-20261030-150452-rv01')[12] = 'closed';
   const gone = tr({ email: 'o@x.org', campusId: 'ALL', roles: ['Owner'] }, 'HP1');
   assert.deepStrictEqual([gone.run.runId, gone.runs.map(r => r.runId)], ['HP1-20261029-150452-old1', ['HP1-20261029-150452-old1']], 'a discarded run that still has a Capture Stops row is never listed or opened');
+  // gameworld {run}: lms-game's photo replay (Lane T slice 2): a ticket for one processed run of a bus in the campuses asked for, nothing else
+  {
+    const props = ctx.PropertiesService;
+    const withKey = (k) => { ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: (n) => (n === 'GAME_READ_KEY' ? k : n === 'TRANSPORT_PUSH_SECRET' ? 'S' : null) }) }; };
+    const gw = (b) => J(run('coordGameWorld_(' + JSON.stringify(b) + ')'));
+    const ask = (over) => Object.assign({ key: 'long-game-key-123', campuses: ['LMS4'], run: { reg: 'hp-1', runId: 'HP1-20261029-150452-old1' } }, over);
+    withKey(null);
+    assert.strictEqual(gw(ask({})).error, 'Not authorized', 'run: GAME_READ_KEY unset, refused');
+    withKey('long-game-key-123');
+    assert.strictEqual(gw(ask({ key: 'long-game-key-124' })).error, 'Not authorized', 'run: a wrong key is refused');
+    const t = gw(ask({}));
+    assert.deepStrictEqual(Object.keys(t).sort(), ['rosterUrl', 'success', 'ticket'], 'run: the ticket and the Roster URL, nothing else (no frame bytes, no world)');
+    assert.strictEqual(t.rosterUrl, run('COORD_ROSTER_URL'));
+    assert.deepStrictEqual([t.ticket.reg, t.ticket.runId], ['HP1', 'HP1-20261029-150452-old1'], 'for that bus and run');
+    assert.ok(t.ticket.exp > Date.now() && t.ticket.exp <= Date.now() + 30 * 60000, 'good for 30 minutes');
+    assert.strictEqual(t.ticket.sig, ctx.Utilities.base64EncodeWebSafe(ctx.Utilities.computeHmacSha256Signature('runview|HP1|HP1-20261029-150452-old1|' + t.ticket.exp, 'S')), 'signed as the Roster checks it (capTicketOk_)');
+    assert.strictEqual(gw(ask({ campuses: ['LMS1'] })).error, 'No such run', 'a bus outside the campuses asked for: refused');
+    assert.strictEqual(gw(ask({ campuses: '*' })).success, true, '"*" covers every bus');
+    assert.strictEqual(gw(ask({ run: { reg: 'HP7', runId: 'HP1-20261029-150452-old1' }, campuses: '*' })).error, 'No such run', 'another bus\'s run id: refused');
+    assert.strictEqual(gw(ask({ run: { reg: 'HP1', runId: 'HP1-20261030-150452-rv01' } })).error, 'No such run', 'a discarded (closed) run: refused');
+    assert.strictEqual(gw(ask({ run: { reg: 'HP1', runId: 'HP1-nope' } })).error, 'No such run', 'an unknown run: refused');
+    assert.strictEqual(gw(ask({ run: { reg: 'HP1', runId: '../x' } })).error, 'No such run', 'an unsafe run id: refused');
+    assert.ok(!/capturerunview|getBlob|base64/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator-world.gs'), 'utf8').split('function coordGameRunTicket_')[1].split('\n}\n')[0]), 'the ticket path never reads frames');
+    ctx.PropertiesService = props;
+  }
   ctx.coordVisibleCampuses_ = stubVisible;
 }
 console.log('transport gps: all checks passed');
