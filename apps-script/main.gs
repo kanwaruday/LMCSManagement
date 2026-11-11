@@ -218,6 +218,7 @@ function doPost(e) {
   aprResetRequestMemo_(); // 2026-10-01: per-request Approvals-values memo, see approvals.gs's aprValues_
   try {
     const body = JSON.parse(e.postData.contents);
+    if (/^game(pdr|ss)[a-z]/.test(String(body.action || '').toLowerCase())) return jsonOut_(pdrGame_(body)); // lms-game's classic proxy, Wave 1 (lane-e): gamePdr*/gameSs*, key in the body, no ID token (principal-dr.gs)
     const verified = verifyCallerToken_(body.idToken);
     if (!verified) return jsonOut_({ success: false, error: 'Not authorized' });
     const caller = supportActAs_(verified, body.actAs);

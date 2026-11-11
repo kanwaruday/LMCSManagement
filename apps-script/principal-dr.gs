@@ -837,3 +837,72 @@ function testDailyReportsRawCellTypes() {
       + ' | isDateObject=' + (values[i][1] instanceof Date) + ' | normalizedISO=' + pdrCellDateToISO_(values[i][1]));
   }
 }
+
+// ── lms-game's native screens (Wave 1, 12 Nov 2026) ──────────────────
+// lms-game's `classic` proxy calls these server to server (lms-game classic-proxy-contract.md):
+//   POST {action: 'gamePdr…' | 'gameSs…', key, role: 'principal' | 'owner', campus: 'LMS1', email, params: {k: string}}
+// The proxy has already checked the caller's game role and school; email is the verified caller on writes (null on reads). key =
+// Script property GAME_KEY of THIS project, compared in constant time; unset or wrong: {success: false, error: 'not_authorized'}.
+// Answers {success: true, data}; a business refusal is {success: true, data: {ok: false, code}} (busy, not_found, not_a_choice,
+// bad_input). Each action reuses the old page's own function for that one campus, so the data and its rules stay the same.
+// Writes need role principal and an email. Never log key or email.
+//   gamePdrLoad {date}   gamePdrSave {date, maClass, maScore, done1.., next1.., reg1.., msg1..}   gamePdrAddPlanned {title, dueDate, assignee}
+//   gamePdrSetPlanned {id, completed}   gamePdrDelPlanned {id}   gameSsMeta {role}   gameSsSubmit {role, employeeId, scores: '5,6,…'}
+const PDR_GAME_ROUTES_ = {
+  gamepdrload: { run: function (c, p) {
+    const out = principalDrLoadBundle_(c, c.campusId, p.date);
+    if (!out.success) return out;
+    const planned = pdrPlannedActivitiesSheet_().getDataRange().getValues();
+    return { success: true, data: { report: out.report, sessions: out.sessions, yesterdaysTasks: out.yesterdaysTasks, dayLabel: out.dayLabel,
+      planned: pdrReadPlannedActivities_(c.campusId, planned), month: pdrReadMergedMonthActivities_(c.campusId, planned) } };
+  } },
+  gamepdrsave: { writes: true, run: function (c, p) {
+    return principalDrSaveDailyReport_(c, { campusId: c.campusId, date: p.date, morningAssembly: { classHouse: p.maClass || '', score: p.maScore || '' },
+      tasksCompleted: pdrGameList_(p, 'done'), tasksTomorrow: pdrGameList_(p, 'next'), registersCrosschecked: pdrGameList_(p, 'reg'), importantMessage: pdrGameList_(p, 'msg') });
+  } },
+  gamepdraddplanned: { writes: true, run: function (c, p) {
+    const out = principalDrAddPlannedActivity_(c, { campusId: c.campusId, title: p.title, dueDate: p.dueDate, assignee: p.assignee });
+    return out.success ? { success: true, data: out.activity } : out;
+  } },
+  gamepdrsetplanned: { writes: true, run: function (c, p) { return principalDrSetPlannedActivityCompleted_(c, { campusId: c.campusId, id: p.id, completed: p.completed === 'true' }); } },
+  gamepdrdelplanned: { writes: true, run: function (c, p) { return principalDrDeletePlannedActivity_(c, { campusId: c.campusId, id: p.id }); } },
+  gamessmeta: { run: function (c, p) { return tssGameMeta_(c, p); } },
+  gamesssubmit: { writes: true, run: function (c, p) { return tssGameSubmit_(c, p); } },
+};
+
+/** done1, done2, … in order, up to the first gap */
+function pdrGameList_(params, prefix) {
+  const out = [];
+  for (let i = 1; params && typeof params[prefix + i] === 'string'; i++) out.push(params[prefix + i]);
+  return out;
+}
+
+function pdrGameKeyOk_(body) {
+  const want = String(PropertiesService.getScriptProperties().getProperty('GAME_KEY') || '').trim();
+  const got = body && typeof body.key === 'string' ? body.key.trim() : '';
+  if (!want || !got) return false;
+  let diff = want.length ^ got.length;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i % got.length);
+  return diff === 0;
+}
+
+/** An old function's {success:false, error:'<sentence>'} as a business refusal code (contract §4); its sentence never leaves. */
+function pdrGameRefusal_(error) {
+  const e = String(error || '');
+  const code = /in progress/i.test(e) ? 'busy' : /not found/i.test(e) ? 'not_found' : /current choice/i.test(e) ? 'not_a_choice' : 'bad_input';
+  return { success: true, data: { ok: false, code: code } };
+}
+
+/** main.gs's doPost sends every gamePdr* / gameSs* action here, before (and instead of) the Google ID token check. */
+function pdrGame_(body) {
+  if (!pdrGameKeyOk_(body)) return { success: false, error: 'not_authorized' };
+  const route = PDR_GAME_ROUTES_[String(body.action || '').toLowerCase()];
+  const campusId = String(body.campus || '').trim().toUpperCase(), role = String(body.role || '');
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  if (!route || !/^LMS[1-6]$/.test(campusId) || (role !== 'principal' && role !== 'owner')) return { success: false, error: 'not_authorized' };
+  if (route.writes && (role !== 'principal' || !/^[^@\s]+@[^@\s]+$/.test(email))) return { success: false, error: 'not_authorized' };
+  const params = body.params && typeof body.params === 'object' ? body.params : {};
+  const out = route.run({ email: email, campusId: campusId, roles: [role === 'owner' ? 'Owner' : 'Principal'], game: true }, params);
+  if (!out.success) return pdrGameRefusal_(out.error);
+  return out.data !== undefined ? out : { success: true, data: { ok: true } };
+}
