@@ -585,7 +585,10 @@ assert.deepStrictEqual(J(run('gpsRows_("Parts Catalog")')).filter(r => r.model =
     // gamecrew (bus grants brief, 12 Nov): who drives which bus, employee codes only, for lms-game's role_grants import
     const base = ctx.coordTransportBase_;
     ctx.coordTransportBase_ = () => ({ fleet: [
-      { reg: 'HP 66-5805', campus: 'LMS 4', driver: 'Driver One', driverCode: ' lms4d01 ', driverStatus: 'verified', driverRosterName: 'Driver One', seats: 15 },
+      { reg: 'HP 66-5805', campus: 'LMS 4', driver: 'Driver One', driverCode: ' lms4d01 ', driverStatus: 'verified', driverMatch: 'exact', driverRosterName: 'Driver One', seats: 15 },
+      { reg: 'HP2', campus: 'LMS 4', driverCode: 'LMS4D02', driverStatus: 'verified', driverMatch: 'close' },
+      { reg: 'HP3', campus: 'LMS 4', driverCode: 'LMS4D03', driverStatus: 'verified', driverMatch: 'ambiguous' },
+      { reg: 'HP4', campus: 'LMS 4', driverCode: 'LMS4D04', driverStatus: 'verified' },
       { reg: 'HP7', campus: 'LMS 1', driver: 'Driver Seven', driverCode: 'LMS1D07', driverStatus: 'name differs', driverRosterName: 'Someone Else' },
       { reg: 'HP8', campus: 'LMS 2', driver: '', driverCode: '', driverStatus: '' },
       { reg: '31 Seater', campus: 'LMS 2', driver: 'Driver Nine', driverCode: 'LMS2D09', driverStatus: 'verified' }] });
@@ -600,10 +603,13 @@ assert.deepStrictEqual(J(run('gpsRows_("Parts Catalog")')).filter(r => r.model =
     assert.deepStrictEqual(Object.keys(c).sort(), ['crew', 'success'], 'gamecrew: success and crew only');
     assert.deepStrictEqual(c.crew, [
       { reg: 'HP665805', campus: 'LMS4', driverEmpCode: 'LMS4D01', inchargeEmpCode: null },
+      { reg: 'HP2', campus: 'LMS4', driverEmpCode: null, inchargeEmpCode: null },
+      { reg: 'HP3', campus: 'LMS4', driverEmpCode: null, inchargeEmpCode: null },
+      { reg: 'HP4', campus: 'LMS4', driverEmpCode: null, inchargeEmpCode: null },
       { reg: 'HP7', campus: 'LMS1', driverEmpCode: null, inchargeEmpCode: null },
-      { reg: 'HP8', campus: 'LMS2', driverEmpCode: null, inchargeEmpCode: null }], 'the GPS reg, the campus id, a driver code only when the staff master confirms it; a non-registration is left out');
+      { reg: 'HP8', campus: 'LMS2', driverEmpCode: null, inchargeEmpCode: null }], 'the GPS reg, the campus id, a driver code only when the staff master confirms it AND the name matched one person exactly (a close name, a shared name or a push from before driverMatch: null); a non-registration is left out');
     c.crew.forEach((row) => Object.keys(row).forEach((k) => assert.ok(['reg', 'campus', 'driverEmpCode', 'inchargeEmpCode'].includes(k), 'gamecrew key allowed: ' + k)));
-    ['Driver', 'Someone', 'seats', 'phone', 'token', 'Status', 'Roster'].forEach((w) => assert.ok(!JSON.stringify(c).includes(w), 'never in gamecrew: ' + w));
+    ['Driver', 'Someone', 'seats', 'phone', 'token', 'Status', 'Roster', 'Match'].forEach((w) => assert.ok(!JSON.stringify(c).includes(w), 'never in gamecrew: ' + w));
     assert.ok(/'gamecrew'\) return coordJson_\(coordGameCrew_\(body\)\)/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8').split('function doPost')[1]), 'doPost routes gamecrew (key in the body)');
     assert.ok(!/gamecrew/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8').split('function doPost')[0]), 'no GET gamecrew');
     ctx.coordTransportBase_ = base;
