@@ -179,6 +179,7 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'driverbus') return coordJson_(coordDriverBus_(body)); // a linked driver phone, deviceToken (coordinator-driverbus.gs)
     if (String(body.action || '').toLowerCase() === 'gameworld') return coordJson_(coordGameWorld_(body)); // lms-game's transport Edge Function, key in the body (coordinator-world.gs)
     if (String(body.action || '').toLowerCase() === 'gamecrew') return coordJson_(coordGameCrew_(body)); // lms-game's role_grants import: driver employee codes per bus
+    if (/^game(ApprovalAlloca|Recommend$|DecisionPreview$|TrackRecord$)/.test(String(body.action || ''))) return coordJson_(coordGameApprovals_(body)); // lms-game W4 Approvals room (coordinator-approvals.gs): key-gated, the person from the game's verified JWT
     if (String(body.action || '').toLowerCase() === 'transportrun') return coordJson_(coordWorldRun_(coordRunDriver_(body.deviceToken), body.reg, body.runId)); // a linked driver phone: its own bus's run only (coordinator-world.gs)
     if (String(body.action || '').toLowerCase() === 'pdrpush') return coordJson_(coordPdrPush_(body));
     if (String(body.action || '').toLowerCase() === 'pdrtagpush') return coordJson_(coordPdrTagPush_(body));
@@ -219,24 +220,31 @@ function coordVerifyCaller_(idToken) {
   const hit = cache.get(key);
   if (hit) return JSON.parse(hit);
   try {
-    const email = coordTokenEmail_(idToken);
-    if (!email) return null;
-    const rows = SpreadsheetApp.openById(COORD_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
-      const roles = String(rows[i][3] || '').split(',').map(function (r) { return r.trim(); }).filter(Boolean);
-      // A FeeClerk (Fee Clerk Portal) may read the transport data of their own campus or comma list, nothing else (2026-10-21).
-      const feeClerkOnly = roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1;
-      if (feeClerkOnly && roles.indexOf('FeeClerk') === -1) return null;
-      const canDecide = roles.indexOf('Owner') !== -1 || (roles.indexOf('Coordinator') !== -1 && String(rows[i][4] || '').trim().toUpperCase() === 'TRUE'); // same rule as aprCanDecide_ in approvals.gs
-      const caller = { email: email, campusId: String(rows[i][2] || '').trim().toUpperCase(), roles: roles, canDecide: canDecide, feeClerkOnly: feeClerkOnly };
-      cache.put(key, JSON.stringify(caller), 300);
-      return caller;
-    }
-    return null;
+    const caller = coordCallerForEmail_(coordTokenEmail_(idToken));
+    if (caller) cache.put(key, JSON.stringify(caller), 300);
+    return caller;
   } catch (err) {
     return null;
   }
+}
+
+/** The caller for a verified email, re-derived from the allowlist; null unless a Coordinator, Owner or FeeClerk. Split out of
+ *  coordVerifyCaller_ (2026-11-12, W4) so the game's classic proxy, which verifies the person's own Supabase JWT and sends that
+ *  email, gets exactly the same caller as the portal's Google sign-in (coordinator-approvals.gs's game actions). */
+function coordCallerForEmail_(email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email) return null;
+  const rows = SpreadsheetApp.openById(COORD_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
+    const roles = String(rows[i][3] || '').split(',').map(function (r) { return r.trim(); }).filter(Boolean);
+    // A FeeClerk (Fee Clerk Portal) may read the transport data of their own campus or comma list, nothing else (2026-10-21).
+    const feeClerkOnly = roles.indexOf('Coordinator') === -1 && roles.indexOf('Owner') === -1;
+    if (feeClerkOnly && roles.indexOf('FeeClerk') === -1) return null;
+    const canDecide = roles.indexOf('Owner') !== -1 || (roles.indexOf('Coordinator') !== -1 && String(rows[i][4] || '').trim().toUpperCase() === 'TRUE'); // same rule as aprCanDecide_ in approvals.gs
+    return { email: email, campusId: String(rows[i][2] || '').trim().toUpperCase(), roles: roles, canDecide: canDecide, feeClerkOnly: feeClerkOnly };
+  }
+  return null;
 }
 
 /** Google ID token -> the lower-cased email it was issued to, or null unless Google verifies it, it was issued to this

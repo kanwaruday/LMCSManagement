@@ -104,3 +104,72 @@ function coordAprFollowDone_(approvalId, caller, note) {
 function coordDueSeverity_(severity, due, today) {
   return due && due < today ? 'high' : severity;
 }
+
+// ── lms-game W4: the native Approvals room's game* actions (lane-h, 2026-11-12) ──────────────────────────────────────────────────
+// Called only by lms-game's `classic` Edge Function (classic-proxy-contract.md), POST {action, key, role, campus, campuses, email, params}.
+// key: GAME_READ_KEY (the same gate as gameworld; the proxy's CLASSIC_COORD_KEY is that value). email: from the game's VERIFIED JWT,
+// sent on writes and on the actor reads (allocatees, track record); roles and the decide right are re-derived from the allowlist by it
+// (coordCallerForEmail_), never taken from the request. campus: the one school a campus-scope action may touch (the row must be there);
+// campuses: a tenant-scope action's school list (rows outside it are dropped). Answers {success:true, data:{ok, ...}}; a business refusal
+// is {success:true, data:{ok:false, code}}. People are {key, name}: key = HMAC of the email (GAME_PEOPLE_SECRET). Never an email.
+const COORD_GAME_ACTIONS = ['gameApprovalAllocate', 'gameApprovalAllocatees', 'gameRecommend', 'gameDecisionPreview', 'gameTrackRecord'];
+const COORD_GAME_CODES = [
+  [/not found/i, 'not_found'], [/not authorized|only the owner|owner decides directly/i, 'not_authorized'], [/already decided/i, 'decided'],
+  [/archived/i, 'archived'], [/only an approved request/i, 'not_approved'], [/tracked in the hiring dashboard/i, 'hiring'],
+  [/pick a coordinator|due date|pick approve|write the reason|keep the reason/i, 'bad_input'],
+];
+const coordGameOk_ = function (data) { return { success: true, data: Object.assign({ ok: true }, data || {}) }; };
+const coordGameNo_ = function (code) { return { success: true, data: { ok: false, code: code } }; };
+function coordGameCode_(res) {
+  const e = String((res && res.error) || '');
+  for (let i = 0; i < COORD_GAME_CODES.length; i++) if (COORD_GAME_CODES[i][0].test(e)) return COORD_GAME_CODES[i][1];
+  return 'refused';
+}
+/** An opaque, stable key for a person: HMAC-SHA256(email) with GAME_PEOPLE_SECRET, web-safe, 22 chars. */
+function coordGameKey_(email) {
+  const secret = String(PropertiesService.getScriptProperties().getProperty('GAME_PEOPLE_SECRET') || '');
+  if (secret.length < 32) throw new Error('GAME_PEOPLE_SECRET not set');
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(String(email).trim().toLowerCase(), secret)).replace(/=+$/, '').slice(0, 22);
+}
+/** The school codes this request may touch: campus scope = the one school; tenant scope = its list; anything else = none. */
+function coordGameSchools_(body) {
+  if (body.campus) return [String(body.campus).trim().toUpperCase()];
+  return Array.isArray(body.campuses) ? body.campuses.map(function (c) { return String(c).trim().toUpperCase(); }) : [];
+}
+
+/** POST action=game*: dispatched from coordinator.gs doPost before the Google-token check (the key is this path's gate). */
+function coordGameApprovals_(body) {
+  if (!coordGameKeyOk_(body)) return { success: false, error: 'not_authorized' };
+  const action = String(body.action);
+  if (COORD_GAME_ACTIONS.indexOf(action) === -1) return { success: false, error: 'unknown_action' };
+  const p = body.params || {}, schools = coordGameSchools_(body);
+  try {
+    if (action === 'gameDecisionPreview') return coordGameDecisionPreview_(String(p.id || ''), schools); // a plain read: no person needed
+    let caller;
+    try { caller = coordCallerForEmail_(body.email); } catch (err) { caller = null; }
+    if (!caller || caller.feeClerkOnly) return coordGameNo_('not_authorized');
+    if (action === 'gameApprovalAllocatees') {
+      if (!caller.canDecide) return coordGameNo_('not_authorized');
+      return coordGameOk_({ people: coordPdrCoordinators_().map(function (c) { return { key: coordGameKey_(c.email), name: c.name }; }) });
+    }
+    if (action === 'gameTrackRecord') return coordGameTrackRecord_(caller, schools);
+    const id = String(p.id || ''), hit = coordAprFind_(id);
+    if (!hit) return coordGameNo_('not_found');
+    if (schools.indexOf(String(hit.v[1]).trim().toUpperCase()) === -1) return coordGameNo_('not_authorized');
+    if (action === 'gameRecommend') return coordGameRecommend_(caller, id, p);
+    // gameApprovalAllocate: {id, assignee: key, due, note} or {id, cancel: '1'}
+    if (p.cancel !== undefined && p.cancel !== '1') return coordGameNo_('bad_input');
+    let assignee = '';
+    if (p.cancel !== '1') {
+      const who = coordPdrCoordinators_().filter(function (c) { return coordGameKey_(c.email) === String(p.assignee || ''); })[0];
+      if (!who) return coordGameNo_('bad_input');
+      assignee = who.email;
+    }
+    const res = coordAprAllocate_(caller, { approvalId: id, assignee: assignee, due: String(p.due || ''), note: String(p.note || '').slice(0, 300), cancel: p.cancel === '1' });
+    if (!res.success) return coordGameNo_(coordGameCode_(res));
+    return coordGameOk_(res.cancelled ? { cancelled: true } : { followUp: { assigneeName: res.followUp.assigneeName, due: res.followUp.due, status: res.followUp.status, note: res.followUp.note } });
+  } catch (err) {
+    console.error('coordGameApprovals ' + action + ': ' + (err && err.name)); // never the message: it can carry sheet text
+    return { success: false, error: 'backend' };
+  }
+}
