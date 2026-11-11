@@ -6,7 +6,7 @@ const only = (search) => vm.runInNewContext(line + ' ONLY_TAB', { location: { se
 for (const t of ['home', 'principal', 'dashboard', 'approvals']) assert.strictEqual(only('?only=' + t), t);
 for (const s of ['', '?only=support', '?only=APPROVALS', '?only=x', '?role=teacher']) assert.strictEqual(only(s), null, s + ' falls back to the normal page');
 for (const t of ['home', 'principal', 'dashboard', 'approvals']) assert.ok(pdr.includes('id="panel-' + t + '"'), 'panel-' + t + ' exists');
-assert.ok(/if \(ONLY_TAB\) \{ switchTab\(ONLY_TAB\); document\.body\.classList\.add\('pdr-only'\); \}/.test(pdr), 'applied after restore');
+assert.ok(/if \(ONLY_TAB\) \{ switchTab\(ONLY_TAB\); document\.body\.classList\.add\('pdr-only'\);/.test(pdr), 'applied after restore');
 assert.ok(/body\.pdr-only \.tabs, body\.pdr-only \.hdr-right \{ display: none; \}/.test(pdr), 'hides the tab bar and the link home');
 
 const ss = fs.readFileSync(path.join(__dirname, '../../principal/support-sessions.html'), 'utf8');

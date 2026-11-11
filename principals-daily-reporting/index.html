@@ -831,7 +831,7 @@ async function init() {
     // A link ending in #approvals (the Hiring dashboard's Approvals button, for one) opens the Approvals tab straight away.
     // #principal (the game's daily-report mission) opens the report tab the same way.
     if (!restore && (location.hash === '#approvals' || location.hash === '#principal')) switchTab(location.hash.slice(1));
-    if (ONLY_TAB) { switchTab(ONLY_TAB); document.body.classList.add('pdr-only'); }
+    if (ONLY_TAB) { switchTab(ONLY_TAB); document.body.classList.add('pdr-only'); document.getElementById('hdrCtx').textContent = document.querySelector('.tab-btn[data-tab="' + ONLY_TAB + '"]').textContent; }
   } catch (err) {
     // A blank page on error is worse than an ugly one -- if init() throws
     // for any reason (e.g. a stale cached assets/auth.js missing a
