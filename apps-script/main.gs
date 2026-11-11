@@ -224,6 +224,7 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     if (/^gameApproval/.test(String(body.action || ''))) return jsonOut_(gameApprovalsDispatch_(body)); // lms-game W4 Approvals room (game-approvals.gs): key-gated, the person from the game's verified JWT
+    if (/^game(pdr|ss)[a-z]/.test(String(body.action || '').toLowerCase())) return jsonOut_(pdrGame_(body)); // lms-game's classic proxy, Wave 1 (lane-e): gamePdr*/gameSs*, key in the body, no ID token (principal-dr.gs)
     const verified = verifyCallerToken_(body.idToken);
     if (!verified) return jsonOut_({ success: false, error: 'Not authorized' });
     const caller = supportActAs_(verified, body.actAs);

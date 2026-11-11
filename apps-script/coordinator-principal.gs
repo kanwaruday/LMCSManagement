@@ -105,3 +105,36 @@ function coordPrincipalResolve_(principal, body) {
   try { coordPdrSyncTask_(issue, 'resolved', null, principal, note); } catch (err) { taskError = err.message; } // the closure is saved either way
   return { success: true, taskError: taskError };
 }
+
+// ── lms-game's native Issues screen (Wave 1, 12 Nov 2026) ────────────
+// lms-game's `classic` proxy, server to server (lms-game classic-proxy-contract.md): it checks the game role and school first, then
+// POSTs {action, key, role: 'principal' | 'owner', campus: 'LMS4', email, params} with GAME_READ_KEY (coordGameKeyOk_,
+// coordinator-world.gs). Unset or wrong key: {success: false, error: 'not_authorized'}. Answers {success: true, data}.
+//   gameIssues        (email sent: actor)  that campus's issues, notes as that Principal sees them (the Owner sees every note)
+//   gameIssueResolve  {id, note}           a Principal closes one with what was done; refusals note_needed / regrouped
+function coordGameCaller_(body) {
+  if (!coordGameKeyOk_(body)) return null;
+  const campusId = String(body.campus || '').trim().toUpperCase(), role = String(body.role || '');
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  return /^LMS[1-6]$/.test(campusId) && (role === 'principal' || role === 'owner') ? { email: email, campusId: campusId, role: role } : null;
+}
+
+function coordGameIssues_(body) {
+  const c = coordGameCaller_(body);
+  if (!c) return { success: false, error: 'not_authorized' };
+  const ss = SpreadsheetApp.openById(COORD_PDR_SHEET_ID);
+  const viewer = c.role === 'owner' ? null : c.email || '-'; // a Principal never gets the Coordinator-only notes, email or not
+  const issues = coordPrincipalIssues_(coordPrincipalTab_(ss, COORD_PDR_ISSUES_TAB), coordPrincipalTab_(ss, COORD_PDR_ACTIONS_TAB), coordPrincipalTab_(ss, COORD_PDR_MERGES_TAB), c.campusId, viewer)
+    .map(function (i) { return { id: i.id, subject: i.subject, first: i.first, last: i.last, count: i.count, needsAction: i.needsAction, status: i.status, note: i.note, raisedAgain: i.raisedAgain, resolvedAt: i.resolvedAt }; });
+  return { success: true, data: issues };
+}
+
+function coordGameIssueResolve_(body) {
+  const c = coordGameCaller_(body);
+  if (!c || c.role !== 'principal' || !/^[^@\s]+@[^@\s]+$/.test(c.email)) return { success: false, error: 'not_authorized' };
+  const p = body.params || {};
+  const out = coordPrincipalResolve_({ email: c.email, campusId: c.campusId, principal: true }, { id: p.id, note: p.note });
+  if (out.success) return { success: true, data: { ok: true } };
+  if (out.error === 'Not authorized') return { success: false, error: 'not_authorized' };
+  return { success: true, data: { ok: false, code: /regrouped/.test(out.error) ? 'regrouped' : 'note_needed' } };
+}

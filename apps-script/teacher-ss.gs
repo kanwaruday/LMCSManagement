@@ -179,3 +179,18 @@ function readCampusStatsUncached_(campusId) {
   const responseCount = teachers.reduce(function (sum, t) { return sum + t.submissionCount; }, 0);
   return { teachers: teachers, responseCount: responseCount };
 }
+
+// ── lms-game's native Support Sessions form (Wave 1, 12 Nov 2026) ────
+// Reached only through principal-dr.gs's pdrGame_ (key-gated; one campus, already checked by lms-game). Thin wrappers over
+// ss-forms-sync.gs's ssFormMeta_ / ssSubmit_, the same functions the old support-sessions.html calls, always for the caller's own
+// campus (the client never picks the school). The form goes back without names split out: the old page shows the same labels.
+function tssGameMeta_(caller, params) {
+  const m = ssFormMeta_(caller, String(params.role || ''), caller.campusId);
+  if (!m.success) return m;
+  return { success: true, data: { role: m.role, label: m.label, rubricTitles: m.rubricTitles, rubricMax: m.rubricMax,
+    employees: m.employees.map(function (e) { return { employeeId: e.employeeId, label: e.label }; }) } };
+}
+function tssGameSubmit_(caller, params) {
+  const scores = String(params.scores || '').split(',').map(function (x) { return x.trim(); }); // ssSubmit_ checks each one (ssParseScore_)
+  return ssSubmit_(caller, { role: params.role, school: caller.campusId, employeeId: params.employeeId, scores: scores });
+}
