@@ -180,6 +180,8 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'gameworld') return coordJson_(coordGameWorld_(body)); // lms-game's transport Edge Function, key in the body (coordinator-world.gs)
     if (String(body.action || '').toLowerCase() === 'gamecrew') return coordJson_(coordGameCrew_(body)); // lms-game's role_grants import: driver employee codes per bus
     if (/^game(ApprovalAlloca|Recommend$|DecisionPreview$|TrackRecord$)/.test(String(body.action || ''))) return coordJson_(coordGameApprovals_(body)); // lms-game W4 Approvals room (coordinator-approvals.gs): key-gated, the person from the game's verified JWT
+    if (String(body.action || '').toLowerCase() === 'gameissues') return coordJson_(coordGameIssues_(body)); // lms-game's classic proxy, Wave 1 (lane-e): a Principal's issues (coordinator-principal.gs)
+    if (String(body.action || '').toLowerCase() === 'gameissueresolve') return coordJson_(coordGameIssueResolve_(body)); // lms-game's classic proxy, Wave 1 (lane-e): close one with what was done
     if (String(body.action || '').toLowerCase() === 'transportrun') return coordJson_(coordWorldRun_(coordRunDriver_(body.deviceToken), body.reg, body.runId)); // a linked driver phone: its own bus's run only (coordinator-world.gs)
     if (String(body.action || '').toLowerCase() === 'pdrpush') return coordJson_(coordPdrPush_(body));
     if (String(body.action || '').toLowerCase() === 'pdrtagpush') return coordJson_(coordPdrTagPush_(body));

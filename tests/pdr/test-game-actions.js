@@ -46,8 +46,8 @@ props.GAME_KEY = KEY;
   assert.deepStrictEqual(send(P('gamePdrLoad', { date: '2026-11-11' }, bad)), NO, JSON.stringify(bad)));
 assert.deepStrictEqual(send(W('gamePdrSave', { date: '2026-11-11', next1: 'x' }, { role: 'owner' })), NO);
 assert.deepStrictEqual(send(P('gamePdrSave', { date: '2026-11-11', next1: 'x' })), NO);           // no email
-// only this file's actions take this path; any other game* action (another lane's) still needs a real ID token
-assert.deepStrictEqual(send(P('gameApprovalsList')), { success: false, error: 'Not authorized' });
+// only gamePdr*/gameSs* take this path; another lane's game* action is not handled here
+assert.deepStrictEqual(send(P('gameOtherLane')), { success: false, error: 'Not authorized' }); // not gamePdr*/gameSs*: never this path
 assert.deepStrictEqual(send(P('gamePdrNope')), NO); // a gamePdr* name that isn't a route
 assert.deepStrictEqual(send(Object.assign(P('savedailyreport'), { campusId: 'LMS4', date: '2026-11-11' })), { success: false, error: 'Not authorized' });
 
@@ -106,7 +106,7 @@ const pdrTabs = { 'PDR Issues': [['Id'], ['i1', 'LMS4', 'F', 'Water tank leaking
   ['i9', 'LMS2', 'F', 'Bus late', '2026-10-03', '2026-10-09', 4, 'yes', days('2026-10-03', '2026-10-09')]],
   'PDR Issue Actions': [['Issue id'], ['i1', 'acknowledged', '', '', 'Coordinator view only', 'c@example.org', '2026-10-11 09:00', 'LMS4', '2026-10-10']],
   'PDR Issue Merges': [['Source id']] };
-const c = { console, LockService: g.LockService, CacheService: g.CacheService };
+const c = { console, LockService: g.LockService, CacheService: g.CacheService, ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ setMimeType: () => t }) } };
 vm.createContext(c);
 ['coordinator', 'coordinator-pdr', 'coordinator-world', 'coordinator-principal', 'supporting-charge'].forEach((f) =>
   new vm.Script(fs.readFileSync(path.join(ROOT, f + '.gs'), 'utf8'), { filename: f + '.gs' }).runInContext(c));
@@ -136,4 +136,10 @@ assert.deepStrictEqual(plain(c.coordGameIssueResolve_(C({ params: { id: 'gone', 
 assert.deepStrictEqual(plain(c.coordGameIssueResolve_(C({ params: { id: 'i1', note: 'Plumber fixed it' } }))), { success: true, data: { ok: true } });
 const a = pdrTabs['PDR Issue Actions'].find((x) => x[0] === 'i1');
 assert.deepStrictEqual([a[1], a[4], a[5]], ['resolved', 'Plumber fixed it', 'p4@example.org']);
+// through doPost, as the proxy calls it (coordinator.gs dispatch; actions arrive camelCase)
+const cpost = (b) => c.doPost({ postData: { contents: JSON.stringify(b) } });
+const viaPost = (b) => JSON.parse(cpost(b));
+assert.deepStrictEqual(viaPost(C({ action: 'gameIssues' })).data.map((i) => i.id), ['i1']);
+assert.deepStrictEqual(viaPost(C({ action: 'gameIssues', key: 'nope' })), NO);
+assert.deepStrictEqual(viaPost(C({ action: 'gameIssueResolve', params: { id: 'i1', note: ' ' } })), { success: true, data: { ok: false, code: 'note_needed' } });
 console.log('test-game-actions: ok');
