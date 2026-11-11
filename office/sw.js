@@ -5,7 +5,7 @@
 const CACHE = 'lmcs-office-v23';
 const SHELL = [
   './', 'index.html', 'daybook.html', 'report.html', 'deposits.html', 'close.html', 'accounts.html', 'hiring.html', 'starting-data.html', 'office.css', 'manifest.webmanifest',
-  'js/shell.js', 'js/today.js', 'js/dom.js', 'js/daybook.js', 'js/report.js', 'js/deposits.js', 'js/close.js', 'js/accounts.js', 'js/handover.js', 'js/hiring.js', 'js/starting-data.js', 'js/attention.js', 'js/codes.js', 'js/image.js', 'js/api.js', 'js/outbox.js', 'js/idb-store.js', 'js/format.js', 'js/config.js',
+  'js/shell.js', 'js/today.js', 'js/dom.js', 'js/daybook.js', 'js/report.js', 'js/deposits.js', 'js/close.js', 'js/accounts.js', 'js/handover.js', 'js/hiring.js', 'js/starting-data.js', 'js/attention.js', 'js/codes.js', 'js/image.js', 'js/api.js', 'js/outbox.js', 'js/idb-store.js', 'js/format.js', 'js/config.js', 'js/deep-link.js',
   '../assets/style.css', '../assets/auth.js', '../assets/img/lms-logo.png',
 ];
 const shellUrls = new Set(SHELL.map((p) => new URL(p, self.location).href));

@@ -91,7 +91,7 @@
   <script src="../assets/game/home-hud.js?v=38f7e5f4"></script>
   <script src="../assets/game/rail.js?v=716e2ce0"></script>
   <script src="../coordinator/route-map.js?v=2b50b6d6"></script>
-  <script src="./roles.js?v=c491e36b"></script>
+  <script src="./roles.js?v=1e1f1ad9"></script>
   <script src="../assets/game/classroom-chain.js?v=f10557f8"></script>
   <script>
     const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same as every home
@@ -216,6 +216,8 @@
         evSlot: document.querySelector('.gb-next-slot'), signout: document.getElementById('signout-link'), switchEl: document.getElementById('hh-switch'),
         world: showView, content: sourceBody, sources: SH.sources(ROLE), hotspots: r.hotspots, labels: SH.LABELS, role: r.title });
       wireSchool(); drawSchool();
+      const goHash = function () { const k = SH.hashSource(location.hash, ROLE); if (k) LMCSHomeHud.openSource(k); }; // a game door's #spot
+      addEventListener('hashchange', goHash); goHash();
       if (pick.preview) { document.dispatchEvent(new CustomEvent('lmcs-game-today', { detail: { missions: [], quests: [], windows: [] } })); return; }
       if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
       if (typeof LMCSClassroom !== 'undefined') LMCSClassroom.mount(document.getElementById('classroom'), { session: session, backendUrl: GAME_BACKEND_URL, hideWithoutTies: true });

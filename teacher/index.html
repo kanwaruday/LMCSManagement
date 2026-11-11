@@ -480,6 +480,7 @@ function route_() {
   if (/^classroom(-students|-items)?$/.test(h)) { if (typeof LMCSClassroom !== 'undefined') LMCSClassroom.open(h); return; } // the classroom quest's steps
   const panel = h && document.getElementById(h);
   if (panel && panel.classList.contains('gb-panel')) panel.open = true;
+  else if (panel && panel.tagName === 'SECTION' && !panel.hidden) panel.scrollIntoView({ block: 'start' }); // a game door's #classes
 }
 
 // ── MY CLASSES — the game backend's teacherclasses (the signed-in teacher's own; the game has no view-as) ──

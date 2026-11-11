@@ -110,6 +110,12 @@ var LMCSStaffHome = (function () {
     ['requests', 'rules', 'routes'].forEach(function (k) { out[k] = { label: COMMON[k].label, e: COMMON[k].e }; });
     return out;
   }
+  // a game door's #hash opens that one spot (Uday, 11 Nov: one door per panel): #today, #rules, #routes, or any spot of this role.
+  // #world is the routes view. An empty or unknown hash opens nothing (the home as before).
+  function hashSource(hash, key) {
+    var k = String(hash || '').replace(/^#/, ''); if (k === 'world') k = 'routes';
+    return ROLES[key] && Object.prototype.hasOwnProperty.call(sources(key), k) ? k : null;
+  }
   // what a spot's sheet shows: { lead, later: [lines], soon, links: [{ e, label, url, note }] }
   function sheet(key, source) {
     var s = ROLES[key] && ROLES[key].spots[source];
@@ -147,6 +153,6 @@ var LMCSStaffHome = (function () {
     return { refuse: 'unknown' };
   }
 
-  return { ROLES: ROLES, COMMON: COMMON, LABELS: LABELS, NO_QUESTS: NO_QUESTS, NO_QUESTS_LINE: NO_QUESTS_LINE, SOON: SOON, REFUSE: REFUSE, DEPT_ROLE: DEPT_ROLE, sources: sources, sheet: sheet, gate: gate };
+  return { ROLES: ROLES, COMMON: COMMON, LABELS: LABELS, NO_QUESTS: NO_QUESTS, NO_QUESTS_LINE: NO_QUESTS_LINE, SOON: SOON, REFUSE: REFUSE, DEPT_ROLE: DEPT_ROLE, sources: sources, hashSource: hashSource, sheet: sheet, gate: gate };
 })();
 if (typeof module !== 'undefined') module.exports = LMCSStaffHome;
