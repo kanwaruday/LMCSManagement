@@ -626,7 +626,10 @@ window.Coord = (function () {
 
   // ── Systems: principals' daily report briefing ────────────────────
   function pdrView(body) {
-    const P = { tab: location.hash === '#approvals' ? 'approvals' : 'today', topic: '', act: true, sel: null, itype: '', istatus: location.hash === '#closed' ? 'closed' : 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
+    // Deep links (game doors, 12 Nov): #<tab id> opens that tab; #leave opens Approvals filtered to Leave; any other hash = Today.
+    const PDR_TABS = ['today', 'digest', 'approvals', 'compliance', 'repeats', 'fees', 'admissions', 'messages', 'registers', 'assembly'];
+    const hashTab = h => h === 'leave' ? 'approvals' : PDR_TABS.indexOf(h) !== -1 ? h : 'today';
+    const P = { tab: hashTab(location.hash.slice(1)), aprCat: location.hash === '#leave' ? 'Leave' : '', topic: '', act: true, sel: null, itype: '', istatus: location.hash === '#closed' ? 'closed' : 'open', repeat: false, who: '', sort: 'age', group: 'campus', day: '', days: {}, data: null };
     body.innerHTML = '<h2 class="pagetitle">Principals\' daily reports</h2><p class="pagesub">Who reported, what is open or stuck, and what the principals flagged. Coordinator view only; January 2026 onward.</p><div class="pd-pickwrap"><div class="pd-pick"></div></div><div class="pd-body"></div>';
     const box = body.querySelector('.pd-body'), pickWrap = body.querySelector('.pd-pickwrap');
     // The Approvals tab carries its own picker (approvals.js); both read and write the same remembered choice, so each re-reads it when its tab is shown.
@@ -909,7 +912,7 @@ window.Coord = (function () {
       box.querySelectorAll('.pd-as').forEach(sel => sel.addEventListener('change', () => { sel.closest('.pd-edit').querySelector('.pd-who').style.display = sel.value === 'assigned' ? '' : 'none'; })); // the name only matters for "Assign to"
       const aprSlot = box.querySelector('.pd-apr-slot');
       if (aprSlot && window.CoordApprovals) { // one persistent element, so its filters, open row and loaded data survive tab switches
-        if (!P.aprEl) { P.aprEl = document.createElement('div'); P.aprCtl = CoordApprovals.mount(P.aprEl, { people: () => (P.data && P.data.coordinators) || [], post: postJson, get: api }); }
+        if (!P.aprEl) { P.aprEl = document.createElement('div'); P.aprCtl = CoordApprovals.mount(P.aprEl, { people: () => (P.data && P.data.coordinators) || [], post: postJson, get: api, cat: P.aprCat }); }
         aprSlot.appendChild(P.aprEl);
       }
       pickWrap.hidden = P.tab === 'approvals'; // that tab has its own picker

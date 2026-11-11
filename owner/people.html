@@ -72,7 +72,8 @@
 
     // everyone once, merged by email from the four lists; each list's own record keeps its own rules (editable, mayAll, canSupport)
     const FILTERS = [['all', 'All'], ['owner', 'Owner'], ['coord', 'Coordinator'], ['principal', 'Principal'], ['office', 'Fee Clerk']];
-    let FILTER = 'all';
+    // Deep links (game doors, 12 Nov): #owner, #coord, #principal, #office open that chip; any other hash = All.
+    let FILTER = FILTERS.some(function (f) { return '#' + f[0] === location.hash; }) ? location.hash.slice(1) : 'all';
     function roleText(roles) { return roles.map(function (r) { return r === 'FeeClerk' ? 'Fee Clerk' : r; }).join(', '); }
     function everyone() {
       const by = {}, out = [];

@@ -119,7 +119,7 @@ window.CoordApprovals = (function () {
       '<button type="button" class="rfr" data-act="refresh" title="Refresh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button></div>' +
       '<div class="stbar" data-slot="bar"></div><div data-slot="done" hidden></div><div data-slot="list"></div>';
     const $ = s => root.querySelector('[data-slot="' + s + '"]');
-    const S = { res: null, status: 'Needs Action', cat: 'All', view: 'Requests', sel: null, search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null, rec: undefined, // rec: undefined = not loaded (or unavailable: show nothing), null = none yet
+    const S = { res: null, status: 'Needs Action', cat: CATEGORIES.indexOf(ctx.cat) !== -1 ? ctx.cat : 'All' /* a deep link (#leave) opens one category */, view: 'Requests', sel: null, search: '', sortKey: null, sortDir: 1, fu: 'All', fuEdit: null, selected: {}, eligible: {}, openId: null, detail: null, rec: undefined, // rec: undefined = not loaded (or unavailable: show nothing), null = none yet
       seq: 0, refStaff: [], refNames: {}, refLoaded: false, refLoading: false, refErr: '', refs: {} };
     const sess = () => LMCS.getSession();
     // The shared campus picker chooses which schools' requests are listed. It sits in the bar, outside the list, so it keeps focus.
