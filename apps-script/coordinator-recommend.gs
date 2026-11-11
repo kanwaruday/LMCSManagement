@@ -254,3 +254,38 @@ function coordFreshApprovals_(aprRows, taskRows, visible, latest, names) {
       requestedAt: isNaN(at.getTime()) ? '' : at.toISOString(), recommendation: coordRecCard_(latest[id], names) };
   });
 }
+
+// ── lms-game W4: recommend, decision preview and track record for the native Approvals room (dispatched by coordGameApprovals_,
+// coordinator-approvals.gs, after the key, the person and the school are checked). Same rules as the portal actions above; no emails out.
+
+/** gameRecommend {id, recommendation, reason, checked}: coordRecommend_ unchanged (Coordinators only, supersede on write). */
+function coordGameRecommend_(caller, id, p) {
+  const res = coordRecommend_(caller, { approvalId: id, recommendation: String(p.recommendation || ''), reason: String(p.reason || ''), checked: String(p.checked || '') });
+  if (!res.success) return coordGameNo_(coordGameCode_(res));
+  const r = res.recommendation;
+  return coordGameOk_({ recommendation: { byName: r.byName === r.by ? 'You' : r.byName, mine: true, recommendation: r.recommendation, reason: r.reason, at: r.at } });
+}
+
+/** gameDecisionPreview {id}: coordDecision_ for the one school the proxy checked, without the requester's or recommender's email. */
+function coordGameDecisionPreview_(id, schools) {
+  if (schools.length !== 1) return coordGameNo_('not_authorized');
+  // a caller limited to exactly that school (coordVisibleCampuses_ gives a FeeClerk-shaped caller its own list, never a district)
+  const res = coordDecision_({ campusId: schools[0], feeClerkOnly: true }, id);
+  if (!res.success) return coordGameNo_(coordGameCode_(res));
+  const d = res.decision, pv = d.preview || {};
+  return coordGameOk_({ waitingDays: d.waitingDays, history: pv.history || null, staff: pv.staff || null, events: pv.events || null,
+    recommendation: d.recommendation ? { byName: d.recommendation.byName === d.recommendation.by ? 'Staff member' : d.recommendation.byName,
+      recommendation: d.recommendation.recommendation, reason: d.recommendation.reason, at: d.recommendation.at } : null });
+}
+
+/** gameTrackRecord: the caller's OWN record only (the room shows no one else's, the Owner included), limited to the proxy's schools. */
+function coordGameTrackRecord_(caller, schools) {
+  // only recommendations made at the proxy's schools count, in the totals and the recent list alike (column 3 = Campus)
+  const recRows = coordRecRows_().filter(function (r) { return schools.indexOf(String(r[2]).trim().toUpperCase()) !== -1; });
+  const all = coordTrackRecord_(recRows, coordAprRows_(), caller.email)[caller.email] || { byCategory: {}, recent: [] };
+  const recent = all.recent;
+  return coordGameOk_({
+    byCategory: Object.keys(all.byCategory).sort().map(function (c) { const x = all.byCategory[c]; return { category: c, made: x.made, decided: x.decided, matched: x.matched }; }),
+    recent: recent.map(function (r) { return { title: r.title, campusCode: r.campus, recommendation: r.recommendation, decision: r.decision, matched: r.matched }; }),
+  });
+}

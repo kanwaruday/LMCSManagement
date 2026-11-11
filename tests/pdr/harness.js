@@ -42,8 +42,9 @@ function makeBookWithNumberFormat(tabs, counter) {
  *  with `allowlistRows` (same shape as the real Allowlist sheet: Email, Name, CampusId,
  *  Role, CanApprove) and `tokens` ({idToken: {email, verified}}, verified defaults true)
  *  standing in for a real Google ID token's tokeninfo response.
+ *  files: extra .gs files to load after FILES (e.g. approvals, game-approvals); extra: more globals (stubs, Script properties).
  *  Returns { get(action, params), post(action, body), books, counter }. */
-function boot({ books = {}, allowlistRows, tokens = {} }) {
+function boot({ books = {}, allowlistRows, tokens = {}, files = [], extra = {} }) {
   const counter = { open: 0, read: 0, write: 0 };
   const fakeBooks = {};
   Object.keys(books).forEach((id) => {
@@ -71,6 +72,7 @@ function boot({ books = {}, allowlistRows, tokens = {} }) {
     Utilities: {
       DigestAlgorithm: { MD5: 'md5' },
       computeDigest: (_a, x) => Array.from(crypto.createHash('md5').update(String(x)).digest()).map((b) => (b > 127 ? b - 256 : b)),
+      computeHmacSha256Signature: (value, key) => Array.from(crypto.createHmac('sha256', String(key)).update(String(value)).digest()).map((b) => (b > 127 ? b - 256 : b)),
       base64EncodeWebSafe: (bytes) => Buffer.from(bytes.map((b) => (b < 0 ? b + 256 : b))).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
     },
     UrlFetchApp: {
@@ -94,8 +96,9 @@ function boot({ books = {}, allowlistRows, tokens = {} }) {
     aprResetRequestMemo_: () => {},
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) }, // STAFF_AUTO_SIGNIN off -- no fixture exercises the auto-signin fallback
   };
+  Object.assign(g, extra);
   vm.createContext(g);
-  FILES.forEach((f) => new vm.Script(fs.readFileSync(path.join(ROOT, f + '.gs'), 'utf8'), { filename: f + '.gs' }).runInContext(g));
+  FILES.concat(files).forEach((f) => new vm.Script(fs.readFileSync(path.join(ROOT, f + '.gs'), 'utf8'), { filename: f + '.gs' }).runInContext(g));
 
   const get = (action, params) => JSON.parse(g.doGet({ parameter: Object.assign({ action }, params) }).getContent());
   const post = (action, body) => JSON.parse(g.doPost({ postData: { contents: JSON.stringify(Object.assign({ action }, body)) } }).getContent());

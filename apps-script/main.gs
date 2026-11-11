@@ -90,6 +90,11 @@
 //                         salaryconfig; salaryepfexemptionstatus is the
 //                         one write-adjacent check, reusing approvals.gs's
 //                         generic pipeline (category 'EPF Exemption').
+//   game-approvals.gs   -- action=gameApproval* (POST, 2026-11-12, W4):
+//                         lms-game's native Approvals room through its
+//                         `classic` proxy. Key-gated (Script properties
+//                         GAME_KEY, GAME_PEOPLE_SECRET), the same
+//                         approvals.gs rules, names instead of emails.
 //
 // Naming convention: shared helpers/constants (this file) have no
 // prefix. Concern-specific files use a short prefix matching their
@@ -218,6 +223,7 @@ function doPost(e) {
   aprResetRequestMemo_(); // 2026-10-01: per-request Approvals-values memo, see approvals.gs's aprValues_
   try {
     const body = JSON.parse(e.postData.contents);
+    if (/^gameApproval/.test(String(body.action || ''))) return jsonOut_(gameApprovalsDispatch_(body)); // lms-game W4 Approvals room (game-approvals.gs): key-gated, the person from the game's verified JWT
     const verified = verifyCallerToken_(body.idToken);
     if (!verified) return jsonOut_({ success: false, error: 'Not authorized' });
     const caller = supportActAs_(verified, body.actAs);
@@ -311,52 +317,60 @@ function verifyCallerToken_(idToken) {
     if (payload.aud !== GOOGLE_CLIENT_ID) return null;
     if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
     const email = (payload.email || '').toLowerCase();
-
-    const rows = pdrAllowlistRows_();
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
-      const campusId = String(rows[i][2] || '').trim().toUpperCase();
-      // Multi-role (2026-09-19, per Uday): the Allowlist's role cell can
-      // hold a comma-separated list, e.g. "Coordinator,Teacher" -- for
-      // someone who genuinely needs both a management role's access AND
-      // their own personal Teacher-Portal self-service. `role` stays the
-      // raw cell (used verbatim as a display string, e.g. Comments'
-      // authorRole in approvals.gs); `roles` is the parsed array every
-      // permission check below should use. A single-role cell like
-      // "Teacher" parses to a 1-element array, so every existing row
-      // keeps working unchanged -- this was never a data migration.
-      const role = String(rows[i][3] || '').trim();
-      const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
-      // Name (column B) added to the caller object 2026-09-19 for
-      // myTeacherSsStats_ -- matching a Teacher's own SS submissions
-      // needs their display name, not just email/campusId/role.
-      const name = String(rows[i][1] || '').trim();
-      // Teacher added 2026-09-19 for the Teacher Portal -- see
-      // PDR_TEACHER_GET_ACTIONS/PDR_TEACHER_POST_ACTIONS and
-      // pdrIsTeacherOnly_() below, which are what actually keep a
-      // Teacher-only caller scoped to their own requests.
-      if (!roles.some(function (r) { return r === 'Principal' || r === 'Coordinator' || r === 'Owner' || r === 'Teacher' || r === 'FeeClerk'; })) return null;
-      // Column E (added 2026-09-10, Approvals delegation) -- a
-      // Coordinator with this TRUE can decide approvals same as Owner;
-      // Uday flips this cell by hand to delegate/revoke. Blank/FALSE
-      // (including every pre-existing row before this column existed)
-      // is "not delegated" -- fails safe.
-      const canApprove = String(rows[i][4] || '').trim().toUpperCase() === 'TRUE';
-      // supporting (2026-11-07): the schools this Principal supports (supporting-charge.gs); actAs in doGet/doPost switches to one, read-only
-      const caller = { email: email, campusId: campusId, role: role, roles: roles, name: name, canApprove: canApprove, supporting: supportSchools_(rows[0], rows[i]) };
-      cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
-      return caller;
-    }
-    // Not on the allowlist: the Employee Master fallback (off unless STAFF_AUTO_SIGNIN is exactly 'on'). An allowlist row, even one
-    // with an unrecognised role (returned null above), always wins -- this runs only when there is no row at all.
-    const staff = pdrStaffFromEmployeeMaster_(email);
-    if (!staff) return null;
-    const caller = { email: staff.email, campusId: staff.campusId, role: staff.roles[0], roles: staff.roles, name: '', canApprove: false, employeeCode: staff.employeeCode, department: staff.department, autoSignIn: true };
-    cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
+    const caller = pdrCallerForEmail_(email);
+    if (caller) cache.put(cacheKey, JSON.stringify(caller), PDR_AUTH_CACHE_SECONDS);
     return caller;
   } catch (err) {
     return null;
   }
+}
+
+// The caller for a verified email: the Allowlist row (roles, campus, delegated approve right, supporting schools), else the Employee
+// Master fallback, else null. Split out of verifyCallerToken_ (2026-11-12, W4) so the game's classic proxy, which verifies the
+// person's own Supabase JWT and sends that email, gets exactly the same caller and rights as the portal's Google sign-in.
+function pdrCallerForEmail_(email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email) return null;
+  const rows = pdrAllowlistRows_();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim().toLowerCase() !== email) continue;
+    const campusId = String(rows[i][2] || '').trim().toUpperCase();
+    // Multi-role (2026-09-19, per Uday): the Allowlist's role cell can
+    // hold a comma-separated list, e.g. "Coordinator,Teacher" -- for
+    // someone who genuinely needs both a management role's access AND
+    // their own personal Teacher-Portal self-service. `role` stays the
+    // raw cell (used verbatim as a display string, e.g. Comments'
+    // authorRole in approvals.gs); `roles` is the parsed array every
+    // permission check below should use. A single-role cell like
+    // "Teacher" parses to a 1-element array, so every existing row
+    // keeps working unchanged -- this was never a data migration.
+    const role = String(rows[i][3] || '').trim();
+    const roles = role.split(',').map(function (r) { return r.trim(); }).filter(Boolean);
+    // Name (column B) added to the caller object 2026-09-19 for
+    // myTeacherSsStats_ -- matching a Teacher's own SS submissions
+    // needs their display name, not just email/campusId/role.
+    const name = String(rows[i][1] || '').trim();
+    // Teacher added 2026-09-19 for the Teacher Portal -- see
+    // PDR_TEACHER_GET_ACTIONS/PDR_TEACHER_POST_ACTIONS and
+    // pdrIsTeacherOnly_() below, which are what actually keep a
+    // Teacher-only caller scoped to their own requests.
+    if (!roles.some(function (r) { return r === 'Principal' || r === 'Coordinator' || r === 'Owner' || r === 'Teacher' || r === 'FeeClerk'; })) return null;
+    // Column E (added 2026-09-10, Approvals delegation) -- a
+    // Coordinator with this TRUE can decide approvals same as Owner;
+    // Uday flips this cell by hand to delegate/revoke. Blank/FALSE
+    // (including every pre-existing row before this column existed)
+    // is "not delegated" -- fails safe.
+    const canApprove = String(rows[i][4] || '').trim().toUpperCase() === 'TRUE';
+    // supporting (2026-11-07): the schools this Principal supports (supporting-charge.gs); actAs in doGet/doPost switches to one, read-only
+    const caller = { email: email, campusId: campusId, role: role, roles: roles, name: name, canApprove: canApprove, supporting: supportSchools_(rows[0], rows[i]) };
+    return caller;
+  }
+  // Not on the allowlist: the Employee Master fallback (off unless STAFF_AUTO_SIGNIN is exactly 'on'). An allowlist row, even one
+  // with an unrecognised role (returned null above), always wins -- this runs only when there is no row at all.
+  const staff = pdrStaffFromEmployeeMaster_(email);
+  if (!staff) return null;
+  const caller = { email: staff.email, campusId: staff.campusId, role: staff.roles[0], roles: staff.roles, name: '', canApprove: false, employeeCode: staff.employeeCode, department: staff.department, autoSignIn: true };
+  return caller;
 }
 
 // Employee Master fallback for the allowlist: AuthEmail (EmpPersonal) -> code, Active in EmpMaster, role from EmpSalary.Department.
