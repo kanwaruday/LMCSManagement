@@ -65,10 +65,12 @@ function makeDrive() {
       getId: () => id,
       getName: () => name,
       getFolders() { let i = 0; const m = f.kids.map((k) => d.folders[k]); return { hasNext: () => i < m.length, next: () => m[i++] }; },
-      getFilesByName(nm) { let i = 0; const m = Object.values(d.files).filter((x) => x.folder === id && x.name === nm); return { hasNext: () => i < m.length, next: () => m[i++] }; },
+      getFilesByName(nm) { let i = 0; const m = Object.values(d.files).filter((x) => x.folder === id && x.name === nm && !x.trashed); return { hasNext: () => i < m.length, next: () => m[i++] }; },
       getFoldersByName(nm) { d.calls.push('getFoldersByName'); const m = f.kids.filter((k) => d.folders[k].name === nm).map((k) => d.folders[k]); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
       createFolder(nm) { d.calls.push('createFolder'); return folder(nm, id); },
-      createFile(blob) {
+      setTrashed(v) { f.trashed = !!v; },
+      createFile(blob, text, mime) {
+        if (typeof blob === 'string') { const nm = blob; blob = { getName: () => nm, getContentType: () => mime, getBytes: () => Array.from(Buffer.from(text)), getDataAsString: () => text }; }
         d.calls.push('createFile'); const fid = 'D' + (++d.n);
         d.files[fid] = { id: fid, folder: id, name: blob.getName(), mime: blob.getContentType(), bytes: blob.getBytes(), getId: () => fid, getBlob: () => d.files[fid].blob, setTrashed: (v) => { d.files[fid].trashed = !!v; }, isTrashed: () => !!d.files[fid].trashed };
         d.files[fid].blob = blob; return d.files[fid];
@@ -113,7 +115,10 @@ function boot(fixture, opts) {
       // Like Apps Script: bytes are signed; invalid base64 throws.
       base64Decode: (s) => { if (!/^[A-Za-z0-9+/]*={0,2}$/.test(s) || s.length % 4) throw new Error('Invalid base64'); return Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)); },
       base64Encode: (b) => Buffer.from(b.map((x) => (x + 256) % 256)).toString('base64'),
-      newBlob: (bytes, mime, name) => ({ getBytes: () => bytes, getContentType: () => mime, getName: () => name }),
+      newBlob: (bytes, mime, name) => ({ getBytes: () => bytes, getContentType: () => mime, getName: () => name, getDataAsString: () => Buffer.from(bytes.map((x) => (x + 256) % 256)).toString('utf8') }),
+      base64EncodeWebSafe: (x) => Buffer.from(typeof x === 'string' ? x : x.map((b) => (b + 256) % 256)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
+      base64DecodeWebSafe: (s) => Array.from(Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')).map((b) => (b > 127 ? b - 256 : b)),
+      computeHmacSha256Signature: (v, k) => Array.from(crypto.createHmac('sha256', k).update(v).digest()).map((b) => (b > 127 ? b - 256 : b)),
       computeDigest: (a, x) => Array.from(crypto.createHash(a).update(typeof x === 'string' ? x : Buffer.from(x)).digest()).map((b) => (b > 127 ? b - 256 : b)),
       // Only the format the backend uses; Asia/Kolkata is UTC+5:30, anything else is UTC.
       formatDate: (d, tz, f) => {

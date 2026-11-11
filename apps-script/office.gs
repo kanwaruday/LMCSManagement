@@ -20,6 +20,8 @@ function doGet(e) {
 function doPost(e) {
   let b = null; try { b = JSON.parse((e.postData && e.postData.contents) || '{}'); } catch (err) { b = null; }
   if (b && officeActAsRefused_(b.actAs)) return ContentService.createTextOutput(JSON.stringify(OFFICE_SUPPORT_READ_ONLY)).setMimeType(ContentService.MimeType.JSON);
+  // the game's native screens (office-game.gs): the classic proxy's key-gated game* calls and the browser's ticket upload parts
+  if (b && typeof b.action === 'string' && /^game[A-Z]\w*$/.test(b.action) && typeof officeGame_ === 'function') return officeJson_(officeGame_(b));
   return officeHandle_(null, null, null, (e.postData && e.postData.contents) || '{}');
 }
 
@@ -49,35 +51,41 @@ function officeHandle_(action, idToken, data, rawBody) {
     if (typeof data === 'string') data = JSON.parse(data);
     caller = officeCaller_(idToken);
     if (!caller) return officeJson_({ success: false, error: 'Not authorized' });
-    data = data || {};
-    const def = officeAllActions_()[String(action || '')];
-    if (!def) return officeJson_({ success: false, error: 'Unknown action: ' + action });
-    let viaSubstitute = false;
-    if (!def.roles.some(function (r) { return caller.roles.indexOf(r) !== -1; })) {
-      // Only actions that declare `substitute: true` honour a Substitutes grant (active for data.campus on data.report_date).
-      viaSubstitute = !!def.substitute && officeIsSubstitute_(caller, data);
-      if (!viaSubstitute) return officeJson_({ success: false, error: 'FORBIDDEN_ROLE' });
-    }
-    // Enforced here so no module can forget it: any action naming a campus must be one the caller holds.
-    if (data.campus !== undefined && data.campus !== null && data.campus !== '') {
-      officeAssertCampus_(caller, data.campus);
-      data.campus = String(data.campus).trim().toUpperCase(); // canonical form: officeOpen_ builds its property key from it
-    }
-    const ctx = { caller: caller, now: officeNow_(), viaSubstitute: viaSubstitute };
-    if (!def.write) return officeJson_(Object.assign({ success: true }, def.run(ctx, data)));
-    const lock = LockService.getScriptLock();
-    lock.waitLock(20000);
-    try {
-      return officeJson_(Object.assign({ success: true }, def.run(ctx, data)));
-    } finally {
-      lock.releaseLock();
-    }
+    return officeJson_(officeDispatch_(caller, action, data || {}));
   } catch (err) {
     if (err.message === 'FORBIDDEN_CAMPUS' && action === 'file.view') officeAuditRefusal_(caller, action, data);
     // A thrown error with a `code` (e.g. DAY_CLOSED) returns both, so clients can branch on code.
     return officeJson_(err.code ? { success: false, code: err.code, error: err.message } : { success: false, error: err.message });
   } finally {
     OFFICE_MEMO = null;
+  }
+}
+
+// One action for a known caller: role check (or a Substitutes grant), campus check, then run, writes under the script lock.
+// Returns the response object; throws the action's errors. Shared by officeHandle_ (the portal's signed-in pages) and
+// officeGame_ (office-game.gs: the game's proxy, whose caller the game already checked), so both obey the same rules.
+function officeDispatch_(caller, action, data) {
+  const def = officeAllActions_()[String(action || '')];
+  if (!def) return { success: false, error: 'Unknown action: ' + action };
+  let viaSubstitute = false;
+  if (!def.roles.some(function (r) { return caller.roles.indexOf(r) !== -1; })) {
+    // Only actions that declare `substitute: true` honour a Substitutes grant (active for data.campus on data.report_date).
+    viaSubstitute = !!def.substitute && officeIsSubstitute_(caller, data);
+    if (!viaSubstitute) return { success: false, error: 'FORBIDDEN_ROLE' };
+  }
+  // Enforced here so no module can forget it: any action naming a campus must be one the caller holds.
+  if (data.campus !== undefined && data.campus !== null && data.campus !== '') {
+    officeAssertCampus_(caller, data.campus);
+    data.campus = String(data.campus).trim().toUpperCase(); // canonical form: officeOpen_ builds its property key from it
+  }
+  const ctx = { caller: caller, now: officeNow_(), viaSubstitute: viaSubstitute };
+  if (!def.write) return Object.assign({ success: true }, def.run(ctx, data));
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    return Object.assign({ success: true }, def.run(ctx, data));
+  } finally {
+    lock.releaseLock();
   }
 }
 

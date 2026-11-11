@@ -103,6 +103,7 @@
     "deploymentId": "AKfycbzdVhCwnTnMybe6cdcDC87PbINCFG1n6U7UncMHDvk9eHFG6hC4dn7oEiqJKki4-lULEw",
     "files": [
       "office",
+      "office-game",
       "office-store",
       "office-config",
       "office-daybook",
