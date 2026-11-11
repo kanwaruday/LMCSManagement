@@ -98,6 +98,11 @@ export const CODES = {
   START_BAD_DECISION: 'Choose approve or return.',
   NOTE_REQUIRED: 'A note is required: say what needs fixing, or what was not received.',
   HEADER_MISMATCH: 'A sheet in the books has different columns than expected. Ask Uday to check it before anything is saved.',
+  // the game's bridge (office-game.gs): these reach the game's screens, which word them; listed so every code has plain words
+  BAD_INPUT: 'Something in that entry is not in the right form. Check the numbers and try again.',
+  FAILED: 'That did not save. Try again in a minute.',
+  BAD_PART: 'Part of the photo did not arrive properly. Send it again.',
+  PARTS_MISSING: 'Part of the photo is missing. Send it again.',
 };
 export const explainCode = (code) => (code ? CODES[code] || String(code) : 'The server refused it.');
 // The backend throws plain errors, so the outbox often stores {code:null, error:'OPENING_LOCKED'}: use either.
