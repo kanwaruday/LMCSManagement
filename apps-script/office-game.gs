@@ -37,6 +37,7 @@ var OFFICE_GAME_ACTIONS = {
   gameHandoverDispute: { act: 'cash.dispute', write: true },
   gameReportGet: { act: 'report.get' },
   gameReportSubmit: { act: 'report.submit', write: true, num: ['footfall'], json: ['hourly', 'cash'] },
+  gameDriverFillDaybook: { act: 'driverfill.daybook', write: true }, // Fleet's office-driver-fills.gs action, unchanged: a confirmed fill into the day book
   gameFileView: { act: 'file.view' }, // the office marks it write only to take the lock for its Audit row; it changes no data
   gameFileTicket: { ticket: true, write: true },
 };
