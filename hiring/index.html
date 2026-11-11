@@ -216,7 +216,8 @@ let SESSION = null;
 let DATA = { applicants: [], statuses: [], rejectReasons: [], positions: [] };
 let APPROVAL_STATUS = { campuses: [] };
 let ROLES = [];             // every approved role in scope (from hiringapprovalstatus)
-let VIEW = 'today';
+// Deep links (game doors, 12 Nov): #today, #appts, #role (applicants by role), #actions, #pool open that tab; any other hash = Today.
+let VIEW = (function () { const h = location.hash.slice(1); return ['today', 'appts', 'role', 'actions', 'pool'].indexOf(h) !== -1 ? h : 'today'; })();
 let SEL = { all: true, campuses: [] }; // the shared campus picker's selection
 let selectedRoleKey = null;
 let OPEN_ROW = null;        // the candidate panel's row, so it re-renders after a save
