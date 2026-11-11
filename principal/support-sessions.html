@@ -219,6 +219,13 @@
       sel.innerHTML = SS_ROLES.map((r) => '<option value="' + r.key + '">' + esc(r.label) + '</option>').join('');
       const fromUrl = new URLSearchParams(location.search).get('role');
       if (fromUrl && SS_ROLES.some((r) => r.key === fromUrl)) sel.value = fromUrl;
+      // ?role=<key>&only=1 (a game door, 11 Nov): this one role's form only, no role picker, no link back to the old home
+      if (fromUrl && SS_ROLES.some((r) => r.key === fromUrl) && new URLSearchParams(location.search).get('only') === '1') {
+        sel.closest('.gb-field').style.display = 'none';
+        const card = sel.closest('.gb-card'); card.querySelector('h2').style.display = 'none'; card.querySelector('p.gb-muted').style.display = 'none';
+        document.querySelector('.gb-head a[href="index.html"]').style.display = 'none';
+        document.getElementById('ss-title').textContent = roleLabel(fromUrl).replace(/ SS$/, '') + ' Support Session';
+      }
     }
     function roleLabel(key) { const r = SS_ROLES.find((x) => x.key === key); return r ? r.label : key; }
 

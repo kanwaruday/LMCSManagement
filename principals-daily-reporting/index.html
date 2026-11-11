@@ -258,6 +258,8 @@ td{padding:6px 12px;vertical-align:middle}
 .apr-reply-hint{font-size:11.5px;color:var(--amber);font-weight:600;margin:8px 0 4px}
 .apr-reply-row input{border-color:var(--amber)}
 .apr-reply-row button{background:var(--amber)}
+/* ?only=<tab> (a game door, 11 Nov): that one panel, no tab bar, no link back to the old home */
+body.pdr-only .tabs, body.pdr-only .hdr-right { display: none; }
 </style>
 </head>
 <body>
@@ -829,6 +831,7 @@ async function init() {
     // A link ending in #approvals (the Hiring dashboard's Approvals button, for one) opens the Approvals tab straight away.
     // #principal (the game's daily-report mission) opens the report tab the same way.
     if (!restore && (location.hash === '#approvals' || location.hash === '#principal')) switchTab(location.hash.slice(1));
+    if (ONLY_TAB) { switchTab(ONLY_TAB); document.body.classList.add('pdr-only'); document.getElementById('hdrCtx').textContent = document.querySelector('.tab-btn[data-tab="' + ONLY_TAB + '"]').textContent; }
   } catch (err) {
     // A blank page on error is worse than an ugly one -- if init() throws
     // for any reason (e.g. a stale cached assets/auth.js missing a
@@ -2701,6 +2704,9 @@ async function aprPopulateLinkedActivityOptions_(campusId) {
   }).join('');
 }
 
+// ?only=home|principal|dashboard|approvals: a game door opens exactly that panel (Uday, 11 Nov: "multiple doors in our game that lead
+// to only one page of the older portal"). Unknown values fall back to the normal page.
+var ONLY_TAB = (function () { var t = new URLSearchParams(location.search).get('only'); return ['home', 'principal', 'dashboard', 'approvals'].indexOf(t) > -1 ? t : null; })();
 function switchTab(tab) {
   if (tab === 'approvals' && SELECTED_CAMPUS_ID) aprPopulateLinkedActivityOptions_(SELECTED_CAMPUS_ID);
   document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
