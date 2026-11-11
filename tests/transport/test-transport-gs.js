@@ -30,10 +30,10 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script/coordina
 
 const bus = (i, campus, extra) => Object.assign({ reg: 'HP' + i, bus: 'Bus ' + i, campus, operational: true, route: 'Route ' + i, start: '', driver: 'D' + i, seats: 40, year: 2020,
   driverCode: 'C' + i, driverStatus: 'verified', driverRosterName: 'D' + i, docs: {}, unreadable: [], noexpiry: [], other: [] }, extra || {});
-const fleet = [bus(1, 'LMS 1', { docs: { pollution: { date: '2027-03-01', file: 'p.pdf', link: 'L1' }, insurance: { date: '2027-04-04', file: 'i.pdf', link: 'L2', src: 'reread', note: 'LM Studio re-read: "Valid upto 04-04-2027"' } },
+const fleet = [bus(1, 'LMS 1', { driverMatch: 'exact', docs: { pollution: { date: '2027-03-01', file: 'p.pdf', link: 'L1' }, insurance: { date: '2027-04-04', file: 'i.pdf', link: 'L2', src: 'reread', note: 'LM Studio re-read: "Valid upto 04-04-2027"' } },
     unreadable: [{ key: 'fitness', file: 'f.pdf', link: 'L3' }], noexpiry: [{ key: 'speed_governor', file: 's.pdf', link: 'L4', note: 'speed governor installation certificate' }],
     other: [{ key: 'route_permit', file: 'r.pdf', link: 'L5', note: 'initial compliance certificate' }] }),
-  bus(2, 'LMS 2', { docs: { fitness: { date: '2027-01-01', file: 'f.pdf', link: 'L6' }, mv_tax: { date: '', na: true, src: 'override', note: 'not needed', file: '', link: '' } } })];
+  bus(2, 'LMS 2', { driverMatch: '=HYPERLINK("x")', docs: { fitness: { date: '2027-01-01', file: 'f.pdf', link: 'L6' }, mv_tax: { date: '', na: true, src: 'override', note: 'not needed', file: '', link: '' } } })];
 for (let i = 3; i <= 16; i++) fleet.push(bus(i, 'LMS 3'));
 const payload = { syncedAt: '2026-10-21T08:00:00Z', warnings: ['bad row'], fleet, people: [{ name: 'D1', campus: 'LMS 1', designation: 'DRIVER', code: 'C1', status: 'verified', rosterName: 'D1', rosterCampus: 'LMS 1', vehicles: ['HP1'] }],
   pnl: [{ reg: 'HP1', campus: 'LMS 1', month: '2026-09', fee: 100, fuel: 10, loan: 0, fixed: 5, pay: 20, note: '' }] };
@@ -104,7 +104,9 @@ assert.deepStrictEqual(pt.slice(1).find(r => r[1] === 'fuel').slice(6), [''], 'a
 assert.strictEqual(pt.slice(1).find(r => r[1] === 'make')[2], 'HYPERLINK("x")', 'a value never starts like a formula');
 assert.ok(!pt.some(r => r[1] === 'colour'), 'only the papers quest fields (and mfgYear) are stored');
 assert.strictEqual(pt.length, 5, 'header + chassisNo, fuel, mfgYear, make');
-assert.deepStrictEqual(JSON.parse(JSON.stringify(sheets.find(s => s.name === 'LM Studio Fleet').getDataRange().getValues()[0])), ['Reg', 'Bus', 'Campus', 'Running', 'Route', 'Start point', 'Driver', 'Seats', 'Year', 'Driver code', 'Driver link to staff master', 'Staff master name'], 'the fleet tab keeps its columns');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(sheets.find(s => s.name === 'LM Studio Fleet').getDataRange().getValues()[0])), ['Reg', 'Bus', 'Campus', 'Running', 'Route', 'Start point', 'Driver', 'Seats', 'Year', 'Driver code', 'Driver link to staff master', 'Staff master name', 'Driver match'], 'the fleet tab keeps its columns (Driver match added last, G2 12 Nov)');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(sheets.find(s => s.name === 'LM Studio Fleet').getDataRange().getValues().slice(1, 4).map(r => r[12]))), ['exact', '', ''], 'driverMatch is stored as exact | close | ambiguous; anything else (a formula, a push from before it existed) as empty');
+assert.deepStrictEqual(['HP1', 'HP2', 'HP3'].map(r => JSON.parse(JSON.stringify(run('coordTransportBase_()'))).fleet.find(b => b.reg === r).driverMatch), ['exact', '', ''], 'and read back for gamecrew');
 // an older push (from before the papers) never wipes the tab with nothing
 payload.fleet.forEach(b => { delete b.papers; });
 assert.strictEqual(run('coordTransportPush_({secret:"S3CRET",payload:payload})').success, true);

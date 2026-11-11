@@ -142,12 +142,13 @@ function coordGameKeyOk_(body) {
 
 /** POST gamecrew {key} (bus grants brief, 12 Nov): who drives which bus, as employee codes only, for lms-game's role_grants import.
  *  The driver's code comes from the fleet push (export_fleet.py link_staff) and is sent only when the staff master confirms it
- *  ('verified': code, name and campus agree), so a fuzzy name match never grants a person a bus. Bus in-charge teachers are not
+ *  ('verified': code, name and campus agree) AND the bus sheet's Driver Name matched exactly one person ('exact', G2 12 Nov): a
+ *  close name or a name several people share never grants a person a bus (those go to the push's warnings for a person to check). Bus in-charge teachers are not
  *  in the fleet data (their tie is the ERP Sheet's assignments, kind bus): inchargeEmpCode is null until a source exists here. */
 function coordGameCrew_(body) {
   if (!coordGameKeyOk_(body)) return { success: false, error: 'Not authorized' };
   return { success: true, crew: coordTransportBase_().fleet.filter(function (b) { return /^HP/.test(FleetQuests.normReg(b.reg)); }).map(function (b) {
-    return { reg: FleetQuests.normReg(b.reg), campus: gpsCampusId_(b.campus), driverEmpCode: b.driverStatus === 'verified' && b.driverCode ? String(b.driverCode).trim().toUpperCase() : null, inchargeEmpCode: null };
+    return { reg: FleetQuests.normReg(b.reg), campus: gpsCampusId_(b.campus), driverEmpCode: b.driverStatus === 'verified' && b.driverMatch === 'exact' && b.driverCode ? String(b.driverCode).trim().toUpperCase() : null, inchargeEmpCode: null };
   }) };
 }
 

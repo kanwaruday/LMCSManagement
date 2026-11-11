@@ -131,7 +131,7 @@ function coordTransportPush_(body) {
       const x = b.papers && b.papers[k];
       if (x && txt(x.value)) papers.push([b.reg, k, txt(x.value), txt(x.doc), txt(x.file), txt(x.link), x.disagree === true ? 'yes' : '']);
     });
-    fleet.push([b.reg, b.bus, b.campus, b.operational ? 'yes' : 'no', b.route || '', b.start || '', b.driver || '', b.seats || '', b.year || '', b.driverCode || '', b.driverStatus || '', b.driverRosterName || '']);
+    fleet.push([b.reg, b.bus, b.campus, b.operational ? 'yes' : 'no', b.route || '', b.start || '', b.driver || '', b.seats || '', b.year || '', b.driverCode || '', b.driverStatus || '', b.driverRosterName || '', ['exact', 'close', 'ambiguous'].indexOf(b.driverMatch) !== -1 ? b.driverMatch : '']);
     Object.keys(b.docs || {}).forEach(function (k) {
       const d = b.docs[k];
       if (!label[k]) return;
@@ -149,7 +149,7 @@ function coordTransportPush_(body) {
   lock.waitLock(20000);
   try {
     const ss = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID);
-    coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_FLEET, ['Reg', 'Bus', 'Campus', 'Running', 'Route', 'Start point', 'Driver', 'Seats', 'Year', 'Driver code', 'Driver link to staff master', 'Staff master name'], fleet);
+    coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_FLEET, ['Reg', 'Bus', 'Campus', 'Running', 'Route', 'Start point', 'Driver', 'Seats', 'Year', 'Driver code', 'Driver link to staff master', 'Staff master name', 'Driver match'], fleet);
     if (Array.isArray(p.people) && p.people.length) {
       coordTransportWriteTab_(ss, COORD_TRANSPORT_TAB_PEOPLE, ['Name', 'Campus', 'Designation', 'Employee code', 'Link to staff master', 'Staff master name', 'Staff master campus', 'Buses'],
         p.people.map(function (q) { return [q.name, q.campus, q.designation, q.code, q.status, q.rosterName || '', q.rosterCampus || '', (q.vehicles || []).join(', ')]; }));
@@ -194,7 +194,7 @@ function coordTransportBase_() {
   const meta = {};
   syncRows.forEach(function (r) { meta[String(r[0])] = String(r[1]); });
   const fleet = fleetRows.map(function (r) {
-    return { reg: String(r[0]), bus: r[1], campus: String(r[2]), operational: r[3] === 'yes', route: r[4], start: r[5], driver: r[6], seats: r[7], year: r[8], driverCode: String(r[9] || ''), driverStatus: String(r[10] || ''), driverRosterName: String(r[11] || ''), docs: {}, unreadable: [], noexpiry: [], other: [] };
+    return { reg: String(r[0]), bus: r[1], campus: String(r[2]), operational: r[3] === 'yes', route: r[4], start: r[5], driver: r[6], seats: r[7], year: r[8], driverCode: String(r[9] || ''), driverStatus: String(r[10] || ''), driverRosterName: String(r[11] || ''), driverMatch: String(r[12] || ''), docs: {}, unreadable: [], noexpiry: [], other: [] };
   });
   const byReg = {}, keyOf = {};
   fleet.forEach(function (b) { byReg[b.reg] = b; });

@@ -360,7 +360,9 @@ def staff_roster():
 def link_staff(wb, mapping, fleet):
     """Link every person on the transport Man Power sheet, and every bus driver, to the staff master by employee code.
     Status per person: verified | campus differs | name differs | code not in staff master | no employee code | not checked.
-    Adds driverCode / driverStatus / driverRosterName to each vehicle. Returns the people list (no pay figures)."""
+    Adds driverCode / driverStatus / driverRosterName / driverMatch to each vehicle. Returns the people list (no pay figures).
+    driverMatch: 'exact' only when the bus sheet's Driver Name equals exactly one person's name at that campus; 'ambiguous' when it
+    equals several (same-name people), 'close' for a difflib hit, '' for none. Only 'exact' may become a grant (gamecrew, G2 12 Nov)."""
     roster = staff_roster()
     people = []
     for r in sheet(wb, "Man Power Info."):
@@ -385,6 +387,8 @@ def link_staff(wb, mapping, fleet):
         pool = {norm(p["name"]): p for p in people if norm(p["campus"]) == norm(v["campus"])}
         hit = name if name in pool else next(iter(difflib.get_close_matches(name, pool, n=1, cutoff=0.8)), "") if name else ""
         p = pool.get(hit)
+        same = sum(norm(q["name"]) == hit for q in people if norm(q["campus"]) == norm(v["campus"])) if p else 0
+        v["driverMatch"] = "" if not p else "close" if hit != name else "exact" if same == 1 else "ambiguous"
         v["driverCode"], v["driverStatus"], v["driverRosterName"] = (p["code"], p["status"], p["rosterName"]) if p else ("", "", "")
         if p:
             p["vehicles"].append(v["reg"])
@@ -450,8 +454,27 @@ def selftest():
     finally:
         subprocess.run = real
     print("export_fleet selftest: 4 checks passed")
+    selftest_match()
     selftest_papers()
     selftest_plan()
+
+
+def selftest_match():
+    """driverMatch on SYNTHETIC people (made-up names): only a unique exact name is 'exact'."""
+    global staff_roster, sheet
+    real_roster, real_sheet = staff_roster, sheet
+    staff_roster = lambda: None
+    sheet = lambda wb, name: [{"Employee Code": c, "Name": n, "School": "LMS 1", "Designation": "Driver"} for c, n in
+                              (("X/1", "Amit Kumar"), ("X/2", "Ravi Sharma"), ("X/3", "Ravi Sharma"), ("X/4", "Sunil Verma"))]
+    try:
+        fleet = [{"reg": r, "campus": "LMS 1"} for r in ("HP1", "HP2", "HP3", "HP4")]
+        mapping = {"HP1": {"Driver Name": "Amit Kumar"}, "HP2": {"Driver Name": "Ravi Sharma"}, "HP3": {"Driver Name": "Sunil Varma"}, "HP4": {"Driver Name": "Nobody Here"}}
+        link_staff(None, mapping, fleet)
+        got = [(v["driverMatch"], v["driverCode"]) for v in fleet]
+        assert got == [("exact", "X/1"), ("ambiguous", "X/3"), ("close", "X/4"), ("", "")], got
+    finally:
+        staff_roster, sheet = real_roster, real_sheet
+    print("driver match selftest: 1 check passed")
 
 
 def selftest_plan():
@@ -590,6 +613,8 @@ def main():
                       "noexpiry": s.get(reg, {}).get("noexpiry", []), "other": s.get(reg, {}).get("other", [])})
     people = link_staff(wb, mapping, fleet)
     ov, warnings = overrides({v["reg"] for v in fleet})
+    warnings += [f"{v['reg']}: driver matched by {'a close name' if v['driverMatch'] == 'close' else 'a name shared by several people'}; check the Driver Name on the bus sheet (no game grant until it matches one person exactly)"
+                 for v in fleet if v["driverMatch"] in ("close", "ambiguous")]
     papers = papers_from(paper_records())
     paper_overrides(papers, ov)
     for v in fleet:
