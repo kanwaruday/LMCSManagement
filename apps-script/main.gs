@@ -95,6 +95,9 @@
 //                         `classic` proxy. Key-gated (Script properties
 //                         GAME_KEY, GAME_PEOPLE_SECRET), the same
 //                         approvals.gs rules, names instead of emails.
+//   game-hr.gs          -- action=gameHr* (POST, 2026-11-12, W7, N3): the
+//                         Owner's hiring room. Key-gated (GAME_KEY), Owner
+//                         only, masked; reveals audited ("Game Reveals").
 //
 // Naming convention: shared helpers/constants (this file) have no
 // prefix. Concern-specific files use a short prefix matching their
@@ -224,6 +227,7 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     if (/^gameApproval/.test(String(body.action || ''))) return jsonOut_(gameApprovalsDispatch_(body)); // lms-game W4 Approvals room (game-approvals.gs): key-gated, the person from the game's verified JWT
+    if (/^gameHr[A-Z]/.test(String(body.action || ''))) return jsonOut_(gameHrDispatch_(body)); // lms-game W7 Owner hiring room (game-hr.gs, N3): key-gated, Owner only, the person from the game's verified JWT
     if (/^game(pdr|ss)[a-z]/.test(String(body.action || '').toLowerCase())) return jsonOut_(pdrGame_(body)); // lms-game's classic proxy, Wave 1 (lane-e): gamePdr*/gameSs*, key in the body, no ID token (principal-dr.gs)
     const verified = verifyCallerToken_(body.idToken);
     if (!verified) return jsonOut_({ success: false, error: 'Not authorized' });
