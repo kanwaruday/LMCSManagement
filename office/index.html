@@ -61,6 +61,8 @@
     import { canSeeAccounts, liveToken } from './js/accounts.js';
     import { startScope } from './js/starting-data.js';
     import { PDR_BACKEND_URL, COORD_BACKEND_URL } from './js/config.js';
+    import { goPanel } from './js/deep-link.js';
+    addEventListener('hashchange', () => goPanel(document, location.hash));
     bootOffice({ onReady: (session, api, outbox) => {
       if (canSeeAccounts(session)) { const a = document.createElement('a'); a.className = 'btn-lg'; a.href = 'accounts.html'; a.textContent = 'Accounts'; document.querySelector('.office-nav').append(a); }
       if (startScope(session)) { const a = document.createElement('a'); a.className = 'btn-lg'; a.href = 'starting-data.html'; a.textContent = 'Starting data'; document.querySelector('.office-nav').append(a); }
@@ -69,7 +71,7 @@
       try { showBusChecks(document.getElementById('buses-link'), document.getElementById('bus-banner'), (...a) => fetch(...a), COORD_BACKEND_URL, liveToken(window.LMCS, session)); } catch (e) { /* signed out: plain link */ }
       try { window.LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: window.LMCS.getSession() || session }); } catch (e) { /* box is optional */ }
       showHandovers(document.getElementById('handovers'), api, outbox).catch(() => {});
-      return showToday(document.getElementById('today'), session, api);
+      return showToday(document.getElementById('today'), session, api).finally(() => goPanel(document, location.hash)); // a game door's #panel, once drawn
     } });
   </script>
 </body>
