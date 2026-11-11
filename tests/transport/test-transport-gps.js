@@ -234,6 +234,8 @@ assert.strictEqual(J(run('coordWorldCaller_("t")')).campusId, 'LMS4', 'a Princip
     '{reg:"HP1",trip:"AM-1",date:"2026-11-10",path:JSON.stringify([[31.5,76.5],[31.6,76.9],[31.61,76.91]])},' +
     '{reg:"HP1",trip:"PM-1",date:"2026-11-10",path:"not json"},' +
     '{reg:"HP7",trip:"AM-1",date:"2026-11-10",path:JSON.stringify([[31.9,77.1]])}])');
+  const stopsBefore = J(run('gpsRows_(GPS_TAB_STOPS)'));
+  run('gpsWrite_(GPS_TAB_STOPS, GPS_STOP_COLS, ' + JSON.stringify(stopsBefore.concat([{ bus: 'HP1', trip: 'PM-1', seq: 9, kind: 'end', place: 'Home Lane 4', lat: 31.5004, lng: 76.5003 }])) + ')'); // HP1's last "stop": its night spot
   run('gpsWrite_(GPS_TAB_DAILY, GPS_DAILY_COLS, [{reg:"HP1",date:todayIso,km:40,nightLat:31.5,nightLng:76.5,nightPlace:"Home Lane 4"}])'); // HP1 parks at 31.5, 76.5
   ctx.coordBusFetch_ = () => ({ at: 'x', buses: [
     { reg: 'HP1', lat: 31.6, lng: 76.9, speed: 30, at: '2026-11-10T07:30:00+05:30', state: 'moving', place: 'Main Road, Village A', kmToday: 12, bbid: 'B1' },
@@ -251,6 +253,7 @@ assert.strictEqual(J(run('coordWorldCaller_("t")')).campusId, 'LMS4', 'a Princip
   const one = gw({ key: 'long-game-key-123', campuses: ['LMS4'] });
   assert.strictEqual(one.success, true, 'the right key reads');
   assert.deepStrictEqual([one.vehicles.map((v) => v.reg), one.stops.map((x) => x.bus), one.tracks.map((t) => t.reg), one.live.map((l) => l.reg)], [['HP1'], ['HP1'], ['HP1', 'HP1'], ['HP1']], 'campuses ["LMS4"]: LMS 4\'s bus only');
+  assert.ok(!one.stops.some((x) => x.seq === 9), 'a stop within 300 m of the bus\'s night spot is dropped');
   assert.deepStrictEqual(one.tracks.map((t) => [t.trip, t.date]), [['AM-1', '2026-11-10'], ['PM-1', '2026-11-10']], 'only the newest date, all its trips');
   assert.deepStrictEqual(one.tracks[0].path, [[31.6, 76.9], [31.61, 76.91]], 'track points at the night spot are dropped');
   assert.deepStrictEqual(one.tracks[1].path, [], 'a bad path cell is an empty path');
@@ -271,6 +274,7 @@ assert.strictEqual(J(run('coordWorldCaller_("t")')).campusId, 'LMS4', 'a Princip
   assert.deepStrictEqual([down.success, down.live, down.vehicles.length], [true, [], 1], 'the GPS provider down: routes still answer, no live fixes');
   assert.ok(/'gameworld'\) return coordJson_\(coordGameWorld_\(body\)\)/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8')), 'doPost routes gameworld (key in the body, never a GET)');
   assert.ok(!/gameworld/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8').split('function doPost')[0]), 'no GET gameworld (a key in a URL ends up in logs)');
+  run('gpsWrite_(GPS_TAB_STOPS, GPS_STOP_COLS, ' + JSON.stringify(stopsBefore) + ')');
   ctx.PropertiesService = props; ctx.coordBusFetch_ = fetchLive;
 }
 

@@ -120,7 +120,7 @@ function coordSameKey_(want, got) {
 const COORD_GAME_NIGHT_M_ = 300; // a point this close to where the bus has parked at night is dropped (a driver's home, often)
 
 /** POST gameworld (see the top of this file): an allowlist, field by field. Never driver names, phones, place text, night parking,
- *  money, roll call, photos or students. Live fixes and track points near any night spot of that bus (GPS Daily nightLat/nightLng,
+ *  money, roll call, photos or students. Stops, live fixes and track points near any night spot of that bus (GPS Daily nightLat/nightLng,
  *  last 30 days, and GPS Meta bases) are dropped here, so night points never leave even if the game forgets to trim. */
 function coordGameWorld_(body) {
   const want = String(PropertiesService.getScriptProperties().getProperty('GAME_READ_KEY') || '').trim();
@@ -138,7 +138,8 @@ function coordGameWorld_(body) {
     return nights[reg].every(function (n) { const dy = (lat - n[0]) * 111320, dx = (lng - n[1]) * 111320 * Math.cos(lat * Math.PI / 180); return dx * dx + dy * dy > COORD_GAME_NIGHT_M_ * COORD_GAME_NIGHT_M_; });
   };
   const num = function (x) { const n = Number(x); return isFinite(n) ? n : null; };
-  const stops = gpsRows_(GPS_TAB_STOPS).filter(function (st) { return regs[st.bus]; })
+  const stops = gpsRows_(GPS_TAB_STOPS).filter(function (st) { // a stop at the night spot is where the bus parks, not a stop (G2b, 11 Nov)
+    return regs[st.bus] && isFinite(Number(st.lat)) && isFinite(Number(st.lng)) && away(st.bus, Number(st.lat), Number(st.lng)); })
     .map(function (st) { return { bus: st.bus, trip: String(st.trip || ''), seq: num(st.seq), kind: String(st.kind || ''), lat: num(st.lat), lng: num(st.lng) }; });
   const newest = {};
   const rows = gpsRows_(GPS_TAB_TRACKS).filter(function (t) { return regs[t.reg]; });
