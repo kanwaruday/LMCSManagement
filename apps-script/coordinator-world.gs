@@ -12,6 +12,7 @@
 //                       11 Nov: "yes, go with A"). key = Script property GAME_READ_KEY, compared in constant time; unset or wrong:
 //                       Not authorized. Buses, stops (place, time only, no text), the newest day's tracks and live fixes: see coordGameWorld_.
 //                       With run: {reg, runId}, instead {ticket, rosterUrl} for that one processed run: see coordGameRunTicket_.
+//   POST gamecrew       {key}: the same key; [{reg, campus, driverEmpCode, inchargeEmpCode}], employee codes only: see coordGameCrew_.
 // Never where a bus parks at night (GPS Meta bases: often a driver's home).
 // The page side is coordinator/route-map.js (LMCSRouteMap.mount), which draws it with coordinator/transport-views.js.
 
@@ -133,12 +134,28 @@ function coordSameKey_(want, got) {
 
 const COORD_GAME_NIGHT_M_ = 300; // a point this close to where the bus has parked at night is dropped (a driver's home, often)
 
+/** gameworld and gamecrew: the key in the body against Script property GAME_READ_KEY; unset or wrong: false. */
+function coordGameKeyOk_(body) {
+  const want = String(PropertiesService.getScriptProperties().getProperty('GAME_READ_KEY') || '').trim();
+  return !!(want && body && typeof body.key === 'string' && coordSameKey_(want, body.key.trim()));
+}
+
+/** POST gamecrew {key} (bus grants brief, 12 Nov): who drives which bus, as employee codes only, for lms-game's role_grants import.
+ *  The driver's code comes from the fleet push (export_fleet.py link_staff) and is sent only when the staff master confirms it
+ *  ('verified': code, name and campus agree), so a fuzzy name match never grants a person a bus. Bus in-charge teachers are not
+ *  in the fleet data (their tie is the ERP Sheet's assignments, kind bus): inchargeEmpCode is null until a source exists here. */
+function coordGameCrew_(body) {
+  if (!coordGameKeyOk_(body)) return { success: false, error: 'Not authorized' };
+  return { success: true, crew: coordTransportBase_().fleet.filter(function (b) { return /^HP/.test(FleetQuests.normReg(b.reg)); }).map(function (b) {
+    return { reg: FleetQuests.normReg(b.reg), campus: gpsCampusId_(b.campus), driverEmpCode: b.driverStatus === 'verified' && b.driverCode ? String(b.driverCode).trim().toUpperCase() : null, inchargeEmpCode: null };
+  }) };
+}
+
 /** POST gameworld (see the top of this file): an allowlist, field by field. Never driver names, phones, place text, night parking,
  *  money, roll call, photos or students. Stops, live fixes and track points near any night spot of that bus (GPS Daily nightLat/nightLng,
  *  last 30 days, and GPS Meta bases) are dropped here, so night points never leave even if the game forgets to trim. */
 function coordGameWorld_(body) {
-  const want = String(PropertiesService.getScriptProperties().getProperty('GAME_READ_KEY') || '').trim();
-  if (!want || !body || typeof body.key !== 'string' || !coordSameKey_(want, body.key.trim())) return { success: false, error: 'Not authorized' };
+  if (!coordGameKeyOk_(body)) return { success: false, error: 'Not authorized' };
   const all = body.campuses === '*', asked = Array.isArray(body.campuses) ? body.campuses.map(String) : [];
   const meta = gpsMeta_(), base = coordTransportBase_(), today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
   const vehicles = base.fleet.filter(function (b) { return /^HP/.test(b.reg) && (all || asked.indexOf(gpsCampusId_(b.campus)) !== -1); })
