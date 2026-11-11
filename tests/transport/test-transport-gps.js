@@ -225,6 +225,55 @@ assert.strictEqual(J(run('coordWorldCaller_("t")')), null, 'a teacher or a stran
 ctx.coordVerifyPrincipal_ = () => ({ email: 'p4@x.org', campusId: 'LMS4', principal: true });
 assert.strictEqual(J(run('coordWorldCaller_("t")')).campusId, 'LMS4', 'a Principal passes the World gate');
 
+// ── gameworld (Lane T, Jarvis 11 Nov "yes, go with A"): lms-game's server-to-server read; key in the body vs GAME_READ_KEY; an allowlist ──
+{
+  const props = ctx.PropertiesService, fetchLive = ctx.coordBusFetch_;
+  const withKey = (k) => { ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: (n) => (n === 'GAME_READ_KEY' ? k : n === 'TRANSPORT_PUSH_SECRET' ? 'S' : null) }) }; };
+  run('gpsWrite_(GPS_TAB_TRACKS, ["reg","trip","date","path"], [' +
+    '{reg:"HP1",trip:"AM-1",date:"2026-11-09",path:JSON.stringify([[31.7,76.8],[31.71,76.81]])},' +
+    '{reg:"HP1",trip:"AM-1",date:"2026-11-10",path:JSON.stringify([[31.5,76.5],[31.6,76.9],[31.61,76.91]])},' +
+    '{reg:"HP1",trip:"PM-1",date:"2026-11-10",path:"not json"},' +
+    '{reg:"HP7",trip:"AM-1",date:"2026-11-10",path:JSON.stringify([[31.9,77.1]])}])');
+  run('gpsWrite_(GPS_TAB_DAILY, GPS_DAILY_COLS, [{reg:"HP1",date:todayIso,km:40,nightLat:31.5,nightLng:76.5,nightPlace:"Home Lane 4"}])'); // HP1 parks at 31.5, 76.5
+  ctx.coordBusFetch_ = () => ({ at: 'x', buses: [
+    { reg: 'HP1', lat: 31.6, lng: 76.9, speed: 30, at: '2026-11-10T07:30:00+05:30', state: 'moving', place: 'Main Road, Village A', kmToday: 12, bbid: 'B1' },
+    { reg: 'HP1', lat: 31.5005, lng: 76.5005, speed: 0, at: '2026-11-10T22:00:00+05:30', place: 'Home Lane 4' }, // at the night spot
+    { reg: 'HP7', lat: 31.9, lng: 77.1, speed: 0, at: '2026-11-10T07:00:00+05:30', place: 'Village B' }] });
+  const gw = (b) => J(run('coordGameWorld_(' + JSON.stringify(b) + ')'));
+  withKey(null);
+  assert.strictEqual(gw({ key: '', campuses: '*' }).error, 'Not authorized', 'GAME_READ_KEY unset: refused, even an empty key');
+  assert.strictEqual(gw({ key: 'anything', campuses: '*' }).error, 'Not authorized', 'unset: any key refused');
+  withKey('long-game-key-123');
+  assert.strictEqual(gw({ key: 'long-game-key-124', campuses: '*' }).error, 'Not authorized', 'a wrong key is refused');
+  assert.strictEqual(gw({ key: 'long-game-key-12', campuses: '*' }).error, 'Not authorized', 'a key one character short is refused');
+  assert.strictEqual(gw({ campuses: '*' }).error, 'Not authorized', 'no key, nothing');
+  assert.strictEqual(gw({ key: ['long-game-key-123'], campuses: '*' }).error, 'Not authorized', 'a key that is not a string is refused');
+  const one = gw({ key: 'long-game-key-123', campuses: ['LMS4'] });
+  assert.strictEqual(one.success, true, 'the right key reads');
+  assert.deepStrictEqual([one.vehicles.map((v) => v.reg), one.stops.map((x) => x.bus), one.tracks.map((t) => t.reg), one.live.map((l) => l.reg)], [['HP1'], ['HP1'], ['HP1', 'HP1'], ['HP1']], 'campuses ["LMS4"]: LMS 4\'s bus only');
+  assert.deepStrictEqual(one.tracks.map((t) => [t.trip, t.date]), [['AM-1', '2026-11-10'], ['PM-1', '2026-11-10']], 'only the newest date, all its trips');
+  assert.deepStrictEqual(one.tracks[0].path, [[31.6, 76.9], [31.61, 76.91]], 'track points at the night spot are dropped');
+  assert.deepStrictEqual(one.tracks[1].path, [], 'a bad path cell is an empty path');
+  assert.deepStrictEqual(one.live, [{ reg: 'HP1', lat: 31.6, lng: 76.9, speed: 30, at: '2026-11-10T07:30:00+05:30' }], 'a live fix at the night spot is dropped; the rest is position, speed and time only');
+  assert.deepStrictEqual(gw({ key: 'long-game-key-123', campuses: '*' }).vehicles.map((v) => v.reg), ['HP1', 'HP7'], '"*": every campus');
+  assert.deepStrictEqual(gw({ key: 'long-game-key-123', campuses: 'LMS4' }).vehicles, [], 'campuses neither a list nor "*": nothing');
+  // the allowlist: every key in the answer is one of these; nothing else can leave
+  const allowed = { '': ['success', 'syncedAt', 'vehicles', 'stops', 'tracks', 'live'], vehicles: ['reg', 'campusId', 'route'], stops: ['bus', 'trip', 'seq', 'kind', 'lat', 'lng'],
+    tracks: ['reg', 'trip', 'date', 'path'], live: ['reg', 'lat', 'lng', 'speed', 'at'] };
+  const all = gw({ key: 'long-game-key-123', campuses: '*' });
+  Object.keys(all).forEach((k) => assert.ok(allowed[''].includes(k), 'top-level key allowed: ' + k));
+  ['vehicles', 'stops', 'tracks', 'live'].forEach((part) => all[part].forEach((row) => Object.keys(row).forEach((k) => assert.ok(allowed[part].includes(k), part + ' key allowed: ' + k))));
+  const text = JSON.stringify(all);
+  ['Driver One', 'Driver Seven', 'Village A', 'Village B', 'Home Lane 4', 'Main Road', 'driver', 'place', 'night', 'bases', 'phone', 'pnl', 'fee', 'fuel', 'rollCall', 'counts', 'photo', 'student', 'bbid', 'shared_with']
+    .forEach((w) => assert.ok(!text.includes(w), 'never in the answer: ' + w));
+  ctx.coordBusFetch_ = () => { throw new Error('GPS provider down'); };
+  const down = gw({ key: 'long-game-key-123', campuses: ['LMS4'] });
+  assert.deepStrictEqual([down.success, down.live, down.vehicles.length], [true, [], 1], 'the GPS provider down: routes still answer, no live fixes');
+  assert.ok(/'gameworld'\) return coordJson_\(coordGameWorld_\(body\)\)/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8')), 'doPost routes gameworld (key in the body, never a GET)');
+  assert.ok(!/gameworld/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8').split('function doPost')[0]), 'no GET gameworld (a key in a URL ends up in logs)');
+  ctx.PropertiesService = props; ctx.coordBusFetch_ = fetchLive;
+}
+
 // ── capture runs (Task 7): the Mac pulls the ended timelapse runs and pushes back the processed ones; stops carry counts only ──
 book(run('COORD_TRANSPORT_FORM_ID')).insertSheet('Capture Runs')._rows().push(
   ['Run ID', 'Reg', 'Campus', 'Kind (timelapse/count/inspection)', 'Started', 'Ended', 'By', 'Role', 'Frames', 'Gaps JSON', 'Stops JSON', 'Inspection JSON', 'Status', 'Frame Times JSON'],

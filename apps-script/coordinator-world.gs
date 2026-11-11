@@ -8,6 +8,9 @@
 //                       and leave it only through here, for the caller's own campuses.
 //   GET transportrun    the route view of one bus (reg, optional runId), for every World caller on their own buses: see coordWorldRun_.
 //   POST transportrun   {deviceToken, reg, runId}: a linked driver phone, its own bus only.
+//   POST gameworld      {key, campuses: ['LMS2'] | '*'}: lms-game's read-only transport Edge Function, server to server (Lane T, Jarvis
+//                       11 Nov: "yes, go with A"). key = Script property GAME_READ_KEY, compared in constant time; unset or wrong:
+//                       Not authorized. Buses, stops (place, time only, no text), the newest day's tracks and live fixes: see coordGameWorld_.
 // Never where a bus parks at night (GPS Meta bases: often a driver's home).
 // The page side is coordinator/route-map.js (LMCSRouteMap.mount), which draws it with coordinator/transport-views.js.
 
@@ -104,4 +107,50 @@ function coordWorldRun_(caller, reg, runId) {
 function coordRunTicket_(reg, runId, exp) {
   const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
   return { reg: reg, runId: runId, exp: exp, sig: Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature('runview|' + reg + '|' + runId + '|' + exp, secret)) }; // 'runview|': this signature means nothing anywhere else
+}
+
+/** Constant-time string compare: a wrong key takes as long as a nearly right one. */
+function coordSameKey_(want, got) {
+  want = String(want); got = String(got);
+  let diff = want.length ^ got.length;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i % (got.length || 1));
+  return diff === 0;
+}
+
+const COORD_GAME_NIGHT_M_ = 300; // a point this close to where the bus has parked at night is dropped (a driver's home, often)
+
+/** POST gameworld (see the top of this file): an allowlist, field by field. Never driver names, phones, place text, night parking,
+ *  money, roll call, photos or students. Live fixes and track points near any night spot of that bus (GPS Daily nightLat/nightLng,
+ *  last 30 days, and GPS Meta bases) are dropped here, so night points never leave even if the game forgets to trim. */
+function coordGameWorld_(body) {
+  const want = String(PropertiesService.getScriptProperties().getProperty('GAME_READ_KEY') || '').trim();
+  if (!want || !body || typeof body.key !== 'string' || !coordSameKey_(want, body.key.trim())) return { success: false, error: 'Not authorized' };
+  const all = body.campuses === '*', asked = Array.isArray(body.campuses) ? body.campuses.map(String) : [];
+  const meta = gpsMeta_(), base = coordTransportBase_(), today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
+  const vehicles = base.fleet.filter(function (b) { return /^HP/.test(b.reg) && (all || asked.indexOf(gpsCampusId_(b.campus)) !== -1); })
+    .map(function (b) { return { reg: b.reg, campusId: gpsCampusId_(b.campus), route: String(b.route || '') }; });
+  const regs = {}, nights = {};
+  vehicles.forEach(function (v) { regs[v.reg] = true; nights[v.reg] = []; });
+  const night = function (reg, lat, lng) { lat = Number(lat); lng = Number(lng); if (nights[reg] && isFinite(lat) && isFinite(lng) && (lat || lng)) nights[reg].push([lat, lng]); };
+  gpsRows_(GPS_TAB_DAILY).forEach(function (d) { if (d.date > gpsAddDays_(today, -30)) night(d.reg, d.nightLat, d.nightLng); });
+  (meta.bases || []).forEach(function (b) { if (b) night(b.reg, b.lat, b.lng); });
+  const away = function (reg, lat, lng) { // ponytail: flat-earth metres, fine at a few hundred metres in one valley
+    return nights[reg].every(function (n) { const dy = (lat - n[0]) * 111320, dx = (lng - n[1]) * 111320 * Math.cos(lat * Math.PI / 180); return dx * dx + dy * dy > COORD_GAME_NIGHT_M_ * COORD_GAME_NIGHT_M_; });
+  };
+  const num = function (x) { const n = Number(x); return isFinite(n) ? n : null; };
+  const stops = gpsRows_(GPS_TAB_STOPS).filter(function (st) { return regs[st.bus]; })
+    .map(function (st) { return { bus: st.bus, trip: String(st.trip || ''), seq: num(st.seq), kind: String(st.kind || ''), lat: num(st.lat), lng: num(st.lng) }; });
+  const newest = {};
+  const rows = gpsRows_(GPS_TAB_TRACKS).filter(function (t) { return regs[t.reg]; });
+  rows.forEach(function (t) { if (!newest[t.reg] || String(t.date) > newest[t.reg]) newest[t.reg] = String(t.date); });
+  const tracks = rows.filter(function (t) { return String(t.date) === newest[t.reg]; }).map(function (t) {
+    return { reg: t.reg, trip: String(t.trip || ''), date: String(t.date), path: coordWorldPath_(t.path).filter(function (p) {
+      return Array.isArray(p) && isFinite(Number(p[0])) && isFinite(Number(p[1])) && away(t.reg, Number(p[0]), Number(p[1])); }).map(function (p) { return [Number(p[0]), Number(p[1])]; }) };
+  });
+  let live = [];
+  try {
+    live = coordBusFetch_().buses.filter(function (g) { return regs[g.reg] && away(g.reg, g.lat, g.lng); })
+      .map(function (g) { return { reg: g.reg, lat: g.lat, lng: g.lng, speed: Number(g.speed) || 0, at: String(g.at || '') }; });
+  } catch (e) { live = []; } // the GPS provider down: routes still answer, no live fixes
+  return { success: true, syncedAt: meta.syncedAt, vehicles: vehicles, stops: stops, tracks: tracks, live: live };
 }

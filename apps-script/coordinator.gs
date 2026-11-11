@@ -177,6 +177,7 @@ function doPost(e) {
     // the drive-index sync on Uday's Mac pushes transport data here with a shared secret, not a Google ID token
     if (String(body.action || '').toLowerCase() === 'transportpush') return coordJson_(coordTransportPush_(body));
     if (String(body.action || '').toLowerCase() === 'driverbus') return coordJson_(coordDriverBus_(body)); // a linked driver phone, deviceToken (coordinator-driverbus.gs)
+    if (String(body.action || '').toLowerCase() === 'gameworld') return coordJson_(coordGameWorld_(body)); // lms-game's transport Edge Function, key in the body (coordinator-world.gs)
     if (String(body.action || '').toLowerCase() === 'transportrun') return coordJson_(coordWorldRun_(coordRunDriver_(body.deviceToken), body.reg, body.runId)); // a linked driver phone: its own bus's run only (coordinator-world.gs)
     if (String(body.action || '').toLowerCase() === 'pdrpush') return coordJson_(coordPdrPush_(body));
     if (String(body.action || '').toLowerCase() === 'pdrtagpush') return coordJson_(coordPdrTagPush_(body));
