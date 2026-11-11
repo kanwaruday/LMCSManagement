@@ -18,6 +18,40 @@
    allowlist yet. Use LMCS.canManageStaff(session) rather than checking
    role directly, so the actual rule only lives in one place. */
 
+// ── The old portal's front doors now open the game (Uday, 12 Nov: "yes close the door, but ensure that the newer interfaces
+// start to roll out asap"). A bare visit to an ENTRY page (site root and the role homes below) goes on to the game. A visit
+// that came through a game door (?from=game, or the older ?only=) sets a flag for this tab, and nothing in that tab redirects
+// again. Every other page (driver/*, the capture camera, any screen a door opens) is never redirected: only the listed homes
+// are. No base (auth.js not loaded as a script, as in tests) or blocked storage = no redirect, so nobody is ever trapped.
+window.LMCSGameDoor = (function () {
+  const GAME = 'https://lms-game.pages.dev/';
+  const FLAG = 'lmcs_from_game';
+  const ENTRY = ['', 'principal/', 'office/', 'teacher/', 'coordinator/', 'coordinator/hq.html', 'coordinator/systems/', 'staff-home/', 'owner/'];
+  /** the page's path under the portal's base ('' = the root), or null when it isn't under it */
+  function rel(href, selfSrc) {
+    try {
+      const base = new URL('../', selfSrc).pathname, path = new URL(href).pathname;
+      return path.startsWith(base) ? path.slice(base.length).replace(/(^|\/)index\.html$/, '$1') : null;
+    } catch (e) { return null; }
+  }
+  const isEntry = (r) => r !== null && ENTRY.includes(r);
+  /** true = send this visit to the game. Marks the tab when the visit came through a door. */
+  function decide(href, selfSrc, store) {
+    if (!selfSrc || !store) return false;
+    try {
+      const q = new URL(href).searchParams;
+      if (q.get('from') === 'game' || q.has('only')) store.setItem(FLAG, '1');
+      if (store.getItem(FLAG) === '1') return false;
+    } catch (e) { return false; }
+    return isEntry(rel(href, selfSrc));
+  }
+  const SELF = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) || '';
+  let store = null;
+  try { store = typeof sessionStorage !== 'undefined' ? sessionStorage : null; } catch (e) { store = null; }
+  if (typeof location !== 'undefined' && typeof location.replace === 'function' && decide(location.href, SELF, store)) location.replace(GAME);
+  return { GAME, FLAG, ENTRY, rel, isEntry, decide };
+})();
+
 window.LMCS = (function () {
   const GOOGLE_CLIENT_ID = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';
   const SESSION_KEY = 'lmcs_session';
