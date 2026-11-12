@@ -136,6 +136,21 @@ module.exports = function run(t) {
     assert.strictEqual(h.game('gameDaybookAttachVideo', { id: 'vid-000001', entry_id: 'nope-0001', file_id: 'vid-000001' }, { role: 'owner' }).data.code, 'read_only');
   });
 
+  t.test('game bridge: a service bill\'s parts arrive as a comma list and reach daybook.add as the array it checks', () => {
+    const h = fresh();
+    // no such vehicle in the fake config: the office refuses at the vehicle check, after the parts were parsed (no BAD_INPUT)
+    const r = h.game('gameDaybookAdd', { id: 'dbk-000001', entry_date: '2026-10-21', direction: 'OUT', category: 'vehicle_service', account: 'cash:LMS1', bucket: 'petty',
+      amount_paise: '1000', vehicle: 'HP00XX0000', components: 'engine_oil,oil_filter', file_id: 'file-000001' });
+    assert.strictEqual(r.data.code, 'BAD_VEHICLE');
+    const seen = [];
+    h.run('var __d = officeDispatch_; officeDispatch_ = function (c, a, d) { __seen.push(d.components); return { success: true }; }');
+    h.ctx.__seen = seen;
+    h.game('gameDaybookAdd', { id: 'dbk-000002', components: 'engine_oil, oil_filter' });
+    h.game('gameDaybookAdd', { id: 'dbk-000003', components: '' });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(seen)), [['engine_oil', 'oil_filter'], []]);
+    h.run('officeDispatch_ = __d');
+  });
+
   t.test('game bridge: doPost routes game* bodies to it and never logs the key or email', () => {
     const h = fresh();
     const out = JSON.parse(h.ctx.doPost({ postData: { contents: JSON.stringify({ action: 'gameHandovers', key: KEY, role: 'fee_clerk', campus: 'LMS1', email: null, params: {} }) } }));

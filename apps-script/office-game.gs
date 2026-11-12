@@ -17,14 +17,14 @@ var OFFICE_GAME_PART_MAX = 2000000; // base64 characters per part (~1.5 MB of by
 var OFFICE_GAME_PARTS_MAX = 20;     // a 25 MB fuel video is 18 parts
 
 // game action -> the office action it runs. num: params turned into integers; json: params parsed as JSON; bool: 'true' / 'false'
-// only. Every other param stays a
+// only; list: a comma list into an array (blank = []). Every other param stays a
 // string. `write` must match the office action's own `write` (a test checks it). The campus always comes from the proxy, never params.
 var OFFICE_GAME_ACTIONS = {
   gameToday: { act: 'today.get' },
   gameConfig: { act: 'config.get' },
   gameDaybookList: { act: 'daybook.list' },
   gameDaybookBalances: { act: 'daybook.balances' },
-  gameDaybookAdd: { act: 'daybook.add', write: true, num: ['amount_paise', 'litres_ml', 'odometer_km'] },
+  gameDaybookAdd: { act: 'daybook.add', write: true, num: ['amount_paise', 'litres_ml', 'odometer_km'], list: ['components'] },
   gameDaybookReverse: { act: 'daybook.reverse', write: true },
   gameDaybookAttachVideo: { act: 'daybook.attach_video', write: true, bool: ['replace'] }, // a pump video for a saved fuel entry (W2 slice 2)
   gameDepositList: { act: 'deposit.list' },
@@ -72,6 +72,7 @@ function officeGame_(b) {
       if (k === 'campus') return;
       const v = String(p[k]);
       if ((spec.num || []).indexOf(k) !== -1) { if (!/^-?\d{1,12}$/.test(v)) throw officeCoded_('BAD_INPUT'); data[k] = Number(v); }
+      else if ((spec.list || []).indexOf(k) !== -1) data[k] = v ? v.split(',').map(function (x) { return x.trim(); }).filter(Boolean) : [];
       else if ((spec.bool || []).indexOf(k) !== -1) { if (v !== 'true' && v !== 'false') throw officeCoded_('BAD_INPUT'); data[k] = v === 'true'; }
       else if ((spec.json || []).indexOf(k) !== -1) data[k] = JSON.parse(v);
       else data[k] = v;
