@@ -50,6 +50,8 @@ var OFFICE_GAME_ACTIONS = {
   // campusRows: each row's campus is forced to the proxy's school (a row can't name another).
   gameAccountAdd: { act: 'account.add', write: true, owner: true },
   gameAccountOpening: { act: 'account.opening', write: true, owner: true, num: ['amount_paise'] },
+  // ponytail: account.opening's "once per account" looks only at this FY's and last FY's books (officeRecentBooks_), so a second opening
+  // two or more years later isn't caught. An all-years check opens one book per past FY on every save; add it if that ever happens.
   gameVehicleAdd: { act: 'vehicle.add', write: true, owner: true },
   gameVehiclesImport: { act: 'vehicles.import', write: true, owner: true, json: ['vehicles'], campusRows: 'vehicles' },
   gameCollectionAdd: { act: 'collection.add', write: true, owner: true },
