@@ -848,6 +848,7 @@ function testDailyReportsRawCellTypes() {
 // Writes need role principal and an email. Never log key or email.
 //   gamePdrLoad {date}   gamePdrSave {date, maClass, maScore, done1.., next1.., reg1.., msg1..}   gamePdrAddPlanned {title, dueDate, assignee}
 //   gamePdrSetPlanned {id, completed}   gamePdrDelPlanned {id}   gameSsMeta {role}   gameSsSubmit {role, employeeId, scores: '5,6,…'}
+//   gameSsDashboard {}  (this month's SS per role for the school: names + counts, no emails; pdrGameSsDashboard_ below)
 const PDR_GAME_ROUTES_ = {
   gamepdrload: { run: function (c, p) {
     const out = principalDrLoadBundle_(c, c.campusId, p.date);
@@ -868,7 +869,29 @@ const PDR_GAME_ROUTES_ = {
   gamepdrdelplanned: { writes: true, run: function (c, p) { return principalDrDeletePlannedActivity_(c, { campusId: c.campusId, id: p.id }); } },
   gamessmeta: { run: function (c, p) { return tssGameMeta_(c, p); } },
   gamesssubmit: { writes: true, run: function (c, p) { return tssGameSubmit_(c, p); } },
+  gamessdashboard: { run: function (c) { return { success: true, data: pdrGameSsDashboard_(c.campusId) }; } },
 };
+
+// gameSsDashboard {} (N4, 14 Nov): the old SS Dashboard tab (action=ssdashboard) for ONE school, staff names and counts only. No email
+// leaves: an evaluator shows as their Allowlist name, else their Employee Master name, else 'An evaluator'. No per-SS history or
+// per-line scores. Rubber-stamp flags are worked out from this school's SS only, so another school's evaluators never show.
+function pdrGameSsDashboard_(campusId) {
+  const all = ssDashboardAll_({ campusId: campusId }).roles, school = campusId.replace('LMS', 'LMS ');
+  const byEmail = {}, allow = pdrAllowlistRows_(), codes = tpAuthEmailToCode_();
+  for (let i = 1; i < allow.length; i++) { const e = String(allow[i][0] || '').trim().toLowerCase(), n = String(allow[i][1] || '').trim(); if (e && n) byEmail[e] = n; }
+  const evaluator = function (email) { return byEmail[email] || (codes[email] && ssEmployeeNameById_(codes[email])) || 'An evaluator'; };
+  const nameOnly = function (s) { const i = s.indexOf(' '); return i > 0 ? s.slice(i + 1).trim() : s; }; // "CODE Name" -> "Name"
+  return { ok: true, roles: ACTIVE_SS_ROLES.filter(function (k) { return all[k]; }).map(function (k) {
+    const r = all[k], rows = r.roster.filter(function (x) { return x.school === school; });
+    const subs = [];
+    rows.forEach(function (x) { x.history.forEach(function (h) { subs.push({ evaluatorEmail: h.evaluatorEmail, total: h.total }); }); });
+    return { role: k, label: r.label, month: r.monthLabel, cycle: r.cycleLabel, quota: r.quotaPerMonth, outOf: r.rubricMax * r.rubricTitles.length,
+      met: rows.filter(function (x) { return x.quotaMetThisMonth; }).length, total: rows.length,
+      staff: rows.map(function (x) { return { name: nameOnly(x.employee), month: x.submissionsThisMonth, cycle: x.submissionsThisCycle,
+        avg: x.avgTotal, last: x.lastSubmission ? x.lastSubmission.slice(0, 10) : null }; }),
+      flags: ssRubberStampFlags_(subs).map(function (f) { return { evaluator: evaluator(f.evaluatorEmail), count: f.submissionCount }; }) };
+  }) };
+}
 
 /** done1, done2, … in order, up to the first gap */
 function pdrGameList_(params, prefix) {
