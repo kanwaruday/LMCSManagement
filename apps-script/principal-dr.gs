@@ -888,7 +888,7 @@ function pdrGameSsDashboard_(campusId) {
     return { role: k, label: r.label, month: r.monthLabel, cycle: r.cycleLabel, quota: r.quotaPerMonth, outOf: r.rubricMax * r.rubricTitles.length,
       met: rows.filter(function (x) { return x.quotaMetThisMonth; }).length, total: rows.length,
       staff: rows.map(function (x) { return { name: nameOnly(x.employee), month: x.submissionsThisMonth, cycle: x.submissionsThisCycle,
-        avg: x.avgTotal, last: x.lastSubmission ? x.lastSubmission.slice(0, 10) : null }; }),
+        avg: x.avgTotal, last: x.lastSubmission ? Utilities.formatDate(new Date(x.lastSubmission), 'Asia/Kolkata', 'yyyy-MM-dd') : null }; }),
       flags: ssRubberStampFlags_(subs).map(function (f) { return { evaluator: evaluator(f.evaluatorEmail), count: f.submissionCount }; }) };
   }) };
 }
