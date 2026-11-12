@@ -870,6 +870,9 @@ const PDR_GAME_ROUTES_ = {
   gamessmeta: { run: function (c, p) { return tssGameMeta_(c, p); } },
   gamesssubmit: { writes: true, run: function (c, p) { return tssGameSubmit_(c, p); } },
   gamessdashboard: { run: function (c) { return { success: true, data: pdrGameSsDashboard_(c.campusId) }; } },
+  // N2, 14 Nov (game-teacher-me.gs): a teacher's own "My week" cards; teacher-only, and gameSsMine needs the verified email
+  gamessmine: { roles: ['teacher'], actor: true, run: function (c) { return pdrGameMySs_(c); } },
+  gamepdrmyevents: { roles: ['teacher'], run: function (c) { return pdrGameMyEvents_(c); } },
 };
 
 // gameSsDashboard {} (N4, 14 Nov): the old SS Dashboard tab (action=ssdashboard) for ONE school, staff names and counts only. No email
@@ -922,10 +925,12 @@ function pdrGame_(body) {
   const route = PDR_GAME_ROUTES_[String(body.action || '').toLowerCase()];
   const campusId = String(body.campus || '').trim().toUpperCase(), role = String(body.role || '');
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-  if (!route || !/^LMS[1-6]$/.test(campusId) || (role !== 'principal' && role !== 'owner')) return { success: false, error: 'not_authorized' };
+  const roles = route && route.roles ? route.roles : ['principal', 'owner']; // a route may name its own roles (N2: the teacher's My week)
+  if (!route || !/^LMS[1-6]$/.test(campusId) || roles.indexOf(role) < 0) return { success: false, error: 'not_authorized' };
   if (route.writes && (role !== 'principal' || !/^[^@\s]+@[^@\s]+$/.test(email))) return { success: false, error: 'not_authorized' };
+  if (route.actor && !/^[^@\s]+@[^@\s]+$/.test(email)) return { success: false, error: 'not_authorized' };
   const params = body.params && typeof body.params === 'object' ? body.params : {};
-  const out = route.run({ email: email, campusId: campusId, roles: [role === 'owner' ? 'Owner' : 'Principal'], game: true }, params);
+  const out = route.run({ email: email, campusId: campusId, roles: [role === 'owner' ? 'Owner' : role === 'teacher' ? 'Teacher' : 'Principal'], game: true }, params);
   if (!out.success) return pdrGameRefusal_(out.error);
   return out.data !== undefined ? out : { success: true, data: { ok: true } };
 }
