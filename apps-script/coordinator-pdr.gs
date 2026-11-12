@@ -398,6 +398,15 @@ function coordPdrGameShape_(r, since) {
   };
 }
 
+/** Every string in an answer with any email masked: a Principal may have typed one into a report, a message or an issue's excerpt.
+ *  The shaped answer already carries none of its own (people are keys and names); this catches free text (G2b, 14 Nov). */
+function coordPdrMaskEmails_(v) {
+  if (typeof v === 'string') return v.replace(/[^\s@<>()"',;:]+@[^\s@<>()"',;:]+\.[A-Za-z]{2,}/g, '[email]');
+  if (Array.isArray(v)) return v.map(coordPdrMaskEmails_);
+  if (v && typeof v === 'object') { const o = {}; Object.keys(v).forEach(function (k) { o[k] = coordPdrMaskEmails_(v[k]); }); return o; }
+  return v;
+}
+
 /** POST action=gameCoordPdr*: dispatched from coordinator.gs doPost before the Google-token check (the key is this path's gate). */
 function coordGamePdr_(body) {
   if (!coordGameKeyOk_(body)) return { success: false, error: 'not_authorized' };
@@ -410,12 +419,12 @@ function coordGamePdr_(body) {
     if (action === 'gameCoordPdr') {
       const since = /^\d{4}-\d{2}-\d{2}$/.test(String(p.since || '')) ? String(p.since)
         : Utilities.formatDate(new Date(Date.now() - COORD_PDR_GAME_DAYS * 864e5), 'Asia/Kolkata', 'yyyy-MM-dd');
-      return coordGameOk_(coordPdrGameShape_(coordPdr_(caller), since));
+      return coordGameOk_(coordPdrMaskEmails_(coordPdrGameShape_(coordPdr_(caller), since)));
     }
     if (action === 'gameCoordPdrDay') {
       const d = coordPdrDay_(caller, p.date);
       if (!d.success) return coordGameNo_('bad_input');
-      return coordGameOk_({ date: d.date, reports: d.reports.map(function (x) { return { campus: x.campus, source: x.source, at: x.at, maClass: x.maClass, maScore: x.maScore, done: x.done, tomorrow: x.tomorrow, registers: x.registers, message: x.message }; }) });
+      return coordGameOk_(coordPdrMaskEmails_({ date: d.date, reports: d.reports.map(function (x) { return { campus: x.campus, source: x.source, at: x.at, maClass: x.maClass, maScore: x.maScore, done: x.done, tomorrow: x.tomorrow, registers: x.registers, message: x.message }; }) }));
     }
     if (body.role === 'owner' && !caller.roles.some(function (r) { return r === 'Coordinator'; })) return coordGameNo_('read_only'); // the Owner reads only here
     if (action === 'gameCoordPdrIssue') {
@@ -428,7 +437,7 @@ function coordGamePdr_(body) {
       const res = coordPdrIssueAction_(caller, { id: String(p.id || ''), status: String(p.status || ''), assignee: assignee, note: String(p.note || '').slice(0, 500) });
       if (!res.success) return coordGameNo_(/not authorized/i.test(res.error) ? 'not_authorized' : /not found|regrouped/i.test(res.error) ? 'not_found' : 'bad_input');
       const a = res.action;
-      return coordGameOk_({ action: { status: a.status, assignee: a.assignee ? { key: coordGameKey_(a.assignee), name: a.assigneeName } : null, note: a.note, at: a.at }, taskSaved: !res.taskError });
+      return coordGameOk_(coordPdrMaskEmails_({ action: { status: a.status, assignee: a.assignee ? { key: coordGameKey_(a.assignee), name: a.assigneeName } : null, note: a.note, at: a.at }, taskSaved: !res.taskError }));
     }
     const m = coordPdrMerge_(caller, { source: String(p.source || ''), target: String(p.target || '') });
     if (!m.success) return coordGameNo_(/not authorized/i.test(m.error) ? 'not_authorized' : /not found/i.test(m.error) ? 'not_found' : 'bad_input');

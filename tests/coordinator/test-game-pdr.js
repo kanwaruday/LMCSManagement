@@ -10,11 +10,11 @@ let tabs;
 const reset = () => {
   tabs = {
     'Daily Reports': [['at', 'date', 'campus', 'email', 'maClass', 'maScore', 'done', 'tomorrow', 'registers', 'message'],
-      rep('2026-11-10', 'LMS1', 'p1@lms.org.in', 'Tank leaking'), rep('2026-11-10', 'LMS2', 'p2@lms.org.in', 'Bus late'), rep('2026-10-01', 'LMS1', 'p1@lms.org.in', 'old one')],
+      rep('2026-11-10', 'LMS1', 'p1@lms.org.in', 'Tank leaking, mail plumber.raj@gmail.com'), rep('2026-11-10', 'LMS2', 'p2@lms.org.in', 'Bus late'), rep('2026-10-01', 'LMS1', 'p1@lms.org.in', 'old one')],
     'LM Studio Tags': [['date', 'campus', 'topics', 'action', 'summary', 'hash', 'at'], ['2026-11-10', 'LMS1', 'Facilities', 'yes', 'tank', 'h', '2026-11-10 20:00']],
     'PDR History': [['date', 'campus']],
     'PDR Issues': [['id', 'campus', 'type', 'subject', 'first', 'last', 'count', 'needs', 'items', 'pushed'],
-      ['i1', 'LMS1', 'Facilities', 'Water tank leaking', '2026-11-01', '2026-11-10', '3', 'yes', '[]', '2026-11-10 08:00'],
+      ['i1', 'LMS1', 'Facilities', 'Water tank leaking', '2026-11-01', '2026-11-10', '3', 'yes', JSON.stringify([{ date: '2026-11-01', text: 'Tank leaking; vendor at vendor@tanks.in' }, { date: '2026-11-10', text: 'Still leaking' }]), '2026-11-10 08:00'],
       ['i2', 'LMS1', 'Facilities', 'Old bench (resolved long ago)', '2026-09-25', '2026-09-30', '2', 'no', '[]', '2026-11-10 08:00'],
       ['i3', 'LMS1', 'Facilities', 'Old but still open', '2026-09-25', '2026-09-30', '2', 'yes', '[]', '2026-11-10 08:00'],
       ['i4', 'LMS1', 'Facilities', 'Tank overflow', '2026-11-05', '2026-11-09', '2', 'yes', '[]', '2026-11-10 08:00'],
@@ -81,6 +81,8 @@ t('the read: a whole-network coordinator sees every school from `since`; nothing
   assert.match(r.data.actions.i1.assignee.key, /^[A-Za-z0-9_-]{22}$/);
   assert.deepStrictEqual(r.data.fees.series.map((s) => s[0]), ['2026-11-10']);
   assert.ok(!JSON.stringify(r).includes('@'), 'no email in the answer');
+  assert.strictEqual(r.data.issues.find((i) => i.id === 'i1').items[0].text, 'Tank leaking; vendor at [email]'); // excerpts carry text, emails masked
+  assert.strictEqual(r.data.reports.find((x) => x.campus === 'LMS1').message, 'Tank leaking, mail [email]');
 });
 
 t('the read defaults to the last 14 days', () => {
