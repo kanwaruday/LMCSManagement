@@ -129,6 +129,13 @@ module.exports = function run(t) {
     assert.deepStrictEqual(r, { success: false, error: 'BAD_MIME' });
   });
 
+  t.test('game bridge: attach a pump video to a saved fuel entry runs the office\'s own daybook.attach_video (replace is true/false only)', () => {
+    const h = fresh();
+    assert.strictEqual(h.game('gameDaybookAttachVideo', { id: 'vid-000001', entry_id: 'nope-0001', file_id: 'vid-000001', replace: 'maybe' }).data.code, 'BAD_INPUT');
+    assert.strictEqual(h.game('gameDaybookAttachVideo', { id: 'vid-000001', entry_id: 'nope-0001', file_id: 'vid-000001', replace: 'false' }).data.code, 'NOT_FOUND');
+    assert.strictEqual(h.game('gameDaybookAttachVideo', { id: 'vid-000001', entry_id: 'nope-0001', file_id: 'vid-000001' }, { role: 'owner' }).data.code, 'read_only');
+  });
+
   t.test('game bridge: doPost routes game* bodies to it and never logs the key or email', () => {
     const h = fresh();
     const out = JSON.parse(h.ctx.doPost({ postData: { contents: JSON.stringify({ action: 'gameHandovers', key: KEY, role: 'fee_clerk', campus: 'LMS1', email: null, params: {} }) } }));

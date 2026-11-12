@@ -16,7 +16,8 @@ var OFFICE_GAME_TICKET_MS = 10 * 60 * 1000;
 var OFFICE_GAME_PART_MAX = 2000000; // base64 characters per part (~1.5 MB of bytes)
 var OFFICE_GAME_PARTS_MAX = 20;     // a 25 MB fuel video is 18 parts
 
-// game action -> the office action it runs. num: params turned into integers; json: params parsed as JSON. Every other param stays a
+// game action -> the office action it runs. num: params turned into integers; json: params parsed as JSON; bool: 'true' / 'false'
+// only. Every other param stays a
 // string. `write` must match the office action's own `write` (a test checks it). The campus always comes from the proxy, never params.
 var OFFICE_GAME_ACTIONS = {
   gameToday: { act: 'today.get' },
@@ -25,6 +26,7 @@ var OFFICE_GAME_ACTIONS = {
   gameDaybookBalances: { act: 'daybook.balances' },
   gameDaybookAdd: { act: 'daybook.add', write: true, num: ['amount_paise', 'litres_ml', 'odometer_km'] },
   gameDaybookReverse: { act: 'daybook.reverse', write: true },
+  gameDaybookAttachVideo: { act: 'daybook.attach_video', write: true, bool: ['replace'] }, // a pump video for a saved fuel entry (W2 slice 2)
   gameDepositList: { act: 'deposit.list' },
   gameRecon: { act: 'recon.get' },
   gameDepositAdd: { act: 'deposit.add', write: true, num: ['amount_paise'] },
@@ -70,6 +72,7 @@ function officeGame_(b) {
       if (k === 'campus') return;
       const v = String(p[k]);
       if ((spec.num || []).indexOf(k) !== -1) { if (!/^-?\d{1,12}$/.test(v)) throw officeCoded_('BAD_INPUT'); data[k] = Number(v); }
+      else if ((spec.bool || []).indexOf(k) !== -1) { if (v !== 'true' && v !== 'false') throw officeCoded_('BAD_INPUT'); data[k] = v === 'true'; }
       else if ((spec.json || []).indexOf(k) !== -1) data[k] = JSON.parse(v);
       else data[k] = v;
     });
