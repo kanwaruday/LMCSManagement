@@ -335,3 +335,106 @@ function coordInstallKeepWarm() {
   ScriptApp.newTrigger('coordKeepWarm').timeBased().everyMinutes(5).create();
   Logger.log('Keep-warm trigger installed: coordKeepWarm every 5 minutes');
 }
+
+// ── lms-game's native "Principals' daily reports" (lane-g, 14 Nov 2026) ─────────────────────────────────────────────────────────────
+// Called only by lms-game's `classic` Edge Function (classic-proxy-contract.md): POST {action, key, role, campus, campuses, email, params},
+// key = GAME_READ_KEY (coordGameKeyOk_, coordinator-world.gs). The person is re-derived from the allowlist by the proxy's verified email
+// (coordCallerForEmail_, as lane-h's Approvals actions), so a coordinator sees exactly the schools today's page shows them (their
+// school or district; HQ and the Owner: all), further limited to the game's own school list (`campuses`). A Fee Clerk gets nothing.
+// The existing functions run unchanged; their answers go back without emails: people are {key, name} (coordGameKey_, an HMAC).
+//   gameCoordPdr       {since}                        the coordinator page's read, from `since` (default: the last 14 days)
+//   gameCoordPdrDay    {date}                         one day's reports in full (the form, or the old Google Space)
+//   gameCoordPdrIssue  {id, status, assignee?, note?} acknowledge / assign (assignee = a person key) / resolve / reopen (note needed)
+//   gameCoordPdrMerge  {source, target}               "same problem as": target '' undoes a merge
+const COORD_PDR_GAME = ['gameCoordPdr', 'gameCoordPdrDay', 'gameCoordPdrIssue', 'gameCoordPdrMerge'];
+const COORD_PDR_GAME_DAYS = 14;
+
+/** the caller as today's page sees them, limited to the game's school list; null when they may not read this page */
+function coordPdrGameCaller_(body) {
+  let caller;
+  try { caller = coordCallerForEmail_(body.email); } catch (err) { caller = null; }
+  if (!caller || caller.feeClerkOnly) return null;
+  const mine = coordVisibleCampuses_(caller); // null = every school
+  const game = coordGameSchools_(body);
+  const allowed = game.filter(function (c) { return !mine || mine.indexOf(c) !== -1; });
+  if (!allowed.length) return null;
+  // ponytail: a comma list in campusId with feeClerkOnly is how coordVisibleCampuses_ already reads "exactly these schools"
+  return Object.assign({}, caller, { campusId: allowed.join(','), feeClerkOnly: true });
+}
+
+/** the page's read without emails, from `since`: reports, tags, repeats, admissions, history and fees by date; issues that were raised
+ *  since, or are still not resolved; actions and merges for the issues kept */
+function coordPdrGameShape_(r, since) {
+  const people = {}, names = {};
+  SpreadsheetApp.openById(COORD_ALLOWLIST_SHEET_ID).getSheets()[0].getDataRange().getValues().slice(1).forEach(function (row) {
+    if (row[0]) names[String(row[0]).trim().toLowerCase()] = String(row[1] || '').trim(); // a report's Principal, an action's author: names only
+  });
+  (r.coordinators || []).forEach(function (c) { people[c.email] = { key: coordGameKey_(c.email), name: c.name }; });
+  const who = function (email) {
+    if (!email) return null;
+    const e = String(email).toLowerCase();
+    return people[e] || { key: '', name: names[e] || '' };
+  };
+  const after = function (d) { return String(d || '') >= since; };
+  const actions = {};
+  const issues = (r.issues || []).filter(function (i) { const a = r.actions[i.id]; return after(i.last) || !a || a.status !== 'resolved'; });
+  issues.forEach(function (i) {
+    const a = r.actions[i.id];
+    if (a) actions[i.id] = { status: a.status, assignee: a.assignee ? who(a.assignee) : null, note: a.note, by: who(a.by), at: a.at, lastAtAction: a.lastAtAction };
+  });
+  const kept = {}; issues.forEach(function (i) { kept[i.id] = true; });
+  const merges = {}; Object.keys(r.merges || {}).forEach(function (s) { if (kept[s] || kept[r.merges[s]]) merges[s] = r.merges[s]; });
+  const tags = {}; Object.keys(r.tags || {}).forEach(function (k) { if (after(k.split('|')[0])) tags[k] = r.tags[k]; });
+  return {
+    since: since, latestReportAt: r.latestReportAt, taggedAt: r.taggedAt, pushedAt: r.pushedAt,
+    reports: (r.reports || []).filter(function (x) { return after(x.date); }).map(function (x) {
+      return { date: x.date, campus: x.campus, principal: who(x.email) ? who(x.email).name : '', maClass: x.maClass, maScore: x.maScore, done: x.done, tomorrow: x.tomorrow, registers: x.registers, message: x.message };
+    }),
+    tags: tags, history: (r.history || []).filter(function (h) { return after(h.date); }), issues: issues, actions: actions, merges: merges,
+    repeats: (r.repeats || []).filter(function (x) { return after(x.date); }),
+    admissions: (r.admissions || []).filter(function (x) { return after(x.date); }),
+    fees: r.fees && r.fees.series ? { series: r.fees.series.filter(function (s) { return after(s[0]); }) } : { error: 'fees', series: [] },
+    coordinators: (r.coordinators || []).map(function (c) { return people[c.email]; }),
+  };
+}
+
+/** POST action=gameCoordPdr*: dispatched from coordinator.gs doPost before the Google-token check (the key is this path's gate). */
+function coordGamePdr_(body) {
+  if (!coordGameKeyOk_(body)) return { success: false, error: 'not_authorized' };
+  const action = String(body.action);
+  if (COORD_PDR_GAME.indexOf(action) === -1) return { success: false, error: 'unknown_action' };
+  const p = body.params || {};
+  try {
+    const caller = coordPdrGameCaller_(body);
+    if (!caller) return coordGameNo_('not_authorized');
+    if (action === 'gameCoordPdr') {
+      const since = /^\d{4}-\d{2}-\d{2}$/.test(String(p.since || '')) ? String(p.since)
+        : Utilities.formatDate(new Date(Date.now() - COORD_PDR_GAME_DAYS * 864e5), 'Asia/Kolkata', 'yyyy-MM-dd');
+      return coordGameOk_(coordPdrGameShape_(coordPdr_(caller), since));
+    }
+    if (action === 'gameCoordPdrDay') {
+      const d = coordPdrDay_(caller, p.date);
+      if (!d.success) return coordGameNo_('bad_input');
+      return coordGameOk_({ date: d.date, reports: d.reports.map(function (x) { return { campus: x.campus, source: x.source, at: x.at, maClass: x.maClass, maScore: x.maScore, done: x.done, tomorrow: x.tomorrow, registers: x.registers, message: x.message }; }) });
+    }
+    if (body.role === 'owner' && !caller.roles.some(function (r) { return r === 'Coordinator'; })) return coordGameNo_('read_only'); // the Owner reads only here
+    if (action === 'gameCoordPdrIssue') {
+      let assignee = '';
+      if (p.status === 'assigned') {
+        const hit = coordPdrCoordinators_().filter(function (c) { return coordGameKey_(c.email) === String(p.assignee || ''); })[0];
+        if (!hit) return coordGameNo_('bad_input');
+        assignee = hit.email;
+      }
+      const res = coordPdrIssueAction_(caller, { id: String(p.id || ''), status: String(p.status || ''), assignee: assignee, note: String(p.note || '').slice(0, 500) });
+      if (!res.success) return coordGameNo_(/not authorized/i.test(res.error) ? 'not_authorized' : /not found|regrouped/i.test(res.error) ? 'not_found' : 'bad_input');
+      const a = res.action;
+      return coordGameOk_({ action: { status: a.status, assignee: a.assignee ? { key: coordGameKey_(a.assignee), name: a.assigneeName } : null, note: a.note, at: a.at }, taskSaved: !res.taskError });
+    }
+    const m = coordPdrMerge_(caller, { source: String(p.source || ''), target: String(p.target || '') });
+    if (!m.success) return coordGameNo_(/not authorized/i.test(m.error) ? 'not_authorized' : /not found/i.test(m.error) ? 'not_found' : 'bad_input');
+    return coordGameOk_({});
+  } catch (err) {
+    console.error('coordGamePdr ' + action + ': ' + (err && err.name)); // never the message: it can carry sheet text
+    return { success: false, error: 'backend' };
+  }
+}
