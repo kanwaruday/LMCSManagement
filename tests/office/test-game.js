@@ -151,6 +151,25 @@ module.exports = function run(t) {
     h.run('officeDispatch_ = __d');
   });
 
+  t.test('starting data: the Fee Clerk sees and fills their quests (cash, odometers) through the office\'s own start.* rules', () => {
+    const h = fresh();
+    const g = h.game('gameStartGet', {});
+    assert.strictEqual(g.success, true, JSON.stringify(g));
+    assert.deepStrictEqual(g.data.quests.map((q) => q.id), ['cash', 'odometer']);
+    const saved = h.game('gameStartSave', { quest: 'cash', item: 'LMS1', fields: JSON.stringify({ amount: '1500.50', held_by: 'Desk box' }) });
+    assert.strictEqual(saved.data.ok, undefined, JSON.stringify(saved));
+    const cash = h.game('gameStartGet', {}).data.items.find((i) => i.quest === 'cash' && i.item === 'LMS1');
+    assert.strictEqual(cash.fields.held_by.status, 'confirmed');
+    assert.strictEqual(cash.fields.held_by.by, 'c1@example.org');
+    // another school's cash is the office's own refusal; a bank quest isn't theirs
+    assert.strictEqual(h.game('gameStartSave', { quest: 'cash', item: 'LMS2', fields: JSON.stringify({ amount: '1', held_by: 'x' }) }).data.code, 'FORBIDDEN_CAMPUS');
+    assert.strictEqual(h.game('gameStartSave', { quest: 'bank', item: 'b1', fields: JSON.stringify({ bank: 'x' }) }).data.code, 'FORBIDDEN_ROLE');
+    assert.strictEqual(h.game('gameStartSave', { quest: 'cash', item: 'LMS1', fields: '{', skip: 'false' }).data.code, 'BAD_INPUT');
+    assert.strictEqual(h.game('gameStartSubmit', { quest: 'cash' }).data.ok, undefined);   // cash is complete for LMS1: submitted
+    assert.strictEqual(h.game('gameStartSave', { quest: 'cash', item: 'LMS1', fields: JSON.stringify({ amount: '9' }) }).data.code, 'START_LOCKED');
+    assert.strictEqual(h.game('gameStartSave', { quest: 'cash', item: 'LMS1', fields: '{}' }, { role: 'owner' }).data.code, 'read_only');
+  });
+
   t.test('game bridge: doPost routes game* bodies to it and never logs the key or email', () => {
     const h = fresh();
     const out = JSON.parse(h.ctx.doPost({ postData: { contents: JSON.stringify({ action: 'gameHandovers', key: KEY, role: 'fee_clerk', campus: 'LMS1', email: null, params: {} }) } }));
