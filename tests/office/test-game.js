@@ -170,6 +170,37 @@ module.exports = function run(t) {
     assert.strictEqual(h.game('gameStartSave', { quest: 'cash', item: 'LMS1', fields: '{}' }, { role: 'owner' }).data.code, 'read_only');
   });
 
+  t.test('accounts set-up (lane-d): the Owner adds an account, its opening balance, vehicles and a collection head; a Fee Clerk cannot', () => {
+    const h = fresh();
+    const O = { role: 'owner', email: 'owner@example.org', campus: 'LMS2' };
+    // a Fee Clerk is refused for all five, before the office runs
+    for (const [a, p] of [['gameAccountAdd', { id: 'bank:LMS2:demo', kind: 'bank', label: 'Demo bank' }], ['gameAccountOpening', { id: 'op-000001', account: 'bank:LMS2:demo', amount_paise: '100' }],
+      ['gameVehicleAdd', { reg: 'HP00AA0001', kind: 'bus' }], ['gameVehiclesImport', { vehicles: '[]' }], ['gameCollectionAdd', { head: 'trip', label: 'Trip' }]]) {
+      assert.strictEqual(h.game(a, p, { campus: 'LMS2' }).data.code, 'read_only', a);
+    }
+    // the Owner: an account at the proxy's school, then its opening balance once
+    assert.strictEqual(h.game('gameAccountAdd', { id: 'bank:LMS2:demo', kind: 'bank', label: 'Demo bank' }, O).data.id, 'bank:LMS2:demo');
+    assert.strictEqual(h.game('gameAccountAdd', { id: 'bank:LMS2', kind: 'bank', label: 'x' }, O).data.code, 'BAD_ID', 'a default id stays reserved');
+    assert.strictEqual(h.game('gameAccountOpening', { id: 'op-000001', account: 'bank:LMS2:demo', amount_paise: '250000' }, O).data.duplicate, false);
+    assert.strictEqual(h.game('gameAccountOpening', { id: 'op-000002', account: 'bank:LMS2:demo', amount_paise: '1' }, O).data.code, 'ACCOUNT_OPENING_EXISTS');
+    assert.strictEqual(h.game('gameAccountOpening', { id: 'op-000003', account: 'bank:LMS2:demo', amount_paise: 'x' }, O).data.code, 'BAD_INPUT');
+    // vehicles: one, then an import whose rows can't name another school
+    assert.strictEqual(h.game('gameVehicleAdd', { reg: 'hp 00 aa 0001', kind: 'bus', label: 'Bus 1' }, O).data.reg, 'HP00AA0001');
+    const imp = h.game('gameVehiclesImport', { vehicles: JSON.stringify([{ reg: 'HP00AA0002', kind: 'van', campus: 'LMS1' }, { reg: 'HP00AA0001', kind: 'bus' }]) }, O);
+    assert.strictEqual(imp.data.added, 1, 'the repeat is a duplicate');
+    assert.strictEqual(h.game('gameVehiclesImport', { vehicles: '{"a":1}' }, O).data.code, 'BAD_INPUT');
+    // a collection head (group-wide)
+    assert.strictEqual(h.game('gameCollectionAdd', { head: 'trip_fee', label: 'Trip fee' }, O).data.id, 'trip_fee');
+    const cfg = h.game('gameConfig', {}, { role: 'owner', email: null, campus: 'LMS2' }).data;
+    assert.ok(cfg.accounts.some((x) => x.id === 'bank:LMS2:demo' && x.campus === 'LMS2'));
+    assert.deepStrictEqual(cfg.vehicles.filter((v) => /^HP00AA/.test(v.reg)).map((v) => [v.reg, v.campus]).sort(), [['HP00AA0001', 'LMS2'], ['HP00AA0002', 'LMS2']]);
+    assert.ok(cfg.collections.some((c) => c.id === 'trip_fee'));
+    // still read-only for the Owner everywhere else
+    assert.strictEqual(h.game('gameHandover', handover, { role: 'owner' }).data.code, 'read_only');
+    // a write needs who (the verified email)
+    assert.strictEqual(h.game('gameCollectionAdd', { head: 'x_fee', label: 'X' }, { role: 'owner', email: null, campus: 'LMS2' }).data.code, 'who');
+  });
+
   t.test('game bridge: doPost routes game* bodies to it and never logs the key or email', () => {
     const h = fresh();
     const out = JSON.parse(h.ctx.doPost({ postData: { contents: JSON.stringify({ action: 'gameHandovers', key: KEY, role: 'fee_clerk', campus: 'LMS1', email: null, params: {} }) } }));

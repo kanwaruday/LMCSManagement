@@ -45,7 +45,18 @@ var OFFICE_GAME_ACTIONS = {
   gameStartSubmit: { act: 'start.submit', write: true },
   gameFileView: { act: 'file.view' }, // the office marks it write only to take the lock for its Audit row; it changes no data
   gameFileTicket: { ticket: true, write: true },
+  // lane-d (16 Nov; Jarvis/Uday: "OWNER ONLY", as the office's own rule FinanceHead/Owner): the accounts set-up. owner: true is the one
+  // exception to "the Owner reads only here", for these five only; a Fee Clerk is refused here (read_only) and by the office rule.
+  // campusRows: each row's campus is forced to the proxy's school (a row can't name another).
+  gameAccountAdd: { act: 'account.add', write: true, owner: true },
+  gameAccountOpening: { act: 'account.opening', write: true, owner: true, num: ['amount_paise'] },
+  gameVehicleAdd: { act: 'vehicle.add', write: true, owner: true },
+  gameVehiclesImport: { act: 'vehicles.import', write: true, owner: true, json: ['vehicles'], campusRows: 'vehicles' },
+  gameCollectionAdd: { act: 'collection.add', write: true, owner: true },
 };
+// who may write through the game: the Fee Clerk, or for an owner: true action the set-up roles (a Finance Head joins this list when
+// the game has one)
+var OFFICE_GAME_SETUP_ROLES = ['owner'];
 
 function officeGameRefuse_(code) { return { success: true, data: { ok: false, code: code } }; }
 
@@ -63,7 +74,7 @@ function officeGame_(b) {
   const spec = Object.prototype.hasOwnProperty.call(OFFICE_GAME_ACTIONS, b.action) ? OFFICE_GAME_ACTIONS[b.action] : null;
   const role = Object.prototype.hasOwnProperty.call(OFFICE_GAME_ROLE, b.role) ? OFFICE_GAME_ROLE[b.role] : null;
   if (!spec || !role) return officeGameRefuse_('unknown_action');
-  if (spec.write && b.role !== 'fee_clerk') return officeGameRefuse_('read_only'); // the Owner reads only here
+  if (spec.write && !(spec.owner ? OFFICE_GAME_SETUP_ROLES.indexOf(b.role) !== -1 : b.role === 'fee_clerk')) return officeGameRefuse_('read_only'); // the Owner reads only here, but for the set-up
   const campus = String(b.campus || '').trim().toUpperCase();
   if (!/^[A-Z0-9]{2,8}$/.test(campus)) return officeGameRefuse_('campus_needed');
   if (spec.write && !(typeof b.email === 'string' && /^[^\s@]+@[^\s@]+$/.test(b.email))) return officeGameRefuse_('who');
@@ -82,6 +93,10 @@ function officeGame_(b) {
     });
   } catch (err) { return officeGameRefuse_('BAD_INPUT'); }
   data.campus = campus;
+  if (spec.campusRows) {
+    if (!Array.isArray(data[spec.campusRows]) || data[spec.campusRows].length > 200) return officeGameRefuse_('BAD_INPUT');
+    data[spec.campusRows] = data[spec.campusRows].map(function (x) { return Object.assign({}, x && typeof x === 'object' ? x : {}, { campus: campus }); });
+  }
   officeMemoStart_();
   try {
     if (spec.ticket) return { success: true, data: officeGameTicket_(caller, data) };
