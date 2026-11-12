@@ -227,6 +227,7 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     if (/^gameApproval/.test(String(body.action || ''))) return jsonOut_(gameApprovalsDispatch_(body)); // lms-game W4 Approvals room (game-approvals.gs): key-gated, the person from the game's verified JWT
+    if (/^gameMyReq[A-Z]/.test(String(body.action || ''))) return jsonOut_(gameMyReqDispatch_(body)); // lms-game New request + My requests (game-myrequests.gs, N4): key-gated, the requester from the game's verified JWT
     if (/^gameHr[A-Z]/.test(String(body.action || ''))) return jsonOut_(gameHrDispatch_(body)); // lms-game W7 Owner hiring room (game-hr.gs, N3): key-gated, Owner only, the person from the game's verified JWT
     if (/^game(pdr|ss)[a-z]/.test(String(body.action || '').toLowerCase())) return jsonOut_(pdrGame_(body)); // lms-game's classic proxy, Wave 1 (lane-e): gamePdr*/gameSs*, key in the body, no ID token (principal-dr.gs)
     const verified = verifyCallerToken_(body.idToken);
