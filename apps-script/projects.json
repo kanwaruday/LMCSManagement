@@ -47,6 +47,7 @@
       "driver-link",
       "driver-google",
       "driver-fuel",
+      "proof-mirror",
       "../assets/game/bus-chain.js",
       "supporting-charge"
     ]
