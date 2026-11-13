@@ -9,7 +9,8 @@ const VIDEO = '0b6f3c1e-2a4d-4e8f-9a1b-3c5d7e9f1a2b', PART = 1310720;
 const signed = (buf) => Array.from(buf, (b) => (b > 127 ? b - 256 : b));
 
 // the event_videos rows af-drive answers (541's, as the server reads them): the caller's own unfinished row unless a test says otherwise
-const row = (o = {}) => Object.assign({ campus: 'LMS1', event: 'af2026', mime: 'video/mp4', deleteAfter: '2026-12-24', email: 'teacher@test.invalid', open: true }, o);
+const row = (o = {}) => Object.assign({ campus: 'LMS1', event: 'af2026', mime: 'video/mp4', deleteAfter: '2026-12-24', email: 'teacher@test.invalid', open: true,
+  viewers: [PRINCIPAL, ACC, ME] }, o);
 function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode = 200, rows = {}, rowCode = 200, groups = null, permFail = false, now = Date.parse('2026-11-14T05:00:00Z') } = {}) {
   let ids = 0, sessions = {}, lost = 0;
   const reg = {}, store = {}, logs = [], calls = [];
@@ -173,8 +174,7 @@ test('the ticket: a wrong key, another role, bad params and missing set-up are r
   assert.strictEqual(t.ticket({}, { campus: '' }).data.code, 'campus_needed');
   assert.strictEqual(t.ticket({}, { email: null }).data.code, 'who');
   assert.strictEqual(t.ticket({ video: 'x' }).data.code, 'bad_input');
-  assert.strictEqual(setup({ props: { AF_VIDEO_ACCOUNTABLE: '' } }).ticket({}).data.code, 'not_configured');
-  assert.strictEqual(setup({ rows: { [VIDEO]: row({ campus: 'LMS3' }) } }).ticket({}, { campus: 'LMS3' }).data.code, 'not_configured', 'fallback: no Principal on the allowlist for that school');
+  assert.strictEqual(setup({ rows: { [VIDEO]: row({ viewers: undefined }) } }).ticket({}).data.code, 'not_configured', 'no viewer list: no fallback to the old properties');
   assert.ok(t.calls.every((x) => !x.url.includes('upload')), 'no Drive call');
 });
 
@@ -254,6 +254,18 @@ test('viewers are data: shared with af-drive\'s list (every Owner, the af_judge 
   assert.deepStrictEqual(t.store[r.fileId].perms.map((p) => p.emailAddress).sort(), [...viewers].sort());
   assert.ok(!t.store[r.fileId].perms.some((p) => p.emailAddress === ACC), 'the old accountable property plays no part');
   assert.strictEqual(setup({ rows: { [VIDEO]: row({ viewers: [] }) } }).ticket({}).data.code, 'not_configured', 'no viewers: no upload');
+});
+
+test('at finish, no viewer list from af-drive (unreachable) trashes the file and refuses: the old properties are never used (G2 low)', () => {
+  const t = setup();
+  const url = t.ticket({}).data.url;
+  t.rows[VIDEO] = row({ viewers: undefined }); // af-drive answers without viewers when the upload finishes
+  const r = t.upload(url, clip(1000), { tries: 1 });
+  assert.deepStrictEqual([r.success, r.error], [false, 'SHARE_FAILED']);
+  assert.strictEqual(t.upload(url, clip(1000), { tries: 1 }).error, 'not_authorized', 'the ticket is spent');
+  const f = Object.values(t.store)[0];
+  assert.ok(f && f.trashed, 'the uploaded file is trashed');
+  assert.ok(!f.perms.some((p) => p.emailAddress === ACC), 'nobody added from the old property');
 });
 
 test('a grant reaches Drive on the next sync, a revoke removes the reader; an unchanged set costs no Drive call', () => {

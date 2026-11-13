@@ -18,8 +18,8 @@
 //     One af-drive call lists each school + event's viewers and live files; only a group whose viewers changed since the last
 //     pass is re-synced: missing readers added, readers no longer allowed removed (a permission, never the file).
 // Script properties (set by Uday, never in the repo): ROSTER_GAME_KEY (= lms-game's CLASSIC_ROSTER_KEY secret), AF_VIDEO_LIVE_URL
-// (lms-game's af-drive function), ROSTER_WEBAPP_URL optional. AF_VIDEO_ACCOUNTABLE / AF_VIDEO_OWNER: a fallback only, used while
-// af-drive sends no viewer list (before af_viewers ships); ignored once it does. Logs carry codes and counts
+// (lms-game's af-drive function), ROSTER_WEBAPP_URL optional. AF_VIDEO_ACCOUNTABLE / AF_VIDEO_OWNER are no longer read (Uday may delete them).
+// Logs carry codes and counts
 // only: never an email, a school, a file name or a video.
 
 var AFV_TICKET_MS_ = 2 * 60 * 60 * 1000;   // a ticket starts an upload within 2 h; its parts then have the 6 h of the cache
@@ -43,17 +43,12 @@ function afvSign_(body) { return afvB64_(Utilities.computeHmacSha256Signature(bo
 function afvToday_() { return Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd'); }
 function afvEmail_(s) { const e = String(s || '').trim().toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : ''; }
 
-/** who sees a school's videos: the viewer list af-drive sent with the row (lms-game's af_viewers), else the old fallback (the
- *  school's Principal(s) on the allowlist + the two properties). null if there is no one to share with. */
+/** who sees a school's videos: the viewer list af-drive sent with the row (lms-game's af_viewers, 552). No list (af-drive
+ *  unreachable) or an empty one = null: nothing is shared and the upload is refused (G2 low, 14 Nov: no stale fallback). */
 function afvViewers_(campus, row) {
-  if (row && Array.isArray(row.viewers)) {
-    const v = row.viewers.map(afvEmail_).filter(function (e, i, a) { return e && a.indexOf(e) === i; });
-    return v.length ? v : null;
-  }
-  const principals = readEntries().filter(function (x) { return x.role === 'Principal' && x.campusId === campus; }).map(function (x) { return afvEmail_(x.email); }).filter(Boolean);
-  const acc = afvEmail_(afvProps_().getProperty('AF_VIDEO_ACCOUNTABLE')), owner = afvEmail_(afvProps_().getProperty('AF_VIDEO_OWNER'));
-  if (!principals.length || !acc || !owner) return null;
-  return principals.concat([acc, owner]).filter(function (e, i, a) { return a.indexOf(e) === i; });
+  if (!row || !Array.isArray(row.viewers)) return null;
+  const v = row.viewers.map(afvEmail_).filter(function (e, i, a) { return e && a.indexOf(e) === i; });
+  return v.length ? v : null;
 }
 
 function afvApi_(method, url, body) {
