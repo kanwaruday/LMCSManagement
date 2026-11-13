@@ -10,7 +10,7 @@ const signed = (buf) => Array.from(buf, (b) => (b > 127 ? b - 256 : b));
 
 // the event_videos rows af-drive answers (541's, as the server reads them): the caller's own unfinished row unless a test says otherwise
 const row = (o = {}) => Object.assign({ campus: 'LMS1', event: 'af2026', mime: 'video/mp4', deleteAfter: '2026-12-24', email: 'teacher@test.invalid', open: true }, o);
-function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode = 200, rows = {}, rowCode = 200, now = Date.parse('2026-11-14T05:00:00Z') } = {}) {
+function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode = 200, rows = {}, rowCode = 200, groups = null, permFail = false, now = Date.parse('2026-11-14T05:00:00Z') } = {}) {
   let ids = 0, sessions = {}, lost = 0;
   const reg = {}, store = {}, logs = [], calls = [];
   const folder = (name) => {
@@ -26,7 +26,7 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
   const addFile = (meta, bytes) => {
     const id = 'DRIVEfile' + String(++ids).padStart(8, '0');
     const x = { id, meta, name: meta.name, mime: meta.mimeType, description: meta.description, bytes, trashed: false, created: new Date(now),
-      perms: [{ type: 'user', emailAddress: ME }].concat(inherited ? [inherited] : []) };
+      perms: [{ id: 'p0', type: 'user', emailAddress: ME, role: 'owner' }].concat(inherited ? [Object.assign({ id: 'pi' }, inherited)] : []) };
     x.api = { getId: () => id, getDescription: () => x.description, getDateCreated: () => x.created, setTrashed: (v) => { x.trashed = v; } };
     store[id] = x; reg[meta.parents[0]].files.push(x); return x;
   };
@@ -37,17 +37,22 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
   const ctx = {
     console: { log: (m) => logs.push(m), error: (m) => logs.push(m) }, JSON, String, Array, Number, Math, Object, Date: class extends Date { constructor(...a) { super(...(a.length ? a : [now])); } static now() { return now; } },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => P[k] ?? null, setProperty: (k, v) => { P[k] = v; } }) },
+    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
     CacheService: { getScriptCache: () => ({ get: (k) => cache.get(k) ?? null, put: (k, v) => cache.set(k, v), remove: (k) => cache.delete(k) }) },
     Session: { getEffectiveUser: () => ({ getEmail: () => ME }) },
     ScriptApp: { getOAuthToken: () => 'oauth-token', getService: () => ({ getUrl: () => 'https://x' }), triggers: [],
       getProjectTriggers() { return this.triggers; }, deleteTrigger(t) { this.triggers = this.triggers.filter((x) => x !== t); },
-      newTrigger(fn) { const self = this; return { timeBased: () => ({ everyDays: () => ({ atHour: (h) => ({ create: () => self.triggers.push({ fn, h, getHandlerFunction: () => fn }) }) }) }) }; } },
+      newTrigger(fn) { const self = this; return { timeBased: () => ({ everyDays: () => ({ atHour: (h) => ({ create: () => self.triggers.push({ fn, h, getHandlerFunction: () => fn }) }) }),
+        everyMinutes: (mins) => ({ create: () => self.triggers.push({ fn, mins, getHandlerFunction: () => fn }) }) }) }; } },
     DriveApp: { getFolderById: (id) => { if (!reg[id]) throw new Error('no folder'); return reg[id]; } },
     Utilities: {
       base64EncodeWebSafe: (s) => Buffer.from(typeof s === 'string' ? s : Buffer.from(s.map((b) => b & 255))).toString('base64url'),
       base64DecodeWebSafe: (s) => signed(Buffer.from(s, 'base64url')),
       base64Decode: (s) => signed(Buffer.from(s, 'base64')),
       computeHmacSha256Signature: (body, key) => signed(crypto.createHmac('sha256', key).update(body).digest()),
+      computeDigest: (_alg, str) => signed(crypto.createHash('sha256').update(str).digest()),
+      DigestAlgorithm: { SHA_256: 'sha256' },
+      base64Encode: (b) => Buffer.from(b.map((x) => x & 255)).toString('base64'),
       newBlob: (bytes) => ({ getDataAsString: () => Buffer.from(bytes.map((b) => b & 255)).toString('utf8') }),
       getUuid: () => crypto.randomUUID(),
       formatDate: (d) => new Date(d.getTime() + 5.5 * 3600e3).toISOString().slice(0, 10),
@@ -60,6 +65,7 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
         const v = url.split('?video=')[1], r = v in rows ? rows[v] : row();
         return rowCode !== 200 ? resp(rowCode) : r === false ? resp(404, '{}') : resp(200, JSON.stringify({ video: r }));
       }
+      if (url === P.AF_VIDEO_LIVE_URL + '?groups=1') return h['x-roster-key'] === KEY ? resp(groups ? 200 : 500, JSON.stringify({ groups: typeof groups === 'function' ? groups() : groups })) : resp(401);
       if (url === P.AF_VIDEO_LIVE_URL) return h['x-roster-key'] === KEY ? resp(liveCode, JSON.stringify({ ids: typeof live === 'function' ? live() : live || [] })) : resp(401);
       if (url.startsWith('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable') && m === 'post') {
         const s = 'https://upload.stub/session/' + (++ids); sessions[s] = { meta: JSON.parse(o.payload), got: [], len: 0 };
@@ -80,8 +86,11 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
         return s.file ? resp(200, JSON.stringify({ id: s.file.id })) : resp(308, '', held());
       }
       const pm = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\/permissions/);
-      if (pm && m === 'post') { const b = JSON.parse(o.payload); assert.ok(url.includes('sendNotificationEmail=false')); store[pm[1]].perms.push({ type: b.type, emailAddress: b.emailAddress, role: b.role }); return resp(200, '{}'); }
-      if (pm && m === 'get') return resp(200, JSON.stringify({ permissions: store[pm[1]].perms.map((x) => ({ type: x.type, emailAddress: x.emailAddress, permissionDetails: x.permissionDetails })) }));
+      if (pm && !store[pm[1]]) return resp(404, '{}');
+      if (pm && m === 'post') { if (permFail) return resp(500, '{}'); const b = JSON.parse(o.payload); assert.ok(url.includes('sendNotificationEmail=false')); store[pm[1]].perms.push({ id: 'p' + (++ids), type: b.type, emailAddress: b.emailAddress, role: b.role }); return resp(200, '{}'); }
+      if (pm && m === 'get') return resp(200, JSON.stringify({ permissions: store[pm[1]].perms.map((x) => ({ id: x.id, type: x.type, emailAddress: x.emailAddress, role: x.role, permissionDetails: x.permissionDetails })) }));
+      const pd = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\/permissions\/([^?]+)\?/);
+      if (pd && m === 'delete') { const f = store[pd[1]]; f.perms = f.perms.filter((x) => x.id !== decodeURIComponent(pd[2])); return resp(204, ''); }
       const fm = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\?/);
       if (fm && m === 'patch') { const b = JSON.parse(o.payload); if (store[fm[1]] && b.trashed) store[fm[1]].trashed = true; return resp(200, '{}'); }
       throw new Error('unexpected fetch ' + m + ' ' + url);
@@ -109,7 +118,7 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
     }
     return last;
   };
-  return { ctx, central, store, logs, calls, cache, P, rows, ticket, upload, J, daily: () => J(ctx.afVideoDaily()), part: (b) => J(ctx.gameAfVideoPart_(b)) };
+  return { ctx, central, store, logs, calls, cache, P, rows, ticket, upload, J, daily: () => J(ctx.afVideoDaily()), sync: (full) => J(ctx.afVideoShareSync(full)), part: (b) => J(ctx.gameAfVideoPart_(b)) };
 }
 const clip = (n) => { const b = Buffer.alloc(n); Buffer.from('\x00\x00\x00\x18ftypmp42synthetic').copy(b); for (let i = 24; i < n; i++) b[i] = (i * 7) & 255; return b; };
 const find = (root, ...names) => names.reduce((f, n) => f && f.kids.find((k) => k.name === n), root);
@@ -165,7 +174,7 @@ test('the ticket: a wrong key, another role, bad params and missing set-up are r
   assert.strictEqual(t.ticket({}, { email: null }).data.code, 'who');
   assert.strictEqual(t.ticket({ video: 'x' }).data.code, 'bad_input');
   assert.strictEqual(setup({ props: { AF_VIDEO_ACCOUNTABLE: '' } }).ticket({}).data.code, 'not_configured');
-  assert.strictEqual(setup().ticket({}, { campus: 'LMS3' }).data.code, 'not_configured', 'no Principal on the allowlist for that school');
+  assert.strictEqual(setup({ rows: { [VIDEO]: row({ campus: 'LMS3' }) } }).ticket({}, { campus: 'LMS3' }).data.code, 'not_configured', 'fallback: no Principal on the allowlist for that school');
   assert.ok(t.calls.every((x) => !x.url.includes('upload')), 'no Drive call');
 });
 
@@ -236,10 +245,57 @@ test('the daily sweep trashes files past delete-after and orphans older than 36 
   assert.ok(down.logs.includes('af-video: live_list_unavailable'));
 });
 
+const JUDGE2 = 'principal2@test.invalid', OWNER_B = 'owner-b@test.invalid';
+test('viewers are data: shared with af-drive\'s list (every Owner, the af_judge holders, the Principal); the old properties are ignored', () => {
+  const viewers = [PRINCIPAL, ME, OWNER_B, JUDGE2];
+  const t = setup({ props: { AF_VIDEO_ACCOUNTABLE: '', AF_VIDEO_OWNER: '' }, rows: { [VIDEO]: row({ viewers }) } });
+  const r = t.upload(t.ticket({}).data.url, clip(1000));
+  assert.strictEqual(r.success, true);
+  assert.deepStrictEqual(t.store[r.fileId].perms.map((p) => p.emailAddress).sort(), [...viewers].sort());
+  assert.ok(!t.store[r.fileId].perms.some((p) => p.emailAddress === ACC), 'the old accountable property plays no part');
+  assert.strictEqual(setup({ rows: { [VIDEO]: row({ viewers: [] }) } }).ticket({}).data.code, 'not_configured', 'no viewers: no upload');
+});
+
+test('a grant reaches Drive on the next sync, a revoke removes the reader; an unchanged set costs no Drive call', () => {
+  let emails = [PRINCIPAL, ME];
+  const t = setup({ rows: { [VIDEO]: row({ viewers: [PRINCIPAL, ME] }) }, groups: () => [{ campus: 'LMS1', event: 'af2026', emails, files: Object.keys(t.store) }] });
+  const id = t.upload(t.ticket({}).data.url, clip(1000)).fileId, who = () => t.store[id].perms.map((p) => p.emailAddress).sort();
+  assert.deepStrictEqual(who(), [ME, PRINCIPAL].sort());
+  assert.deepStrictEqual(t.sync(), { groups: 1, changed: 1, added: 0, removed: 0, failed: 0 }, 'first pass records the set');
+  emails = [PRINCIPAL, ME, JUDGE2]; // Uday grants LMS 2's Principal af_judge for all schools
+  assert.deepStrictEqual(t.sync(), { groups: 1, changed: 1, added: 1, removed: 0, failed: 0 });
+  assert.deepStrictEqual(who(), [ME, PRINCIPAL, JUDGE2].sort());
+  const before = t.calls.length;
+  assert.deepStrictEqual(t.sync(), { groups: 1, changed: 0, added: 0, removed: 0, failed: 0 });
+  assert.strictEqual(t.calls.length - before, 1, 'only the af-drive list');
+  emails = [PRINCIPAL, ME]; // revoked
+  assert.deepStrictEqual(t.sync(), { groups: 1, changed: 1, added: 0, removed: 1, failed: 0 });
+  assert.deepStrictEqual(who(), [ME, PRINCIPAL].sort());
+  assert.ok(t.store[id].perms.some((p) => p.role === 'owner'), 'the owning account is never removed');
+  assert.ok(!t.store[id].trashed, 'a permission removed, never the file');
+});
+
+test('the sync never strips every reader, retries a failed group, removes a link share, and leaves an inherited one logged', () => {
+  const t = setup({ groups: () => [{ campus: 'LMS1', event: 'af2026', emails: [], files: Object.keys(t.store) }] });
+  const id = t.upload(t.ticket({}).data.url, clip(1000)).fileId;
+  const n = t.store[id].perms.length;
+  assert.strictEqual(t.sync().changed, 0); assert.strictEqual(t.store[id].perms.length, n, 'an empty list touches nothing');
+  const f = setup({ permFail: true, groups: () => [{ campus: 'LMS1', event: 'af2026', emails: [PRINCIPAL, JUDGE2], files: Object.keys(f.store) }] });
+  const fid = 'DRIVEfileX0000001'; f.store[fid] = { id: fid, perms: [{ id: 'p0', type: 'user', emailAddress: ME, role: 'owner' }, { id: 'pa', type: 'anyone', role: 'reader' }] };
+  assert.deepStrictEqual(f.sync(), { groups: 1, changed: 1, added: 0, removed: 1, failed: 1 }, 'the link share goes; the failed add keeps the group unhashed');
+  assert.ok(!f.store[fid].perms.some((p) => p.type === 'anyone'));
+  assert.strictEqual(f.sync().changed, 1, 'tried again next pass');
+  const g = setup({ groups: () => [{ campus: 'LMS1', event: 'af2026', emails: [ME], files: ['DRIVEfileY0000001'] }] });
+  g.store.DRIVEfileY0000001 = { id: 'DRIVEfileY0000001', perms: [{ id: 'p0', type: 'user', emailAddress: ME, role: 'owner' }, { id: 'pm', type: 'user', emailAddress: 'staff@test.invalid', role: 'reader', permissionDetails: [{ inherited: true }] }] };
+  assert.strictEqual(g.sync().failed, 1);
+  assert.ok(g.logs.includes('af-video: inherited_extra'));
+  assert.strictEqual(setup().sync().groups, 0, 'af-drive down: nothing touched');
+});
+
 test('installAfVideoTrigger keeps exactly one daily trigger', () => {
   const t = setup();
   t.ctx.installAfVideoTrigger(); t.ctx.installAfVideoTrigger();
-  assert.deepStrictEqual(t.ctx.ScriptApp.triggers.map((x) => [x.fn, x.h]), [['afVideoDaily', 3]]);
+  assert.deepStrictEqual(t.ctx.ScriptApp.triggers.map((x) => [x.fn, x.h ?? x.mins]), [['afVideoDaily', 3], ['afVideoShareSync', 10]]);
 });
 
 console.log('af-video: all ' + n + ' passed (synthetic clip, fake Drive)');
