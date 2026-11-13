@@ -134,6 +134,22 @@ function coordSameKey_(want, got) {
 
 const COORD_GAME_NIGHT_M_ = 300; // a point this close to where the bus has parked at night is dropped (a driver's home, often)
 
+/** gameworld's devices (Lane T, Uday 13 Nov: "13 live buses as opposed to 2 in our portal ... ensure fidelity"): every Trackmaster
+ *  device, newest row each, with the vendor's own status (ProgressStatus: Moving, IgnitionOn, Stopped, Unreachable, Towed) and last
+ *  report. Never a position, place, BBID or IMEI. A device on the roster goes to callers asking for its campus; one on no roster
+ *  bus goes only to a '*' caller, with campusId null, for Uday to map. ponytail: rows the vendor sends with no position are already
+ *  dropped by coordBusParse_ (none today); keep them there if a device without a fix must be listed. */
+function coordGameDevices_(gps, regs, fleet, all) {
+  const rostered = {}, newest = {};
+  fleet.forEach(function (b) { rostered[FleetQuests.normReg(b.reg)] = gpsCampusId_(b.campus); });
+  gps.forEach(function (g) { if (g.reg && (!newest[g.reg] || String(g.at) > String(newest[g.reg].at))) newest[g.reg] = g; });
+  return Object.keys(newest).sort().filter(function (r) { return regs[r] || (all && !rostered[FleetQuests.normReg(r)]); }).map(function (r) {
+    const g = newest[r];
+    return { reg: r, campusId: regs[r] ? (rostered[FleetQuests.normReg(r)] || null) : null, state: String(g.state || '').replace(/[^A-Za-z ]/g, '').slice(0, 24),
+      at: String(g.at || ''), speed: Number(g.speed) || 0 };
+  });
+}
+
 /** gameworld and gamecrew: the key in the body against Script property GAME_READ_KEY; unset or wrong: false. */
 function coordGameKeyOk_(body) {
   const want = String(PropertiesService.getScriptProperties().getProperty('GAME_READ_KEY') || '').trim();
@@ -181,10 +197,12 @@ function coordGameWorld_(body) {
     return { reg: t.reg, trip: String(t.trip || ''), date: String(t.date), path: coordWorldPath_(t.path).filter(function (p) {
       return Array.isArray(p) && isFinite(Number(p[0])) && isFinite(Number(p[1])) && away(t.reg, Number(p[0]), Number(p[1])); }).map(function (p) { return [Number(p[0]), Number(p[1])]; }) };
   });
-  let live = [];
+  let live = [], devices = [];
   try {
-    live = coordBusFetch_().buses.filter(function (g) { return regs[g.reg] && away(g.reg, g.lat, g.lng); })
+    const gps = coordBusFetch_().buses;
+    live = gps.filter(function (g) { return regs[g.reg] && away(g.reg, g.lat, g.lng); })
       .map(function (g) { return { reg: g.reg, lat: g.lat, lng: g.lng, speed: Number(g.speed) || 0, at: String(g.at || '') }; });
-  } catch (e) { live = []; } // the GPS provider down: routes still answer, no live fixes
-  return { success: true, syncedAt: meta.syncedAt, vehicles: vehicles, stops: stops, tracks: tracks, live: live };
+    devices = coordGameDevices_(gps, regs, base.fleet, all);
+  } catch (e) { live = []; devices = []; } // the GPS provider down: routes still answer, no live fixes, no device list
+  return { success: true, syncedAt: meta.syncedAt, vehicles: vehicles, stops: stops, tracks: tracks, live: live, devices: devices };
 }

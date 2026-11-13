@@ -240,7 +240,8 @@ assert.strictEqual(J(run('coordWorldCaller_("t")')).campusId, 'LMS4', 'a Princip
   ctx.coordBusFetch_ = () => ({ at: 'x', buses: [
     { reg: 'HP1', lat: 31.6, lng: 76.9, speed: 30, at: '2026-11-10T07:30:00+05:30', state: 'moving', place: 'Main Road, Village A', kmToday: 12, bbid: 'B1' },
     { reg: 'HP1', lat: 31.5005, lng: 76.5005, speed: 0, at: '2026-11-10T22:00:00+05:30', place: 'Home Lane 4' }, // at the night spot
-    { reg: 'HP7', lat: 31.9, lng: 77.1, speed: 0, at: '2026-11-10T07:00:00+05:30', place: 'Village B' }] });
+    { reg: 'HP7', lat: 31.9, lng: 77.1, speed: 0, at: '2026-11-10T07:00:00+05:30', place: 'Village B', state: 'Stopped' },
+    { reg: 'HP99', lat: 31.95, lng: 77.2, speed: 0, at: '2023-09-26T11:27:31+05:30', place: 'Village C', state: 'Unreachable', bbid: 'IMEI-866' }] }); // HP99: on no roster bus
   const gw = (b) => J(run('coordGameWorld_(' + JSON.stringify(b) + ')'));
   withKey(null);
   assert.strictEqual(gw({ key: '', campuses: '*' }).error, 'Not authorized', 'GAME_READ_KEY unset: refused, even an empty key');
@@ -259,19 +260,29 @@ assert.strictEqual(J(run('coordWorldCaller_("t")')).campusId, 'LMS4', 'a Princip
   assert.deepStrictEqual(one.tracks[1].path, [], 'a bad path cell is an empty path');
   assert.deepStrictEqual(one.live, [{ reg: 'HP1', lat: 31.6, lng: 76.9, speed: 30, at: '2026-11-10T07:30:00+05:30' }], 'a live fix at the night spot is dropped; the rest is position, speed and time only');
   assert.deepStrictEqual(gw({ key: 'long-game-key-123', campuses: '*' }).vehicles.map((v) => v.reg), ['HP1', 'HP7'], '"*": every campus');
+  // devices (Lane T, 13 Nov fidelity): every Trackmaster device, its status and last report, never a position
+  assert.deepStrictEqual(one.devices, [{ reg: 'HP1', campusId: 'LMS4', state: '', at: '2026-11-10T22:00:00+05:30', speed: 0 }],
+    'campus-scoped: its own device only (newest row, even at the night spot, with no position); never another campus\'s or an unrostered one');
+  const star = gw({ key: 'long-game-key-123', campuses: '*' }).devices;
+  assert.deepStrictEqual(star.map((d) => [d.reg, d.campusId, d.state]), [['HP1', 'LMS4', ''], ['HP7', star[1].campusId, 'Stopped'], ['HP99', null, 'Unreachable']],
+    '"*": every device; one on no roster bus has campusId null');
+  assert.ok(star[1].campusId && star[1].campusId !== 'LMS4', 'HP7 keeps its own campus');
+  const hp7campus = star[1].campusId;
+  assert.deepStrictEqual(gw({ key: 'long-game-key-123', campuses: [hp7campus] }).devices.map((d) => d.reg), ['HP7'], 'another campus: its device only, no unrostered HP99');
+  assert.ok(!/lat|lng|IMEI|bbid|Village/.test(JSON.stringify(star)), 'devices carry no position, place or device id');
   assert.deepStrictEqual(gw({ key: 'long-game-key-123', campuses: 'LMS4' }).vehicles, [], 'campuses neither a list nor "*": nothing');
   // the allowlist: every key in the answer is one of these; nothing else can leave
-  const allowed = { '': ['success', 'syncedAt', 'vehicles', 'stops', 'tracks', 'live'], vehicles: ['reg', 'campusId', 'route'], stops: ['bus', 'trip', 'seq', 'kind', 'lat', 'lng'],
+  const allowed = { '': ['success', 'syncedAt', 'vehicles', 'stops', 'tracks', 'live', 'devices'], devices: ['reg', 'campusId', 'state', 'at', 'speed'], vehicles: ['reg', 'campusId', 'route'], stops: ['bus', 'trip', 'seq', 'kind', 'lat', 'lng'],
     tracks: ['reg', 'trip', 'date', 'path'], live: ['reg', 'lat', 'lng', 'speed', 'at'] };
   const all = gw({ key: 'long-game-key-123', campuses: '*' });
   Object.keys(all).forEach((k) => assert.ok(allowed[''].includes(k), 'top-level key allowed: ' + k));
-  ['vehicles', 'stops', 'tracks', 'live'].forEach((part) => all[part].forEach((row) => Object.keys(row).forEach((k) => assert.ok(allowed[part].includes(k), part + ' key allowed: ' + k))));
+  ['vehicles', 'stops', 'tracks', 'live', 'devices'].forEach((part) => all[part].forEach((row) => Object.keys(row).forEach((k) => assert.ok(allowed[part].includes(k), part + ' key allowed: ' + k))));
   const text = JSON.stringify(all);
   ['Driver One', 'Driver Seven', 'Village A', 'Village B', 'Home Lane 4', 'Main Road', 'driver', 'place', 'night', 'bases', 'phone', 'pnl', 'fee', 'fuel', 'rollCall', 'counts', 'photo', 'student', 'bbid', 'shared_with']
     .forEach((w) => assert.ok(!text.includes(w), 'never in the answer: ' + w));
   ctx.coordBusFetch_ = () => { throw new Error('GPS provider down'); };
   const down = gw({ key: 'long-game-key-123', campuses: ['LMS4'] });
-  assert.deepStrictEqual([down.success, down.live, down.vehicles.length], [true, [], 1], 'the GPS provider down: routes still answer, no live fixes');
+  assert.deepStrictEqual([down.success, down.live, down.devices, down.vehicles.length], [true, [], [], 1], 'the GPS provider down: routes still answer, no live fixes, no devices');
   assert.ok(/'gameworld'\) return coordJson_\(coordGameWorld_\(body\)\)/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8')), 'doPost routes gameworld (key in the body, never a GET)');
   assert.ok(!/gameworld/.test(fs.readFileSync(path.join(__dirname, '../../apps-script/coordinator.gs'), 'utf8').split('function doPost')[0]), 'no GET gameworld (a key in a URL ends up in logs)');
   run('gpsWrite_(GPS_TAB_STOPS, GPS_STOP_COLS, ' + JSON.stringify(stopsBefore) + ')');
