@@ -50,6 +50,7 @@
       "driver-google",
       "driver-fuel",
       "proof-mirror",
+      "af-video",
       "../assets/game/bus-chain.js",
       "supporting-charge"
     ]
