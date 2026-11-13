@@ -1,13 +1,16 @@
 // af-video.gs (Roster project, the one with Drive): the Annual Function dance videos go to each school's Google Drive, never the
 // database (Uday, 13 Nov: "route the dance videos through google drive… not to the database"). lms-game keeps text only (541).
 //  1. gameAfVideoTicket, through lms-game's classic proxy (server to server, the ROSTER_GAME_KEY): a class teacher at their own
-//     school, after af_video_start. Params {video, event, deleteAfter, fileName}; the school comes from the proxy. -> {url, expiresAt}
+//     school, after af_video_start. Only params.video is used: the school, event, file name, mime and delete-after come from that
+//     event_videos row, read on the server from lms-game's af-drive (G2, 14 Nov). The row must be the caller's own (its uploader's
+//     email = the proxy's JWT-verified email), at the proxy's school, and not finished. -> {url, expiresAt}
 //  2. gameAfVideoPart, the browser's parts against that ticket (app/src/classic/upload.ts: {action, ticket, part, of, base64}).
 //     Each part goes straight on into a Drive resumable upload, so a big clip is never reassembled here. The last part answers
 //     {success, fileId}; the app records it with af_video_done.
 //  Saved as <school folder>/AF Videos <year>/<event>/<video id>.<ext>, shared with that school's Principal, the event's
 //  accountable person and the Owner only (no link sharing, no notification email). A file that would be seen by anyone else is
-//  trashed and refused (OVERSHARED). The description carries "delete-after: YYYY-MM-DD" (30 days after the school's AF).
+//  trashed and refused (OVERSHARED). copyRequiresWriterPermission: viewers get no download, print or copy (Drive's preview
+//  pop-out). The description carries "delete-after: YYYY-MM-DD" (30 days after the school's AF).
 //  3. afVideoDaily (a daily trigger; Uday runs installAfVideoTrigger() once): trashes files past their delete-after date, and
 //     orphans (no live event_videos row, older than 36 h) from lms-game's af-drive list.
 // Script properties (set by Uday, never in the repo): ROSTER_GAME_KEY (= lms-game's CLASSIC_ROSTER_KEY secret), AF_VIDEO_ACCOUNTABLE,
@@ -16,7 +19,7 @@
 
 var AFV_TICKET_MS_ = 2 * 60 * 60 * 1000;   // a ticket starts an upload within 2 h; its parts then have the 6 h of the cache
 var AFV_PART_BYTES_ = 1310720;             // = app/src/classic/upload.ts PART_BYTES: 5 × 256 KiB, as Drive needs for every part but the last
-var AFV_PARTS_MAX_ = 120;                  // 157 MB; lms-game caps a clip at 150 MB
+var AFV_PARTS_MAX_ = 40;                   // 52.4 MB; lms-game caps a clip at 50 MB (541 bytes check), so a bigger upload is refused here too
 var AFV_ORPHAN_AGE_MS_ = 36 * 60 * 60 * 1000; // af_video_done must come within a day of the start
 var AFV_MIME_ = { mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' };
 var AFV_DRIVE_ = 'https://www.googleapis.com/drive/v3/files';
@@ -73,11 +76,16 @@ function gameAfVideoTicket_(b) {
   const campus = String(b.campus || '').trim().toUpperCase(), email = afvEmail_(b.email), p = b.params && typeof b.params === 'object' ? b.params : {};
   if (!/^[A-Z0-9]{2,8}$/.test(campus)) return afvOut_('campus_needed');
   if (!email) return afvOut_('who');
-  const video = String(p.video || ''), event = String(p.event || ''), del = String(p.deleteAfter || ''), name = String(p.fileName || '');
-  const ext = (name.match(/^([0-9a-f-]{36})\.(mp4|mov|webm)$/) || [])[2];
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(video) || name.indexOf(video + '.') !== 0 || !ext
-    || !/^[a-z][a-z0-9_]{1,39}$/.test(event) || !/^\d{4}-\d{2}-\d{2}$/.test(del) || del < afvToday_()) return afvOut_('bad_input');
+  const video = String(p.video || '');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(video)) return afvOut_('bad_input');
   if (!afvViewers_(campus)) return afvOut_('not_configured');
+  const row = afvRow_(video); // every other param the app sends (event, deleteAfter, fileName) is ignored
+  if (row === null) return afvOut_('not_configured');
+  if (!row || row.campus !== campus || afvEmail_(row.email) !== email) return afvOut_('not_authorized');
+  if (!row.open) return afvOut_('done');
+  const event = String(row.event || ''), del = String(row.deleteAfter || ''), ext = Object.keys(AFV_MIME_).filter(function (k) { return AFV_MIME_[k] === row.mime; })[0];
+  if (!ext || !/^[a-z][a-z0-9_]{1,39}$/.test(event) || !/^\d{4}-\d{2}-\d{2}$/.test(del) || del < afvToday_()) return afvOut_('bad_input');
+  const name = video + '.' + ext;
   const exp = Date.now() + AFV_TICKET_MS_;
   const body = afvB64_(JSON.stringify({ c: campus, ev: event, d: del, n: name, m: AFV_MIME_[ext], y: (event.match(/20\d\d/) || [del.slice(0, 4)])[0],
     x: exp, r: Utilities.getUuid() }));
@@ -91,6 +99,16 @@ function afvTicket_(s) {
   const body = s.slice(0, at);
   if (s.slice(at + 1) !== afvSign_(body)) return null;
   try { return JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(body + '==='.slice((body.length + 3) % 4))).getDataAsString()); } catch (e) { return null; }
+}
+
+/** the event_videos row from lms-game's af-drive (service role there; teachers can't read the table). false = no such row,
+ *  null = af-drive unreachable or not set up. The key goes in a header, the video id in the query (an id, never a person). */
+function afvRow_(video) {
+  const url = String(afvProps_().getProperty('AF_VIDEO_LIVE_URL') || ''), key = afvProps_().getProperty('ROSTER_GAME_KEY');
+  if (!/^https:\/\//.test(url) || !key) return null;
+  const r = UrlFetchApp.fetch(url + '?video=' + video, { method: 'get', headers: { 'x-roster-key': key }, muteHttpExceptions: true });
+  if (r.getResponseCode() === 404) return false;
+  try { const v = r.getResponseCode() === 200 ? JSON.parse(r.getContentText()).video : null; return v && typeof v === 'object' ? v : null; } catch (e) { return null; }
 }
 
 // ── 2. the parts ───────────────────────────────────────────────────
@@ -116,7 +134,7 @@ function gameAfVideoPart_(b) {
     const folder = afvFolder_(t.c, t.ev, t.y);
     if (!folder) return { success: false, error: 'NO_FOLDER' };
     const r = afvApi_('post', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true',
-      { name: t.n, parents: [folder.getId()], mimeType: t.m, description: 'delete-after: ' + t.d + '\nAnnual Function video (lms-game). Shared with the Principal, the accountable person and the Owner only.' });
+      { name: t.n, parents: [folder.getId()], mimeType: t.m, copyRequiresWriterPermission: true, description: 'delete-after: ' + t.d + '\nAnnual Function video (lms-game). Shared with the Principal, the accountable person and the Owner only.' });
     const loc = r.getResponseCode() === 200 && (r.getHeaders().Location || r.getHeaders().location);
     if (!loc) { console.error('af-video: session ' + r.getResponseCode()); return { success: false, error: 'DRIVE' }; }
     st = { s: loc, next: 1, off: 0 };

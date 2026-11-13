@@ -8,7 +8,9 @@ const KEY = 'r'.repeat(48), ME = 'owner@test.invalid', PRINCIPAL = 'principal1@t
 const VIDEO = '0b6f3c1e-2a4d-4e8f-9a1b-3c5d7e9f1a2b', PART = 1310720;
 const signed = (buf) => Array.from(buf, (b) => (b > 127 ? b - 256 : b));
 
-function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode = 200, now = Date.parse('2026-11-14T05:00:00Z') } = {}) {
+// the event_videos rows af-drive answers (541's, as the server reads them): the caller's own unfinished row unless a test says otherwise
+const row = (o = {}) => Object.assign({ campus: 'LMS1', event: 'af2026', mime: 'video/mp4', deleteAfter: '2026-12-24', email: 'teacher@test.invalid', open: true }, o);
+function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode = 200, rows = {}, rowCode = 200, now = Date.parse('2026-11-14T05:00:00Z') } = {}) {
   let ids = 0, sessions = {}, lost = 0;
   const reg = {}, store = {}, logs = [], calls = [];
   const folder = (name) => {
@@ -23,7 +25,7 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
   ['LMS 1 - Dhalpur', 'LMS 2 - Kelheli'].forEach((n) => central.createFolder(n));
   const addFile = (meta, bytes) => {
     const id = 'DRIVEfile' + String(++ids).padStart(8, '0');
-    const x = { id, name: meta.name, mime: meta.mimeType, description: meta.description, bytes, trashed: false, created: new Date(now),
+    const x = { id, meta, name: meta.name, mime: meta.mimeType, description: meta.description, bytes, trashed: false, created: new Date(now),
       perms: [{ type: 'user', emailAddress: ME }].concat(inherited ? [inherited] : []) };
     x.api = { getId: () => id, getDescription: () => x.description, getDateCreated: () => x.created, setTrashed: (v) => { x.trashed = v; } };
     store[id] = x; reg[meta.parents[0]].files.push(x); return x;
@@ -53,6 +55,11 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
     UrlFetchApp: { fetch(url, o = {}) {
       const m = (o.method || 'get').toLowerCase(), h = o.headers || {};
       calls.push({ url, m, range: h['Content-Range'], auth: h.Authorization });
+      if (url.startsWith(P.AF_VIDEO_LIVE_URL + '?video=')) {
+        if (h['x-roster-key'] !== KEY) return resp(401);
+        const v = url.split('?video=')[1], r = v in rows ? rows[v] : row();
+        return rowCode !== 200 ? resp(rowCode) : r === false ? resp(404, '{}') : resp(200, JSON.stringify({ video: r }));
+      }
       if (url === P.AF_VIDEO_LIVE_URL) return h['x-roster-key'] === KEY ? resp(liveCode, JSON.stringify({ ids: typeof live === 'function' ? live() : live || [] })) : resp(401);
       if (url.startsWith('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable') && m === 'post') {
         const s = 'https://upload.stub/session/' + (++ids); sessions[s] = { meta: JSON.parse(o.payload), got: [], len: 0 };
@@ -102,14 +109,14 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
     }
     return last;
   };
-  return { ctx, central, store, logs, calls, cache, P, ticket, upload, J, daily: () => J(ctx.afVideoDaily()), part: (b) => J(ctx.gameAfVideoPart_(b)) };
+  return { ctx, central, store, logs, calls, cache, P, rows, ticket, upload, J, daily: () => J(ctx.afVideoDaily()), part: (b) => J(ctx.gameAfVideoPart_(b)) };
 }
 const clip = (n) => { const b = Buffer.alloc(n); Buffer.from('\x00\x00\x00\x18ftypmp42synthetic').copy(b); for (let i = 24; i < n; i++) b[i] = (i * 7) & 255; return b; };
 const find = (root, ...names) => names.reduce((f, n) => f && f.kids.find((k) => k.name === n), root);
 let n = 0; const test = (name, fn) => { fn(); console.log('ok ' + ++n + ' - ' + name); };
 
 test('a synthetic clip in 3 parts lands in <school>/AF Videos 2026/<event>/<video>.mp4, shared with exactly the 3, and its id comes back', () => {
-  const t = setup(), c = clip(2 * PART + 5000), tk = t.ticket({});
+  const t = setup(), c = clip(2 * PART + 5000), tk = t.ticket({ deleteAfter: '2099-01-01', fileName: 'x.mp4', event: 'other' }); // params other than video are ignored
   assert.strictEqual(tk.success, true);
   assert.match(tk.data.url, /^https:\/\/script\.google\.com\/macros\/s\/ROSTER\/exec\?ticket=[\w-]+\.[\w-]+&action=gameAfVideoPart$/);
   const r = t.upload(tk.data.url, c);
@@ -119,7 +126,8 @@ test('a synthetic clip in 3 parts lands in <school>/AF Videos 2026/<event>/<vide
   assert.strictEqual(f.name, VIDEO + '.mp4');
   assert.strictEqual(f.mime, 'video/mp4');
   assert.ok(f.bytes.equals(c), 'every byte, in order');
-  assert.match(f.description, /^delete-after: 2026-12-24\n/);
+  assert.match(f.description, /^delete-after: 2026-12-24\n/, 'the row\'s delete-after, not the params\'');
+  assert.strictEqual(f.meta.copyRequiresWriterPermission, true, 'viewers get no download, print or copy');
   assert.deepStrictEqual(f.perms.map((p) => p.emailAddress).sort(), [ACC, ME, PRINCIPAL].sort(), 'Principal, accountable, Owner (the file\'s owner), nobody else');
   assert.ok(f.perms.every((p) => p.type === 'user'), 'no link or domain sharing');
   assert.ok(t.calls.filter((x) => x.url.includes('googleapis')).every((x) => x.auth === 'Bearer oauth-token'));
@@ -143,7 +151,7 @@ test('parts out of order, a middle part of the wrong size, a forged ticket and a
   assert.strictEqual(t.part({ ticket: tick, part: 1, of: 3, base64: c.subarray(0, PART).toString('base64') }).success, true);
   assert.strictEqual(t.part({ ticket: tick, part: 3, of: 3, base64: c.subarray(2 * PART).toString('base64') }).error, 'OUT_OF_ORDER');
   assert.strictEqual(t.part({ ticket: tick.slice(0, -2) + 'xx', part: 1, of: 3, base64: 'AA==' }).error, 'not_authorized');
-  assert.strictEqual(t.part({ ticket: tick, part: 1, of: 200, base64: 'AA==' }).error, 'BAD_PART');
+  assert.strictEqual(t.part({ ticket: tick, part: 1, of: 41, base64: 'AA==' }).error, 'BAD_PART', '41 parts = over 50 MB');
   const late = setup({ now: Date.parse('2026-11-14T05:00:00Z') }), lt = late.ticket({});
   const old = setup({ now: Date.parse('2026-11-14T08:00:00Z') }); // 3 h later, the same key: the ticket no longer starts an upload
   assert.strictEqual(old.part({ ticket: new URL(lt.data.url).searchParams.get('ticket'), part: 1, of: 1, base64: 'AAAA' }).error, 'not_authorized');
@@ -155,11 +163,27 @@ test('the ticket: a wrong key, another role, bad params and missing set-up are r
   assert.strictEqual(t.ticket({}, { role: 'principal' }).data.code, 'not_authorized');
   assert.strictEqual(t.ticket({}, { campus: '' }).data.code, 'campus_needed');
   assert.strictEqual(t.ticket({}, { email: null }).data.code, 'who');
-  for (const p of [{ video: 'x' }, { fileName: 'other.mp4' }, { fileName: VIDEO + '.exe' }, { event: 'AF 2026' }, { deleteAfter: '2026-11-01' }, { deleteAfter: 'soon' }])
-    assert.strictEqual(t.ticket(p).data.code, 'bad_input', JSON.stringify(p));
+  assert.strictEqual(t.ticket({ video: 'x' }).data.code, 'bad_input');
   assert.strictEqual(setup({ props: { AF_VIDEO_ACCOUNTABLE: '' } }).ticket({}).data.code, 'not_configured');
   assert.strictEqual(setup().ticket({}, { campus: 'LMS3' }).data.code, 'not_configured', 'no Principal on the allowlist for that school');
   assert.ok(t.calls.every((x) => !x.url.includes('upload')), 'no Drive call');
+});
+
+test('the ticket comes only from the caller\'s own unfinished row at their own school, read on the server', () => {
+  const other = VIDEO.replace('0b6f', '9b6f'), t = setup({ rows: { [VIDEO]: row({ campus: 'LMS2' }), [other]: row({ email: 'someone@test.invalid' }) } });
+  assert.strictEqual(t.ticket({}).data.code, 'not_authorized', 'another school\'s row (a teacher can\'t write into its folder)');
+  assert.strictEqual(t.ticket({ video: other }).data.code, 'not_authorized', 'someone else\'s row');
+  assert.strictEqual(setup({ rows: { [VIDEO]: row({ open: false }) } }).ticket({}).data.code, 'done');
+  assert.strictEqual(setup({ rows: { [VIDEO]: false } }).ticket({}).data.code, 'not_authorized', 'no such row');
+  assert.strictEqual(setup({ rows: { [VIDEO]: row({ deleteAfter: '2026-11-01' }) } }).ticket({}).data.code, 'bad_input', 'already past its date');
+  assert.strictEqual(setup({ rows: { [VIDEO]: row({ mime: 'video/x-msvideo' }) } }).ticket({}).data.code, 'bad_input');
+  assert.strictEqual(setup({ rowCode: 500 }).ticket({}).data.code, 'not_configured', 'af-drive down: no ticket');
+  const ok = setup({ rows: { [VIDEO]: row({ mime: 'video/webm', event: 'af2027', deleteAfter: '2027-12-01' }) } });
+  const r = ok.upload(ok.ticket({ fileName: VIDEO + '.mp4' }).data.url, clip(100));
+  const f = ok.store[r.fileId];
+  assert.deepStrictEqual([f.name, f.mime], [VIDEO + '.webm', 'video/webm']);
+  assert.ok(find(ok.central, 'LMS 1 - Dhalpur', 'AF Videos 2027', 'af2027').files[0] === f);
+  assert.ok(ok.calls.filter((x) => x.url.includes('?video=')).every((x) => !/@/.test(x.url)), 'no person in a URL');
 });
 
 test('a file anyone else could see (inherited link sharing) is trashed and refused', () => {
@@ -186,7 +210,7 @@ test('the year folder is made once, with inherited access turned off, and kept f
 test('the daily sweep trashes files past delete-after and orphans older than 36 h; keeps live and young files', () => {
   let liveIds = [];
   const t = setup({ live: () => liveIds });
-  const up = (v, del) => t.upload(t.ticket({ video: v, fileName: v + '.mp4', deleteAfter: del }).data.url, clip(100)).fileId;
+  const up = (v, del) => { t.rows[v] = row({ deleteAfter: del }); return t.upload(t.ticket({ video: v }).data.url, clip(100)).fileId; };
   const v = (k) => VIDEO.replace('0b6f', k);
   const expired = up(v('aaaa'), '2026-11-20'), live = up(v('bbbb'), '2026-12-24'), orphan = up(v('cccc'), '2026-12-24'), young = up(v('dddd'), '2026-12-24');
   liveIds = [live];
