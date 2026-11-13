@@ -334,6 +334,43 @@ T('md: with MD_ACCEPTOR_EMAILS set, a different Owner may not accept; the listed
   assert.strictEqual(appts()[0].status, 'accepted'); assert.ok(apps.rows[1][C.MD_INTERVIEW_AT - 1]);
   assert.ok(/^MD Academics interview: Asha/.test(cal.inserts[0].ev.summary));
 });
+// P52 (14 Nov): an appointment that already happened, recorded as held: no proposal, no acceptor, no calendar event.
+const HELD = new Date(Date.now() - 4 * 864e5).toISOString();
+T('held: an Owner (not the MD acceptor) records a past MD Academics interview; no accept step, no calendar, the md column takes it', () => {
+  reset([appRow(Object.assign({ SALARY_OFFER_AT: day(-1) }, SL))]);
+  props.MD_ACCEPTOR_EMAILS = 'md@lms.org.in';
+  throws(() => ctx.apptPropose_(owner, { row: 2, kind: 'md', start: HELD }), /^Pick a time in the future\.$/); // proposals stay future-only
+  ctx.apptHeld_(owner, { row: 2, kind: 'md', start: HELD });
+  const a = appts()[0];
+  assert.deepStrictEqual([a.status, a.kind, a.calendarMode, a.decidedBy], ['accepted', 'md', 'held', 'o@lms.org.in (held)']);
+  assert.strictEqual(cal.inserts.length, 0);
+  assert.strictEqual(apps.rows[1][C.MD_INTERVIEW_AT - 1].getTime(), new Date(HELD).getTime());
+});
+T('held: the date must be past and within a year; md still needs a Salary Offer; a clerk may not record md; Rejected -> Revive', () => {
+  reset([appRow(SL)]);
+  throws(() => ctx.apptHeld_(owner, { row: 2, kind: 'interview', start: FUTURE }), /past date/);
+  throws(() => ctx.apptHeld_(owner, { row: 2, kind: 'interview', start: PAST.toISOString() }), /within the last year/);
+  throws(() => ctx.apptHeld_(owner, { row: 2, kind: 'md', start: HELD }), /Salary Offer/);
+  throws(() => ctx.apptHeld_(clerk, { row: 2, kind: 'md', start: HELD }), /Principal|Owner/);
+  reset([appRow(Object.assign({ STATUS: 'Rejected' }, SL))]);
+  throws(() => ctx.apptHeld_(owner, { row: 2, kind: 'interview', start: HELD }), /Revive/);
+  assert.strictEqual(appts().length, 0);
+});
+T('held: a waiting proposal of that kind ends; a walk-in interview gets shortlisted; a future booking keeps the time column', () => {
+  reset([appRow({})]);
+  ctx.apptHeld_(coord, { row: 2, kind: 'interview', start: HELD });
+  assert.ok(apps.rows[1][C.SHORTLISTED_AT - 1], 'seen, so shortlisted');
+  reset([appRow(SL)]);
+  ctx.apptPropose_(clerk, { row: 2, kind: 'interview', start: FUTURE });
+  ctx.apptHeld_(principal, { row: 2, kind: 'interview', start: HELD });
+  assert.deepStrictEqual(appts().map((a) => a.status), ['cancelled', 'accepted']);
+  assert.ok(/held instead/.test(appts()[0].note));
+  reset([appRow(SL)]);
+  ctx.apptPropose_(principal, { row: 2, kind: 'interview', start: FUTURE }); // a direct future booking
+  ctx.apptHeld_(principal, { row: 2, kind: 'interview', start: HELD });
+  assert.strictEqual(apps.rows[1][C.INTERVIEW_AT - 1].getTime(), new Date(FUTURE).getTime(), 'the booked one stays the next step');
+  assert.deepStrictEqual(appts().map((a) => a.status), ['accepted', 'accepted']);
+});
 T('a reschedule\'s accept cancels the old accepted one and removes its event', () => {
   reset([appRow(SL)]);
   ctx.apptPropose_(principal, { row: 2, kind: 'interview', start: FUTURE }); // direct: event p@|ev1

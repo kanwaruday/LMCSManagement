@@ -38,7 +38,7 @@ const h = boot({
       getSheetByName: (n) => tabs[n] || null,
       insertSheet: (n) => { const rows = []; tabs[n] = { rows, getLastRow: () => rows.length, appendRow: (r) => rows.push(r) }; return tabs[n]; },
     }),
-    hiringShortlist_: fake('hiringShortlist_'), hiringMarkStage_: fake('hiringMarkStage_'), apptPropose_: fake('apptPropose_'),
+    hiringShortlist_: fake('hiringShortlist_'), hiringMarkStage_: fake('hiringMarkStage_'), apptPropose_: fake('apptPropose_'), apptHeld_: fake('apptHeld_'),
     apptDecide_: fake('apptDecide_'), apptCancel_: fake('apptCancel_'), hiringConfirmReject_: fake('hiringConfirmReject_'), hiringRevive_: fake('hiringRevive_'),
   },
 });
@@ -62,6 +62,7 @@ const steps = [
   [{ op: 'unshortlist', id: 'T-0002' }, ['hiringShortlist_', { row: 11, on: false }]],
   [{ op: 'markstage', id: 'T-0002', stage: 'interview' }, ['hiringMarkStage_', { row: 11, stage: 'interview' }]],
   [{ op: 'propose', id: 'T-0002', kind: 'md', at: '2099-02-01T05:00:00.000Z' }, ['apptPropose_', { row: 11, kind: 'md', start: '2099-02-01T05:00:00.000Z' }]],
+  [{ op: 'held', id: 'T-0002', kind: 'md', at: '2026-11-10T06:30:00.000Z' }, ['apptHeld_', { row: 11, kind: 'md', start: '2026-11-10T06:30:00.000Z' }]], // P52
   [{ op: 'appt', id: 'T-0002', appt: 'AP-1', decision: 'accept' }, ['apptDecide_', { id: 'AP-1', decision: 'accept', note: '' }]],
   [{ op: 'appt', id: 'T-0002', appt: 'AP-1', decision: 'cancel', note: 'Clash' }, ['apptCancel_', { id: 'AP-1', note: 'Clash' }]],
   [{ op: 'confirmreject', id: 'T-0003', confirm: '1' }, ['hiringConfirmReject_', { row: 12, confirm: true }]],

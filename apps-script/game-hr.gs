@@ -10,14 +10,15 @@
 // gameHrReveal is the one way to see a full phone number or the offer breakdown; every reveal is written to the "Game Reveals" tab
 // (when, the Owner's name, which field, which applicant id) -- never the value itself.
 // gameHrAct (W7 slice 1, 13 Nov): the Owner's hiring steps, each one the SAME hiring.gs / hiring-appointments.gs function the old
-// page calls (so every rule, lock and stamp is theirs): shortlist, mark interview/demo done, propose an appointment, accept /
+// page calls (so every rule, lock and stamp is theirs): shortlist, mark interview/demo done, propose an appointment (or record one
+// already held on a past date: P52, hiring-appointments.gs apptHeld_), accept /
 // decline / cancel one, settle a pending reject, revive. Applicants by id (never a sheet row from the client); appointments only of
 // an applicant in the proxy's schools. Each done step is written to the "Game Actions" tab (when, who, which step, which id).
 // Not here: Start Hiring Process (it calls the Roster proxy with the person's Google token, which a game call doesn't carry).
 // ═══════════════════════════════════════════════════════════════════
 
 const GAME_HR_ACTIONS = ['gameHrPipeline', 'gameHrApplicant', 'gameHrReveal', 'gameHrAct'];
-const GAME_HR_OPS = ['shortlist', 'unshortlist', 'markstage', 'propose', 'appt', 'confirmreject', 'revive'];
+const GAME_HR_OPS = ['shortlist', 'unshortlist', 'markstage', 'propose', 'held', 'appt', 'confirmreject', 'revive'];
 const GAME_HR_REVEAL_FIELDS = ['phone', 'offer'];
 
 const gameHrTags_ = function (branches) { return (String(branches || '').match(/LMS-\d/g) || []).map(function (t) { return 'LMS' + t.slice(4); }); };
@@ -91,6 +92,7 @@ function gameHrDo_(caller, a, p) {
   if (op === 'shortlist' || op === 'unshortlist') return hiringShortlist_(caller, { row: row, on: op === 'shortlist' });
   if (op === 'markstage') return hiringMarkStage_(caller, { row: row, stage: String(p.stage || '') });
   if (op === 'propose') return apptPropose_(caller, { row: row, kind: String(p.kind || ''), start: String(p.at || '') });
+  if (op === 'held') return apptHeld_(caller, { row: row, kind: String(p.kind || ''), start: String(p.at || '') }); // P52: already happened
   if (op === 'confirmreject') return hiringConfirmReject_(caller, { row: row, confirm: p.confirm === '1' });
   if (op === 'revive') return hiringRevive_(caller, { row: row, note: String(p.note || '') });
   if (op === 'appt') {

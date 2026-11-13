@@ -165,6 +165,49 @@ function apptPropose_(caller, body) {
   return Object.assign({ id: appt.id }, hiringApplicants_(caller));
 }
 
+// P52 (14 Nov): an interview, demo or MD Academics interview that ALREADY HAPPENED, recorded as held. It is history, so it skips the
+// proposal and the acceptor's yes, and writes no calendar event (calendarMode 'held'). Who: anyone who may propose that kind. The
+// date must be in the past, within a year. The same stage rules as a proposal (Revive first; a demo after the interview; md after a
+// Salary Offer); a held interview puts a not-yet-shortlisted walk-in on the shortlist, as a direct booking does. Waiting proposals of
+// that kind end ("held instead"). The time column takes the held date unless a future accepted one of that kind is still booked.
+// Future proposals keep the future-only rule above.
+function apptHeldCore_(caller, sheet, body) {
+  const kind = String(body.kind || '');
+  if (!APPT_DURATION[kind]) throw new Error('Invalid appointment kind');
+  if (!hirElevated_(caller) && (kind === 'md' || !apptHasRole_(caller, 'FeeClerk'))) {
+    throw new Error('Only a Principal, Coordinator or the Owner can record ' + (kind === 'md' ? 'an MD Academics interview' : 'this'));
+  }
+  const r = hirScopedRow_(caller, sheet, body.row);
+  const start = hirDateOrThrow_(body.start, 'date and time');
+  if (start.getTime() > Date.now()) throw new Error('Pick the day it was held (a past date). To book one ahead, use Book it.');
+  if (start.getTime() < Date.now() - 366 * 864e5) throw new Error('Pick a date within the last year.');
+  hirGrow_(sheet);
+  const st = apptRowState_(sheet, r.row);
+  if (st.rejected) throw new Error('This applicant was rejected -- Revive them first');
+  if (kind === 'demo' && !st.interviewEvidence) throw new Error('The interview has to be done (or its report filed) before a demo');
+  if (kind === 'md' && !st.salaryOfferAt) throw new Error('An MD Academics interview needs a Salary Offer first');
+  const mine = apptForPerson_(apptAll_(), r.row, r.phone).filter(function (a) { return a.kind === kind; });
+  mine.filter(function (a) { return a.status === 'proposed'; }).forEach(function (a) { apptEnd_(a, caller.email, 'held instead', sheet); });
+  if (kind === 'interview' && !st.shortlisted) hirStampShortlist_(sheet, r.row, caller); // seen, so shortlisted
+  const booked = mine.some(function (a) { return a.status === 'accepted' && hirMs_(a.start) > Date.now(); });
+  if (!booked) sheet.getRange(r.row, apptTimeCol_(kind)).setValue(start);
+  const ids = String(caller.campusId || '').split(',').map(function (c) { return c.trim().toUpperCase(); }).filter(Boolean);
+  const now = new Date();
+  return apptSave_({ id: 'appt-' + now.getTime() + '-' + Math.floor(Math.random() * 1000), kind: kind,
+    applicantId: hirApplicantId_(r.row), row: r.row, phone: r.phone, name: r.name,
+    campus: ids.length === 1 && ids[0] !== 'ALL' ? ids[0] : r.campus, start: start, durationMin: APPT_DURATION[kind],
+    place: hirText_(body.place, 200), note: hirText_(body.note, 500),
+    proposedBy: caller.email, proposedAt: now, acceptorRole: kind === 'md' ? 'Owner' : 'Principal', status: 'accepted',
+    decidedBy: caller.email + ' (held)', decidedAt: now, declineNote: '', eventId: '', calendarMode: 'held', calendarError: '' });
+}
+
+// game-hr.gs's 'held' step (the Owner's hiring room); not wired to the old page, whose hiring doors retired
+function apptHeld_(caller, body) {
+  const sheet = hirSheet_();
+  const appt = hirWithLock_(function () { return apptHeldCore_(caller, sheet, body); });
+  return Object.assign({ id: appt.id }, hiringApplicants_(caller));
+}
+
 // Who may accept / decline: interview and demo -> role Principal covering the campus, or an Owner (override);
 // md -> an MD acceptor Owner. Returns the Decided By label, or throws.
 function apptAcceptorLabel_(caller, a) {
