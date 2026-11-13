@@ -81,7 +81,7 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
       }
       const pm = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\/permissions/);
       if (pm && m === 'post') { const b = JSON.parse(o.payload); assert.ok(url.includes('sendNotificationEmail=false')); store[pm[1]].perms.push({ type: b.type, emailAddress: b.emailAddress, role: b.role }); return resp(200, '{}'); }
-      if (pm && m === 'get') return resp(200, JSON.stringify({ permissions: store[pm[1]].perms.map((x) => ({ type: x.type, emailAddress: x.emailAddress })) }));
+      if (pm && m === 'get') return resp(200, JSON.stringify({ permissions: store[pm[1]].perms.map((x) => ({ type: x.type, emailAddress: x.emailAddress, permissionDetails: x.permissionDetails })) }));
       const fm = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\?/);
       if (fm && m === 'patch') { const b = JSON.parse(o.payload); if (store[fm[1]] && b.trashed) store[fm[1]].trashed = true; return resp(200, '{}'); }
       throw new Error('unexpected fetch ' + m + ' ' + url);
@@ -194,6 +194,15 @@ test('a file anyone else could see (inherited link sharing) is trashed and refus
   const u = new URL(tk.data.url); // the last part resent: never the trashed file's id
   assert.deepStrictEqual(t.part({ ticket: u.searchParams.get('ticket'), part: 1, of: 1, base64: clip(1000).toString('base64') }), { success: false, error: 'not_authorized' });
   assert.strictEqual(Object.keys(t.store).length, 1, 'no second upload');
+});
+
+test('a school folder in a shared drive: refused, and the log says it is the drive\'s members', () => {
+  const t = setup({ inherited: { type: 'user', emailAddress: 'staff@test.invalid', permissionDetails: [{ permissionType: 'member', inherited: true }] } });
+  assert.deepStrictEqual(t.upload(t.ticket({}).data.url, clip(1000), { tries: 1 }), { success: false, error: 'OVERSHARED' });
+  assert.ok(t.logs.includes('af-video: overshared_shared_drive_members'));
+  const plain = setup({ inherited: { type: 'anyone' } });
+  plain.upload(plain.ticket({}).data.url, clip(1000), { tries: 1 });
+  assert.ok(plain.logs.includes('af-video: overshared'));
 });
 
 test('the year folder is made once, with inherited access turned off, and kept for the sweep; logs carry no names or ids', () => {

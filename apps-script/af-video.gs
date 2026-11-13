@@ -174,15 +174,18 @@ function afvFinish_(t, cache, res) {
   const ok = viewers && viewers.every(function (e) {
     return e === me || afvApi_('post', AFV_DRIVE_ + '/' + id + '/permissions?sendNotificationEmail=false&supportsAllDrives=true', { type: 'user', role: 'reader', emailAddress: e }).getResponseCode() === 200;
   });
-  const list = afvApi_('get', AFV_DRIVE_ + '/' + id + '/permissions?supportsAllDrives=true&fields=permissions(type,emailAddress)');
+  const list = afvApi_('get', AFV_DRIVE_ + '/' + id + '/permissions?supportsAllDrives=true&fields=permissions(type,emailAddress,permissionDetails(permissionType))');
   let perms = null;
   try { perms = list.getResponseCode() === 200 ? JSON.parse(list.getContentText()).permissions : null; } catch (e) { perms = null; }
   const allowed = (viewers || []).concat([me]);
-  const clean = ok && Array.isArray(perms) && perms.every(function (x) { return x.type === 'user' && allowed.indexOf(afvEmail_(x.emailAddress)) !== -1; });
+  const extra = Array.isArray(perms) ? perms.filter(function (x) { return !(x.type === 'user' && allowed.indexOf(afvEmail_(x.emailAddress)) !== -1); }) : null;
+  const clean = ok && extra && !extra.length;
+  // a school folder inside a shared drive: its members see every file, so every upload there is refused; say so in the log (G2 low)
+  const member = extra && extra.some(function (x) { return (x.permissionDetails || []).some(function (d) { return d.permissionType === 'member'; }); });
   if (!clean) { // never leave a child's video where someone else could see it
     afvApi_('patch', AFV_DRIVE_ + '/' + id + '?supportsAllDrives=true', { trashed: true });
     cache.remove('afv_st_' + t.r); cache.put('afv_fail_' + t.r, '1', 21600); // the ticket is spent: a resend never uploads again or answers the trashed id
-    console.error('af-video: ' + (ok ? 'overshared' : 'share_failed'));
+    console.error('af-video: ' + (!ok ? 'share_failed' : member ? 'overshared_shared_drive_members' : 'overshared'));
     return { success: false, error: ok ? 'OVERSHARED' : 'SHARE_FAILED' };
   }
   cache.put('afv_done_' + t.r, id, 21600);
