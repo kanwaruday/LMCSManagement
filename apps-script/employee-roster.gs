@@ -217,6 +217,8 @@ function doPost(e) {
     if (body.action === 'gameMsgFileView') return staffJsonOut_(gameMsgFileView_(body)); // msg-file.gs: a member opens a file (msg_file_can_view)
     if (body.action === 'gameMsgFileRead') return staffJsonOut_(gameMsgFileRead_(body)); // msg-file.gs: the read parts, membership asked on each
     if (body.action === 'gameAfVideoHealth') return staffJsonOut_(gameAfVideoHealth_(body)); // af-video.gs: read-only booleans/counts/codes (18 Nov upload fault)
+    if (body.action === 'gameHrFileTicket') return staffJsonOut_(gameHrFileTicket_(body)); // hr-file.gs: a staff paper to the school's HR Drive folder (lms-game 618)
+    if (body.action === 'gameHrFilePart') return staffJsonOut_(gameHrFilePart_(body)); // hr-file.gs: the browser's parts against that ticket
     if (body.action === 'gameStaffLogins') return staffJsonOut_(gameStaffLogins_(body)); // staff-logins.gs: lms-game's teacher-rollout, ROSTER_GAME_KEY
     if (body.action === 'uploaddocument') return staffJsonOut_(sdocUpload_(body));
     if (body.action === 'transportupload') return staffJsonOut_(tupUpload_(body)); // transport-uploads.gs
