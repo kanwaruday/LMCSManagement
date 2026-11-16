@@ -2,13 +2,17 @@
 // school's HR Drive folder, the way af-video.gs streams AF videos. Reuses af-video.gs's helpers (same project, one global scope):
 // afvKeyOk_, afvB64_, afvSign_, afvTicket_, afvProps_, afvApi_, afvEmail_, afvOut_, AFV_DRIVE_, AFV_PART_BYTES_.
 //  1. gameHrFileTicket, through lms-game's classic proxy (server to server, the ROSTER_GAME_KEY): a staff member at their own school
-//     asks for a ticket for one upload id. The row (school, folder, mime, the uploader's email) comes from lms-game's hr-drive
-//     function, never from the app's params; a row that isn't the caller's, is finished or has no folder is refused.
+//     asks for a ticket for one upload id. The row (school, folder, mime, the uploader's email) is CLAIMED from lms-game's hr-drive
+//     function (one ticket per upload, G2), never taken from the app's params; a row that isn't the caller's, is finished, has no folder
+//     or already has a ticket is refused.
 //  2. gameHrFilePart, the browser's parts against that ticket (signed, 2 h to start), into a Drive resumable session in the folder.
-//     The file inherits the HR folder's own access: nothing is shared. On finish, any permission beyond the folder's people (anyone
-//     with the link, a whole domain) trashes the file and refuses: a paper with ID or bank details never sits behind a link.
+//     Each file is tagged at create (appProperties lmsStaffPaper = the upload id). The file inherits the HR folder's own access:
+//     nothing is shared. On finish, any permission beyond the folder's people (anyone with the link, a whole domain) trashes the file
+//     and refuses; otherwise the Roster records it with lms-game itself (hr-drive done), server to server: the browser never sends a
+//     Drive id (G2b). If that record fails, the file is trashed (no paper the game doesn't know about).
 //  3. hrFileDaily (a daily trigger; Uday runs installHrFileTrigger() once): every live paper is checked again, so a link shared later
-//     is caught too: the file is trashed and hr-drive returns the paper to the person ("upload it again").
+//     is caught too: the file is trashed and hr-drive returns the paper to the person ("upload it again"). It touches ONLY a file that
+//     carries this upload's tag AND sits in that school's HR folder, so a foreign id can never get a school document swept (G2b).
 // Script properties (set by Uday, never in the repo): ROSTER_GAME_KEY (as af-video.gs), HR_DRIVE_LIVE_URL (lms-game's hr-drive
 // function), ROSTER_WEBAPP_URL optional. Folder ids live only in lms-game's hr_drive_folders setting. Logs carry codes and counts
 // only: never an email, a school, a file name or a paper.
@@ -19,14 +23,27 @@ var HRF_MIME_ = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic:
 var HRF_ROLES_ = ['principal', 'coordinator', 'teacher', 'fee_clerk', 'driver', 'bus_incharge', 'it_teacher', 'pti', 'non_teaching'];
 var HRF_SWEEP_MAX_ = 400;                  // files checked per daily run; ponytail: page through more if a tenant ever holds more papers
 
-/** lms-game's hr-drive row for an upload. false = no such row, 'no_folder' = the school has no HR folder set, null = unreachable. */
-function hrfRow_(upload) {
+/** lms-game's hr-drive call (server to server, the Roster key); the parsed answer and status, or null when unreachable */
+function hrfCall_(method, body) {
   const url = String(afvProps_().getProperty('HR_DRIVE_LIVE_URL') || ''), key = afvProps_().getProperty('ROSTER_GAME_KEY');
   if (!/^https:\/\//.test(url) || !key) return null;
-  const r = UrlFetchApp.fetch(url + '?upload=' + upload, { method: 'get', headers: { 'x-roster-key': key }, muteHttpExceptions: true });
-  if (r.getResponseCode() === 404) return false;
-  if (r.getResponseCode() === 409) return 'no_folder';
-  try { const u = r.getResponseCode() === 200 ? JSON.parse(r.getContentText()).upload : null; return u && typeof u === 'object' ? u : null; } catch (e) { return null; }
+  const o = { method: method, headers: { 'x-roster-key': key }, muteHttpExceptions: true };
+  if (body !== undefined) { o.contentType = 'application/json'; o.payload = JSON.stringify(body); }
+  const r = UrlFetchApp.fetch(url, o);
+  let data = null;
+  try { data = JSON.parse(r.getContentText()); } catch (e) { data = null; }
+  return { code: r.getResponseCode(), data: data };
+}
+
+/** claim the upload's row for a ticket (once). false = no such row, 'no_folder' / 'ticket_issued' as said, null = unreachable. */
+function hrfClaim_(upload) {
+  const r = hrfCall_('post', { claim: upload });
+  if (!r) return null;
+  if (r.code === 404) return false;
+  if (r.code === 409) return 'no_folder';
+  if (r.code === 423) return 'ticket_issued';
+  const u = r.code === 200 && r.data ? r.data.upload : null;
+  return u && typeof u === 'object' ? u : null;
 }
 
 function gameHrFileTicket_(b) {
@@ -37,7 +54,8 @@ function gameHrFileTicket_(b) {
   if (!email) return afvOut_('who');
   const upload = String(p.upload || '');
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(upload)) return afvOut_('bad_input');
-  const row = hrfRow_(upload);
+  const row = hrfClaim_(upload);
+  if (row === 'ticket_issued') return afvOut_('ticket_issued');
   if (row === null || row === 'no_folder') return afvOut_('not_configured');
   if (!row || row.campus !== campus || afvEmail_(row.email) !== email) return afvOut_('not_authorized');
   if (!row.open) return afvOut_('done');
@@ -69,7 +87,8 @@ function gameHrFilePart_(b) {
     if (part !== 1) return { success: false, error: 'NO_UPLOAD' };
     if (t.x < Date.now()) return { success: false, error: 'not_authorized' };
     const r = afvApi_('post', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true',
-      { name: t.n, parents: [t.f], mimeType: t.m, copyRequiresWriterPermission: true, description: 'Staff file paper (lms-game). Kept in the school HR folder only; never shared by link.' });
+      { name: t.n, parents: [t.f], mimeType: t.m, copyRequiresWriterPermission: true, appProperties: { lmsStaffPaper: t.u },
+        description: 'Staff file paper (lms-game). Kept in the school HR folder only; never shared by link.' });
     const loc = r.getResponseCode() === 200 && (r.getHeaders().Location || r.getHeaders().location);
     if (!loc) { console.error('hr-file: session ' + r.getResponseCode()); return { success: false, error: 'DRIVE' }; }
     st = { s: loc, next: 1, off: 0 };
@@ -118,28 +137,42 @@ function hrfFinish_(t, cache, res) {
     console.error('hr-file: ' + (open ? 'overshared' : 'perms_unreadable'));
     return { success: false, error: open ? 'OVERSHARED' : 'SHARE_CHECK' };
   }
+  const rec = hrfCall_('post', { done: t.u, file: id });   // the game records it, keyed by the ticket's upload id (G2b)
+  if (!rec || rec.code !== 200) {
+    afvApi_('patch', AFV_DRIVE_ + '/' + id + '?supportsAllDrives=true', { trashed: true });
+    cache.remove('hrf_st_' + t.r); cache.put('hrf_fail_' + t.r, '1', 21600);
+    console.error('hr-file: record_failed ' + (rec ? rec.code : 'unreachable'));
+    return { success: false, error: 'RECORD' };
+  }
   cache.put('hrf_done_' + t.r, id, 21600);
   cache.remove('hrf_st_' + t.r);
   return { success: true, fileId: id };
 }
 
+/** is this file one the Roster made for this upload, inside this school's HR folder? (G2b: never touch anything else) */
+function hrfOurs_(id, upload, folder) {
+  const r = afvApi_('get', AFV_DRIVE_ + '/' + id + '?supportsAllDrives=true&fields=parents,appProperties');
+  let f = null;
+  try { f = r.getResponseCode() === 200 ? JSON.parse(r.getContentText()) : null; } catch (e) { f = null; }
+  return !!f && !!f.appProperties && f.appProperties.lmsStaffPaper === upload && Array.isArray(f.parents) && f.parents.indexOf(folder) !== -1;
+}
+
 // ── 3. the daily sweep: a link shared after the upload is caught too ──
 function hrFileDaily() {
-  const out = { checked: 0, trashed: 0, unreadable: 0 };
-  const url = String(afvProps_().getProperty('HR_DRIVE_LIVE_URL') || ''), key = afvProps_().getProperty('ROSTER_GAME_KEY');
-  if (!/^https:\/\//.test(url) || !key) { console.error('hr-file: sweep_not_configured'); return out; }
-  const r = UrlFetchApp.fetch(url, { method: 'get', headers: { 'x-roster-key': key }, muteHttpExceptions: true });
-  let ids = null;
-  try { ids = r.getResponseCode() === 200 ? JSON.parse(r.getContentText()).ids : null; } catch (e) { ids = null; }
-  if (!Array.isArray(ids)) { console.error('hr-file: live_list_unavailable'); return out; }
-  ids.slice(0, HRF_SWEEP_MAX_).forEach(function (id) {
-    if (!/^[A-Za-z0-9_-]{10,200}$/.test(String(id))) return;
+  const out = { checked: 0, trashed: 0, unreadable: 0, foreign: 0 };
+  const r = hrfCall_('get');
+  const papers = r && r.code === 200 && r.data && Array.isArray(r.data.papers) ? r.data.papers : null;
+  if (!papers) { console.error('hr-file: live_list_unavailable'); return out; }
+  papers.slice(0, HRF_SWEEP_MAX_).forEach(function (p) {
+    const id = String(p && p.id || ''), upload = String(p && p.upload || ''), folder = String(p && p.folder || '');
+    if (!/^[A-Za-z0-9_-]{10,200}$/.test(id) || !/^[0-9a-f-]{36}$/.test(upload) || !/^[A-Za-z0-9_-]{10,200}$/.test(folder)) { out.foreign++; return; }
+    if (!hrfOurs_(id, upload, folder)) { out.foreign++; return; }   // not our tagged file in that HR folder: never trashed
     out.checked++;
     const open = hrfOpen_(id);
     if (open === null) { out.unreadable++; return; }   // can't tell today: tomorrow's run asks again (nothing is trashed on a guess)
     if (!open) return;
     afvApi_('patch', AFV_DRIVE_ + '/' + id + '?supportsAllDrives=true', { trashed: true });
-    UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ swept: id }), headers: { 'x-roster-key': key }, muteHttpExceptions: true });
+    hrfCall_('post', { swept: id });
     out.trashed++;
   });
   console.log('hr-file: sweep ' + JSON.stringify(out));

@@ -9,9 +9,9 @@ const LIVE = 'https://stub.invalid/functions/v1/hr-drive';
 const signed = (buf) => Array.from(buf, (b) => (b > 127 ? b - 256 : b));
 const row = (o = {}) => Object.assign({ campus: 'LMS1', folder: FOLDER, mime: 'application/pdf', email: 'teacher@test.invalid', open: true }, o);
 
-function setup({ rows = {}, rowCode = 200, ids = [], linkOnCreate = null, permsCode = 200 } = {}) {
+function setup({ rows = {}, rowCode = 200, papers = [], linkOnCreate = null, permsCode = 200, doneCode = 200, claimed = [] } = {}) {
   let n = 0;
-  const sessions = {}, store = {}, logs = [], swept = [], P = { ROSTER_GAME_KEY: KEY, HR_DRIVE_LIVE_URL: LIVE, ROSTER_WEBAPP_URL: 'https://script.google.com/macros/s/ROSTER/exec' };
+  const sessions = {}, store = {}, logs = [], swept = [], done = [], claims = new Set(claimed), P = { ROSTER_GAME_KEY: KEY, HR_DRIVE_LIVE_URL: LIVE, ROSTER_WEBAPP_URL: 'https://script.google.com/macros/s/ROSTER/exec' };
   const cache = new Map();
   const resp = (code, body = '', headers = {}) => ({ getResponseCode: () => code, getContentText: () => body, getHeaders: () => headers });
   const ctx = {
@@ -33,13 +33,20 @@ function setup({ rows = {}, rowCode = 200, ids = [], linkOnCreate = null, permsC
     },
     UrlFetchApp: { fetch(url, o = {}) {
       const m = (o.method || 'get').toLowerCase(), h = o.headers || {};
-      if (url.startsWith(LIVE + '?upload=')) {
+      if (url === LIVE) {   // the fake hr-drive: claim once, done, swept, the live papers
         if (h['x-roster-key'] !== KEY) return resp(401);
-        const u = url.split('?upload=')[1], r = u in rows ? rows[u] : row();
-        return rowCode !== 200 ? resp(rowCode) : r === false ? resp(404, '{}') : resp(200, JSON.stringify({ upload: r }));
+        if (m === 'get') return resp(200, JSON.stringify({ papers }));
+        const b = JSON.parse(o.payload);
+        if (b.claim) {
+          const r = b.claim in rows ? rows[b.claim] : row();
+          if (rowCode !== 200) return resp(rowCode);
+          if (r === false) return resp(404, '{}');
+          if (claims.has(b.claim) && r.open) return resp(423, '{"error":"ticket_issued"}');
+          claims.add(b.claim); return resp(200, JSON.stringify({ upload: r }));
+        }
+        if (b.done) { done.push([b.done, b.file]); return resp(doneCode, doneCode === 200 ? '{"ok":true}' : '{}'); }
+        swept.push(b.swept); return resp(200, '{"returned":1}');
       }
-      if (url === LIVE && m === 'get') return h['x-roster-key'] === KEY ? resp(200, JSON.stringify({ ids })) : resp(401);
-      if (url === LIVE && m === 'post') { swept.push(JSON.parse(o.payload).swept); return resp(200, '{"returned":1}'); }
       if (url.startsWith('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable') && m === 'post') {
         const s = 'https://upload.stub/session/' + (++n); sessions[s] = { meta: JSON.parse(o.payload), got: [], len: 0 }; return resp(200, '', { Location: s });
       }
@@ -56,6 +63,8 @@ function setup({ rows = {}, rowCode = 200, ids = [], linkOnCreate = null, permsC
         }
         return s.file ? resp(200, JSON.stringify({ id: s.file })) : resp(308, '', { Range: 'bytes=0-' + (s.len - 1) });
       }
+      const meta = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\?supportsAllDrives=true&fields=parents,appProperties/);
+      if (meta && m === 'get') return store[meta[1]] ? resp(200, JSON.stringify({ parents: store[meta[1]].meta.parents, appProperties: store[meta[1]].meta.appProperties })) : resp(404, '{}');
       const pm = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\/permissions/);
       if (pm && m === 'get') return permsCode !== 200 ? resp(permsCode, '{}') : store[pm[1]] ? resp(200, JSON.stringify({ permissions: store[pm[1]].perms })) : resp(404, '{}');
       const fm = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\?/);
@@ -77,7 +86,7 @@ function setup({ rows = {}, rowCode = 200, ids = [], linkOnCreate = null, permsC
     }
     return last;
   };
-  return { ctx, ticket, upload, store, sessions, logs, swept, P };
+  return { ctx, ticket, upload, store, sessions, logs, swept, done, P };
 }
 
 const results = [];
@@ -92,7 +101,21 @@ T('a ticket for the caller\'s own open upload: the folder, name and type come fr
   const meta = Object.values(s.sessions)[0].meta;
   assert.deepStrictEqual(meta.parents, [FOLDER]); assert.strictEqual(meta.name, UPLOAD + '.pdf'); assert.strictEqual(meta.mimeType, 'application/pdf');
   assert.strictEqual(meta.copyRequiresWriterPermission, true);
+  assert.deepStrictEqual(meta.appProperties, { lmsStaffPaper: UPLOAD }, 'tagged for this upload at create');
   assert.strictEqual(s.store[r.fileId].trashed, false);
+  assert.deepStrictEqual(s.done, [[UPLOAD, r.fileId]], 'the Roster records it with the game, keyed by the ticket\'s upload id');
+});
+
+T('one ticket per open upload (G2): a second ticket for the same upload is refused', () => {
+  const s = setup();
+  assert.ok(s.ticket().success);
+  assert.strictEqual(s.ticket().data.code, 'ticket_issued');
+});
+
+T('if the game can\'t record the finished paper, the file is trashed (no paper it doesn\'t know about)', () => {
+  const s = setup({ doneCode: 500 }), r = s.upload(s.ticket().data.url, pdf);
+  assert.strictEqual(r.success, false); assert.strictEqual(r.error, 'RECORD');
+  assert.ok(Object.values(s.store).every((f) => f.trashed));
 });
 
 T('refusals: wrong key, the Owner\'s role, someone else\'s row, another school, a finished row, no folder, hr-drive down, a bad id', () => {
@@ -128,16 +151,31 @@ T('an AF ticket never uploads into an HR folder; parts over the 10 MB cap are re
 });
 
 T('the daily sweep trashes a paper shared by link later and tells hr-drive; untouched ones stay; unreadable ones wait', () => {
-  const s = setup(), t = s.ticket(), r = s.upload(t.data.url, pdf);
-  const s2 = setup({ ids: [r.fileId] });
+  const s = setup(), r = s.upload(s.ticket().data.url, pdf);
+  const s2 = setup({ papers: [{ id: r.fileId, upload: UPLOAD, folder: FOLDER }] });
   Object.assign(s2.store, s.store);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(s2.ctx.hrFileDaily())), { checked: 1, trashed: 0, unreadable: 0 });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(s2.ctx.hrFileDaily())), { checked: 1, trashed: 0, unreadable: 0, foreign: 0 });
   s2.store[r.fileId].perms.push({ type: 'anyone' });
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(s2.ctx.hrFileDaily())), { checked: 1, trashed: 1, unreadable: 0 });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(s2.ctx.hrFileDaily())), { checked: 1, trashed: 1, unreadable: 0, foreign: 0 });
   assert.strictEqual(s2.store[r.fileId].trashed, true); assert.deepStrictEqual(s2.swept, [r.fileId]);
-  const s3 = setup({ ids: ['SYNTHETICfile99999999'], permsCode: 500 });
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(s3.ctx.hrFileDaily())), { checked: 1, trashed: 0, unreadable: 1 });
+  const s3 = setup({ papers: [{ id: r.fileId, upload: UPLOAD, folder: FOLDER }], permsCode: 500 });
+  Object.assign(s3.store, JSON.parse(JSON.stringify(s.store)));
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(s3.ctx.hrFileDaily())), { checked: 1, trashed: 0, unreadable: 1, foreign: 0 });
   assert.deepStrictEqual(s3.swept, []);
+});
+
+T('G2b: a foreign link-shared file (no tag, wrong upload or outside the HR folder) is never swept', () => {
+  const s = setup(), r = s.upload(s.ticket().data.url, pdf);
+  const school = 'SCHOOLdoc0000000001', OTHER = '1c7a4d2f-3b5e-4f9a-8b2c-4d6e8f0a2b3c';
+  const s2 = setup({ papers: [{ id: school, upload: UPLOAD, folder: FOLDER }, { id: r.fileId, upload: OTHER, folder: FOLDER },
+    { id: r.fileId, upload: UPLOAD, folder: 'SOMEotherFolder00001' }] });
+  Object.assign(s2.store, s.store);
+  s2.store[school] = { meta: { parents: ['SCHOOLdocsFolder0001'] }, perms: [{ type: 'anyone' }], trashed: false };   // a school document shared by link
+  s2.store[r.fileId].perms.push({ type: 'anyone' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(s2.ctx.hrFileDaily())), { checked: 0, trashed: 0, unreadable: 0, foreign: 3 });
+  assert.strictEqual(s2.store[school].trashed, false, 'the school document is untouched');
+  assert.strictEqual(s2.store[r.fileId].trashed, false, 'a tagged file listed under another upload or folder is untouched too');
+  assert.deepStrictEqual(s2.swept, []);
 });
 
 T('logs carry codes and counts only; the trigger installs once at about 04:00', () => {
