@@ -43,6 +43,14 @@ if (require.main !== module) { module.exports = () => {}; return; }
   const p = (o) => H.proposePayload({ row: 3, kind: 'interview', start: '2026-10-26T10:00', durationMin: '', place: ' Office ', note: '', ...o }, now);
   assert.deepStrictEqual(p().body, { row: 3, kind: 'interview', start: '2026-10-26T10:00', durationMin: 30, place: 'Office' });
   assert.ok(!p({ start: '' }).ok); assert.ok(!p({ start: '2026-10-01T10:00' }).ok); assert.ok(!p({ kind: 'md' }).ok); assert.ok(!p({ durationMin: '0' }).ok); ok('propose payload');
+  // the date decides: past -> held (no duration), future -> propose, older than a year refused, md never on this page
+  const q = (o) => H.apptPayload({ row: 3, kind: 'interview', start: '2026-10-26T10:00', durationMin: '', place: '', note: '', ...o }, now);
+  assert.strictEqual(q().action, 'apptpropose'); assert.deepStrictEqual(q().body, { row: 3, kind: 'interview', start: '2026-10-26T10:00', durationMin: 30 });
+  assert.deepStrictEqual(q({ start: '2026-06-11T11:00', note: ' walk-in ' }), { ok: true, action: 'apptheld', body: { row: 3, kind: 'interview', start: '2026-06-11T11:00', note: 'walk-in' } });
+  assert.strictEqual(q({ start: '2025-06-11T11:00' }).error, 'Pick a date within the last year.');
+  assert.ok(!q({ kind: 'md' }).ok); assert.ok(!q({ start: '' }).ok);
+  assert.strictEqual(H.isPast('2026-10-24T11:59', now), true); assert.strictEqual(H.isPast('2026-10-24T12:01', now), false); assert.strictEqual(H.isPast('', now), false);
+  ok('appointment payload: a past date records held');
 
   // walk-in
   const w = (o) => H.walkinPayload({ name: ' Ann ', phone: '98765 43210', campusId: 'LMS2', source: 'Walk-in', subjects: '', ...o }, ['LMS2']);

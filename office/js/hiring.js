@@ -59,6 +59,20 @@ export function proposePayload(f, now = new Date()) {
   return good(b);
 }
 
+// The date decides (portal group, 16 Nov: a back-dated entry was refused): a moment already past records the interview or demo as
+// held ('apptheld', P52: no proposal, no Principal's yes); a future one is proposed ('apptpropose') as before.
+export function apptPayload(f, now = new Date()) {
+  if (f.kind !== 'interview' && f.kind !== 'demo') return bad('Invalid appointment kind');
+  if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(s(f.start))) return bad('Pick a date and time.');
+  if (new Date(f.start).getTime() > new Date(now).getTime()) { const p = proposePayload(f, now); return p.ok ? { ok: true, action: 'apptpropose', body: p.body } : p; }
+  if (new Date(f.start).getTime() < new Date(now).getTime() - 366 * 864e5) return bad('Pick a date within the last year.');
+  const b = { row: f.row, kind: f.kind, start: f.start };
+  if (s(f.place)) b.place = s(f.place);
+  if (s(f.note)) b.note = s(f.note);
+  return { ok: true, action: 'apptheld', body: b };
+}
+export const isPast = (start, now = new Date()) => /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(s(start)) && new Date(start).getTime() <= new Date(now).getTime();
+
 export function walkinPayload(f, campuses) {
   const phone = s(f.phone).replace(/\D/g, '').slice(-10);
   if (!s(f.name)) return bad("Enter the applicant's name");
@@ -202,13 +216,17 @@ export async function mountHiring(root, session, deps = {}) {
     return (close) => {
       const start = field('pr-' + kind + a.row, 'Date and time', inp('datetime-local')), dur = field('pd-' + kind + a.row, 'Minutes', inp('number', { value: '30', min: '5' })),
         place = field('pp-' + kind + a.row, 'Place (optional)', inp('text')), note = field('pn-' + kind + a.row, 'Note (optional)', inp('text'));
+      const go = h('button', { type: 'submit' }, 'Book it'), hint = h('p', { class: 'meta' });
+      const sync = () => { const past = isPast(val(start.control), now()); go.textContent = past ? 'Record as held' : 'Book it';
+        hint.textContent = past ? 'This date has passed, so it is recorded as already held: no proposal and no one\u2019s yes needed.' : ''; };
+      start.control.addEventListener('input', sync);
       const f = h('form', { onsubmit: async (e) => {
         e.preventDefault();
-        const p = proposePayload({ row: a.row, kind, start: val(start.control), durationMin: val(dur.control), place: val(place.control), note: val(note.control) }, now());
+        const p = apptPayload({ row: a.row, kind, start: val(start.control), durationMin: val(dur.control), place: val(place.control), note: val(note.control) }, now());
         if (!p.ok) { start.err.textContent = p.error; return; }
         start.err.textContent = '';
-        if (await write('apptpropose', p.body, 'Proposed. Waiting for the Principal.')) close();
-      } }, start.root, dur.root, place.root, note.root, btns(0, 'Propose time', close));
+        if (await write(p.action, p.body, p.action === 'apptheld' ? 'Recorded as held.' : 'Proposed. Waiting for the Principal.')) close();
+      } }, start.root, hint, dur.root, place.root, note.root, h('div', { class: 'row' }, go, h('button', { type: 'button', class: 'secondary', onclick: close }, 'Close')));
       return f;
     };
   }

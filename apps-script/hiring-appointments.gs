@@ -201,7 +201,7 @@ function apptHeldCore_(caller, sheet, body) {
     decidedBy: caller.email + ' (held)', decidedAt: now, declineNote: '', eventId: '', calendarMode: 'held', calendarError: '' });
 }
 
-// game-hr.gs's 'held' step (the Owner's hiring room); not wired to the old page, whose hiring doors retired
+// the 'held' step: game-hr.gs (the Owner's hiring room) and the old page's 'apptheld' (a past date entered there records held)
 function apptHeld_(caller, body) {
   const sheet = hirSheet_();
   const appt = hirWithLock_(function () { return apptHeldCore_(caller, sheet, body); });

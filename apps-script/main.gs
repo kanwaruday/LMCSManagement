@@ -150,7 +150,7 @@ const PDR_AUTO_ROLE_BY_DEPARTMENT = { teaching: 'Teacher', adminpti: 'Teacher', 
 // Employee-code prefix -> campus. HES (head office) is deliberately absent: those staff use the allowlist.
 const PDR_CAMPUS_BY_PREFIX = { KUL: 'LMS1', KEL: 'LMS2', DUN: 'LMS3', NCM: 'LMS4', SAY: 'LMS5', JOG: 'LMS6' };
 const PDR_FEECLERK_GET_ACTIONS = ['hiringapplicants', 'hiringapprovalstatus', 'apptlist'];
-const PDR_FEECLERK_POST_ACTIONS = ['hiringaddapplicant', 'apptpropose', 'apptcancel', 'hiringuploadreport'];
+const PDR_FEECLERK_POST_ACTIONS = ['hiringaddapplicant', 'apptpropose', 'apptheld', 'apptcancel', 'hiringuploadreport'];
 
 function doGet(e) {
   aprResetRequestMemo_(); // 2026-10-01: per-request Approvals-values memo, see approvals.gs's aprValues_
@@ -269,6 +269,7 @@ function doPost(e) {
     if (action === 'hiringuploadreport') return jsonOut_(hiringUploadReport_(caller, body));
     if (action === 'hiringconfirmreject') return jsonOut_(hiringConfirmReject_(caller, body));
     if (action === 'apptpropose') return jsonOut_(apptPropose_(caller, body));
+    if (action === 'apptheld') return jsonOut_(apptHeld_(caller, body)); // P52 on the old page: an interview already held, a past date
     if (action === 'apptcancel') return jsonOut_(apptCancel_(caller, body));
     if (action === 'apptdecide') return jsonOut_(apptDecide_(caller, body));
     if (action === 'apptcalendarretry') return jsonOut_(apptCalendarRetry_(caller, body));
