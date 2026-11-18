@@ -217,7 +217,9 @@ function afvFinish_(t, cache, res) {
 // (permission counts by type, inherited access off?, in a shared drive?); and the last 10 af-video outcome codes.
 function gameAfVideoHealth_(b) {
   if (!b || !afvKeyOk_(b.key)) return { success: false, error: 'not_authorized' };   // before any fetch
-  const asked = String((b.params && b.params.video) || b.video || ''), cache = CacheService.getScriptCache(), ck = 'afv_health_' + (asked || '-');
+  const raw = String((b.params && b.params.video) || b.video || '');
+  const asked = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(raw) ? raw : '';   // only a video id ever reaches the cache key (G2b low)
+  const cache = CacheService.getScriptCache(), ck = 'afv_health_' + (asked || '-');
   const hit = cache.get(ck);
   if (hit) return { success: true, data: JSON.parse(hit) };   // a repeat within 2 minutes costs no fetch
   const p = afvProps_(), url = String(p.getProperty('AF_VIDEO_LIVE_URL') || ''), key = p.getProperty('ROSTER_GAME_KEY');
@@ -229,9 +231,8 @@ function gameAfVideoHealth_(b) {
       out.af_drive.groups_status = r.getResponseCode();
       try { out.af_drive.viewers_api = r.getResponseCode() === 200 && Array.isArray(JSON.parse(r.getContentText()).groups); } catch (e) { out.af_drive.viewers_api = false; }
     } catch (e) { out.af_drive.groups_status = 0; }
-    const video = String((b && b.params && b.params.video) || (b && b.video) || '');
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(video)) {
-      const row = afvRow_(video);
+    if (asked) {
+      const row = afvRow_(asked);
       out.row = row === null ? { status: 'unreachable' } : row === false ? { status: 'missing' }
         : { status: 'found', open: !!row.open, viewers_list: Array.isArray(row.viewers), viewers_n: afvViewers_(row.campus, row) ? afvViewers_(row.campus, row).length : 0 };
     }

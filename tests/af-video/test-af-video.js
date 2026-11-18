@@ -348,4 +348,12 @@ test('health needs the Roster key: no key or a wrong one is refused before any f
   t.health({ video: VIDEO });
   assert.strictEqual(t.calls.length, after, 'the repeat costs no fetch');
 });
+test('health: a long or odd video value never reaches the cache key (it is ignored, no row probe); a real id still is', () => {
+  const t = setup({ groups: [] });
+  const keys = []; const get = t.ctx.CacheService.getScriptCache;
+  t.ctx.CacheService.getScriptCache = () => { const c = get(); return { get: (k) => { keys.push(k); assert.ok(k.length <= 250); return c.get(k); }, put: c.put, remove: c.remove }; };
+  assert.strictEqual(t.health({ video: 'x'.repeat(400) }).data.row, null);
+  assert.strictEqual(t.health({ video: VIDEO }).data.row.status, 'found');
+  assert.deepStrictEqual(keys, ['afv_health_-', 'afv_health_' + VIDEO]);
+});
 console.log('af-video: all ' + n + ' passed (synthetic clip, fake Drive)');
