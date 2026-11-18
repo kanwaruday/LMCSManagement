@@ -87,11 +87,15 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
         return s.file ? resp(200, JSON.stringify({ id: s.file.id })) : resp(308, '', held());
       }
       const pm = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\/permissions/);
-      if (pm && !store[pm[1]]) return resp(404, '{}');
+      if (pm && !store[pm[1]] && !reg[pm[1]]) return resp(404, '{}');
+      if (pm && !store[pm[1]] && reg[pm[1]] && m === 'get') return resp(200, JSON.stringify({ permissions: [{ type: 'user' }] }));   // health: a folder's readers
       if (pm && m === 'post') { if (permFail) return resp(500, '{}'); const b = JSON.parse(o.payload); assert.ok(url.includes('sendNotificationEmail=false')); store[pm[1]].perms.push({ id: 'p' + (++ids), type: b.type, emailAddress: b.emailAddress, role: b.role }); return resp(200, '{}'); }
       if (pm && m === 'get') return resp(200, JSON.stringify({ permissions: store[pm[1]].perms.map((x) => ({ id: x.id, type: x.type, emailAddress: x.emailAddress, role: x.role, permissionDetails: x.permissionDetails })) }));
       const pd = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\/permissions\/([^?]+)\?/);
       if (pd && m === 'delete') { const f = store[pd[1]]; f.perms = f.perms.filter((x) => x.id !== decodeURIComponent(pd[2])); return resp(204, ''); }
+      const fmeta = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\?supportsAllDrives=true&fields=driveId,inheritedPermissionsDisabled$/);
+      if (fmeta && m === 'get') return resp(200, JSON.stringify({ inheritedPermissionsDisabled: true }));   // health: an AF year folder's meta
+      if (pm && m === 'get' && reg[pm[1]]) return resp(200, JSON.stringify({ permissions: [{ type: 'user' }] }));
       const fm = url.match(/drive\/v3\/files\/([A-Za-z0-9_-]+)\?/);
       if (fm && m === 'patch') { const b = JSON.parse(o.payload); if (store[fm[1]] && b.trashed) store[fm[1]].trashed = true; return resp(200, '{}'); }
       throw new Error('unexpected fetch ' + m + ' ' + url);
@@ -119,7 +123,7 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
     }
     return last;
   };
-  return { ctx, central, store, logs, calls, cache, P, rows, ticket, upload, J, daily: () => J(ctx.afVideoDaily()), sync: (full) => J(ctx.afVideoShareSync(full)), part: (b) => J(ctx.gameAfVideoPart_(b)) };
+  return { ctx, central, store, logs, calls, cache, P, rows, ticket, upload, J, health: (b) => J(ctx.gameAfVideoHealth_(b || {})), daily: () => J(ctx.afVideoDaily()), sync: (full) => J(ctx.afVideoShareSync(full)), part: (b) => J(ctx.gameAfVideoPart_(b)) };
 }
 const clip = (n) => { const b = Buffer.alloc(n); Buffer.from('\x00\x00\x00\x18ftypmp42synthetic').copy(b); for (let i = 24; i < n; i++) b[i] = (i * 7) & 255; return b; };
 const find = (root, ...names) => names.reduce((f, n) => f && f.kids.find((k) => k.name === n), root);
@@ -310,4 +314,26 @@ test('installAfVideoTrigger keeps exactly one daily trigger', () => {
   assert.deepStrictEqual(t.ctx.ScriptApp.triggers.map((x) => [x.fn, x.h ?? x.mins]), [['afVideoDaily', 3], ['afVideoShareSync', 10]]);
 });
 
+
+test('health (18 Nov fault): an old af-drive without viewers shows as viewers_api false, and the refused ticket is in the log; booleans and codes only', () => {
+  const t = setup({ groups: null, rows: { [VIDEO]: row({ viewers: undefined }) } });
+  assert.deepStrictEqual(t.ticket({}).data, { ok: false, code: 'not_configured' });
+  const h = t.health({ params: { video: VIDEO } }).data;
+  assert.deepStrictEqual([h.live_url_set, h.webapp_url_set, h.game_key_set, h.af_drive.viewers_api, h.af_drive.groups_status], [true, true, true, false, 500]);
+  assert.deepStrictEqual(h.row, { status: 'found', open: true, viewers_list: false, viewers_n: 0 });
+  assert.deepStrictEqual(h.log.map((x) => x[1]), ['ticket:not_configured']);
+  assert.ok(!/@|FOLDER|DRIVEfile|stub\.invalid|r{48}/.test(JSON.stringify(h)), 'no email, id, URL or key in the answer');
+});
+
+test('health after a good upload: af-drive sends viewers, the year folder is counted (inherited access off), the log says uploaded', () => {
+  const t = setup({ groups: [] });
+  const tk = t.ticket({});
+  assert.ok(t.upload(tk.data.url, clip(PART + 10)).success);
+  const h = t.health({}).data;
+  assert.strictEqual(h.af_drive.viewers_api, true);
+  assert.strictEqual(h.row, null);
+  assert.deepStrictEqual(h.folders.map((f) => [f.school_year, f.inherited_off, f.perms.user]), [['LMS1:2026', true, 1]]);
+  assert.deepStrictEqual(h.log.map((x) => x[1]), ['uploaded']);
+  assert.ok(!/@|FOLDER|DRIVEfile|stub\.invalid/.test(JSON.stringify(h)));
+});
 console.log('af-video: all ' + n + ' passed (synthetic clip, fake Drive)');

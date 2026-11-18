@@ -29,7 +29,15 @@ var AFV_ORPHAN_AGE_MS_ = 36 * 60 * 60 * 1000; // af_video_done must come within 
 var AFV_MIME_ = { mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' };
 var AFV_DRIVE_ = 'https://www.googleapis.com/drive/v3/files';
 
-function afvOut_(code) { return { success: true, data: { ok: false, code: code } }; }
+function afvOut_(code) { afvLog_('ticket:' + code); return { success: true, data: { ok: false, code: code } }; }
+/** the last 10 af-video outcome codes (time + code only, never a name, school, file or video), for gameAfVideoHealth (18 Nov fault) */
+function afvLog_(code) {
+  try {
+    const p = afvProps_(), ring = JSON.parse(p.getProperty('AFV_LOG') || '[]');
+    ring.push([new Date().toISOString(), String(code).slice(0, 60)]);
+    p.setProperty('AFV_LOG', JSON.stringify(ring.slice(-10)));
+  } catch (e) { /* the log never breaks an upload */ }
+}
 function afvProps_() { return PropertiesService.getScriptProperties(); }
 function afvKeyOk_(given) {
   const want = afvProps_().getProperty('ROSTER_GAME_KEY');
@@ -141,7 +149,7 @@ function gameAfVideoPart_(b) {
     const r = afvApi_('post', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true',
       { name: t.n, parents: [folder.getId()], mimeType: t.m, copyRequiresWriterPermission: true, description: 'delete-after: ' + t.d + '\nAnnual Function video (lms-game). Shared with the school\'s AF video viewers only.' });
     const loc = r.getResponseCode() === 200 && (r.getHeaders().Location || r.getHeaders().location);
-    if (!loc) { console.error('af-video: session ' + r.getResponseCode()); return { success: false, error: 'DRIVE' }; }
+    if (!loc) { console.error('af-video: session ' + r.getResponseCode()); afvLog_('session:' + r.getResponseCode()); return { success: false, error: 'DRIVE' }; }
     st = { s: loc, next: 1, off: 0 };
   }
   if (part < st.next) return { success: true };
@@ -163,7 +171,7 @@ function gameAfVideoPart_(b) {
       headers: { 'Content-Range': 'bytes ' + from + '-' + to + '/' + (last ? to + 1 : '*') } });
     const code = r.getResponseCode();
     if (last && (code === 200 || code === 201)) return afvFinish_(t, cache, r);
-    if (last || code !== 308) { console.error('af-video: part ' + code); return { success: false, error: 'DRIVE' }; }
+    if (last || code !== 308) { console.error('af-video: part ' + code); afvLog_('part:' + code); return { success: false, error: 'DRIVE' }; }
   }
   st.next = part + 1; st.off = to + 1; delete st.fly;
   cache.put('afv_st_' + t.r, JSON.stringify(st), 21600);
@@ -192,11 +200,50 @@ function afvFinish_(t, cache, res) {
     afvApi_('patch', AFV_DRIVE_ + '/' + id + '?supportsAllDrives=true', { trashed: true });
     cache.remove('afv_st_' + t.r); cache.put('afv_fail_' + t.r, '1', 21600); // the ticket is spent: a resend never uploads again or answers the trashed id
     console.error('af-video: ' + (!ok ? 'share_failed' : member ? 'overshared_shared_drive_members' : 'overshared'));
+    afvLog_(!ok ? (viewers ? 'share_failed' : 'share_failed_no_viewers') : member ? 'overshared_shared_drive_members' : 'overshared');
     return { success: false, error: ok ? 'OVERSHARED' : 'SHARE_FAILED' };
   }
   cache.put('afv_done_' + t.r, id, 21600);
   cache.remove('afv_st_' + t.r);
+  afvLog_('uploaded');
   return { success: true, fileId: id };
+}
+
+// ── health (18 Nov: uploads started but never finished) ──────────────
+// gameAfVideoHealth: a read-only check anyone can run against the web app, answering booleans, counts and codes only (never a
+// property's value, a name, an email, a folder or file id): which set-up properties exist; whether af-drive is the 14 Nov version
+// that sends viewers (its ?groups=1 list exists); optionally one video row's state (by its id); each AF year folder's sharing
+// (permission counts by type, inherited access off?, in a shared drive?); and the last 10 af-video outcome codes.
+function gameAfVideoHealth_(b) {
+  const p = afvProps_(), url = String(p.getProperty('AF_VIDEO_LIVE_URL') || ''), key = p.getProperty('ROSTER_GAME_KEY');
+  const out = { live_url_set: /^https:\/\//.test(url), webapp_url_set: !!p.getProperty('ROSTER_WEBAPP_URL'), game_key_set: !!key,
+    af_drive: { groups_status: null, viewers_api: false }, row: null, folders: [], log: [] };
+  if (out.live_url_set && key) {
+    try {
+      const r = UrlFetchApp.fetch(url + '?groups=1', { method: 'get', headers: { 'x-roster-key': key }, muteHttpExceptions: true });
+      out.af_drive.groups_status = r.getResponseCode();
+      try { out.af_drive.viewers_api = r.getResponseCode() === 200 && Array.isArray(JSON.parse(r.getContentText()).groups); } catch (e) { out.af_drive.viewers_api = false; }
+    } catch (e) { out.af_drive.groups_status = 0; }
+    const video = String((b && b.params && b.params.video) || (b && b.video) || '');
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(video)) {
+      const row = afvRow_(video);
+      out.row = row === null ? { status: 'unreachable' } : row === false ? { status: 'missing' }
+        : { status: 'found', open: !!row.open, viewers_list: Array.isArray(row.viewers), viewers_n: afvViewers_(row.campus, row) ? afvViewers_(row.campus, row).length : 0 };
+    }
+  }
+  const known = JSON.parse(p.getProperty('AFV_FOLDERS') || '{}');
+  Object.keys(known).forEach(function (k) {
+    const f = { school_year: k, perms: { user: 0, group: 0, domain: 0, anyone: 0 }, inherited_off: null, shared_drive: null };
+    try {
+      const m = afvApi_('get', AFV_DRIVE_ + '/' + known[k] + '?supportsAllDrives=true&fields=driveId,inheritedPermissionsDisabled');
+      if (m.getResponseCode() === 200) { const j = JSON.parse(m.getContentText()); f.shared_drive = !!j.driveId; f.inherited_off = j.inheritedPermissionsDisabled === true; }
+      const l = afvApi_('get', AFV_DRIVE_ + '/' + known[k] + '/permissions?supportsAllDrives=true&fields=permissions(type)');
+      if (l.getResponseCode() === 200) (JSON.parse(l.getContentText()).permissions || []).forEach(function (x) { if (x.type in f.perms) f.perms[x.type]++; });
+    } catch (e) { f.error = true; }
+    out.folders.push(f);
+  });
+  try { out.log = JSON.parse(p.getProperty('AFV_LOG') || '[]'); } catch (e) { out.log = []; }
+  return { success: true, data: out };
 }
 
 // ── 3. the daily sweep ─────────────────────────────────────────────
