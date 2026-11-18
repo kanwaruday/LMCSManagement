@@ -210,11 +210,16 @@ function afvFinish_(t, cache, res) {
 }
 
 // ── health (18 Nov: uploads started but never finished) ──────────────
-// gameAfVideoHealth: a read-only check anyone can run against the web app, answering booleans, counts and codes only (never a
+// gameAfVideoHealth: a read-only check for the holder of the ROSTER_GAME_KEY (Jarvis, server side; G2b: the web app URL is public, so
+// without the key anyone could burn the daily UrlFetch quota or probe video ids). Answers booleans, counts and codes only (never a
 // property's value, a name, an email, a folder or file id): which set-up properties exist; whether af-drive is the 14 Nov version
 // that sends viewers (its ?groups=1 list exists); optionally one video row's state (by its id); each AF year folder's sharing
 // (permission counts by type, inherited access off?, in a shared drive?); and the last 10 af-video outcome codes.
 function gameAfVideoHealth_(b) {
+  if (!b || !afvKeyOk_(b.key)) return { success: false, error: 'not_authorized' };   // before any fetch
+  const asked = String((b.params && b.params.video) || b.video || ''), cache = CacheService.getScriptCache(), ck = 'afv_health_' + (asked || '-');
+  const hit = cache.get(ck);
+  if (hit) return { success: true, data: JSON.parse(hit) };   // a repeat within 2 minutes costs no fetch
   const p = afvProps_(), url = String(p.getProperty('AF_VIDEO_LIVE_URL') || ''), key = p.getProperty('ROSTER_GAME_KEY');
   const out = { live_url_set: /^https:\/\//.test(url), webapp_url_set: !!p.getProperty('ROSTER_WEBAPP_URL'), game_key_set: !!key,
     af_drive: { groups_status: null, viewers_api: false }, row: null, folders: [], log: [] };
@@ -243,6 +248,7 @@ function gameAfVideoHealth_(b) {
     out.folders.push(f);
   });
   try { out.log = JSON.parse(p.getProperty('AFV_LOG') || '[]'); } catch (e) { out.log = []; }
+  cache.put(ck, JSON.stringify(out), 120);
   return { success: true, data: out };
 }
 

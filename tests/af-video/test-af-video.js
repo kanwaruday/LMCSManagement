@@ -123,7 +123,7 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
     }
     return last;
   };
-  return { ctx, central, store, logs, calls, cache, P, rows, ticket, upload, J, health: (b) => J(ctx.gameAfVideoHealth_(b || {})), daily: () => J(ctx.afVideoDaily()), sync: (full) => J(ctx.afVideoShareSync(full)), part: (b) => J(ctx.gameAfVideoPart_(b)) };
+  return { ctx, central, store, logs, calls, cache, P, rows, ticket, upload, J, health: (b) => J(ctx.gameAfVideoHealth_(Object.assign({ key: KEY }, b || {}))), healthRaw: (b) => J(ctx.gameAfVideoHealth_(b)), daily: () => J(ctx.afVideoDaily()), sync: (full) => J(ctx.afVideoShareSync(full)), part: (b) => J(ctx.gameAfVideoPart_(b)) };
 }
 const clip = (n) => { const b = Buffer.alloc(n); Buffer.from('\x00\x00\x00\x18ftypmp42synthetic').copy(b); for (let i = 24; i < n; i++) b[i] = (i * 7) & 255; return b; };
 const find = (root, ...names) => names.reduce((f, n) => f && f.kids.find((k) => k.name === n), root);
@@ -335,5 +335,17 @@ test('health after a good upload: af-drive sends viewers, the year folder is cou
   assert.deepStrictEqual(h.folders.map((f) => [f.school_year, f.inherited_off, f.perms.user]), [['LMS1:2026', true, 1]]);
   assert.deepStrictEqual(h.log.map((x) => x[1]), ['uploaded']);
   assert.ok(!/@|FOLDER|DRIVEfile|stub\.invalid/.test(JSON.stringify(h)));
+});
+test('health needs the Roster key: no key or a wrong one is refused before any fetch; a repeat within 2 min is served from the cache', () => {
+  const t = setup({ groups: [] });
+  const before = t.calls.length;
+  assert.deepStrictEqual(t.healthRaw({ action: 'gameAfVideoHealth' }), { success: false, error: 'not_authorized' });
+  assert.deepStrictEqual(t.healthRaw({ action: 'gameAfVideoHealth', key: 'x'.repeat(48), video: VIDEO }), { success: false, error: 'not_authorized' });
+  assert.strictEqual(t.calls.length, before, 'no fetch for a refused call');
+  t.health({ video: VIDEO });
+  const after = t.calls.length;
+  assert.ok(after > before);
+  t.health({ video: VIDEO });
+  assert.strictEqual(t.calls.length, after, 'the repeat costs no fetch');
 });
 console.log('af-video: all ' + n + ' passed (synthetic clip, fake Drive)');
