@@ -80,6 +80,20 @@ var OFFICE_CATEGORIES = [
   ['chairman_personal', 'Personal (Chairman and family)', 'OUT', 'school', 0, '', 1],
   ['construction_works', 'Construction and building works', 'OUT', 'school', 0, '', 1],
   ['student_collection_paid', 'Student collection paid onward', 'OUT', 'school', 0, '', 1],
+  // lane-d (Uday, 19 Nov: "yes" to the 13 heads in the day-book gap check): offered at every school; the Owner hides any a school doesn't use
+  ['bank_charges', 'Bank charges (fees, cheque book, SMS)', 'OUT', 'school', 0, '', 1],
+  ['statutory_dues', 'PF, ESI, TDS and GST payments', 'OUT', 'school', 0, '', 1],
+  ['rent', 'Rent', 'OUT', 'school', 0, '', 1],
+  ['insurance', 'Insurance (building, staff, students)', 'OUT', 'school', 0, '', 1],
+  ['security_guards', 'Security guards and CCTV service', 'OUT', 'school', 0, '', 1],
+  ['professional_fees', 'Professional fees (CA, audit, lawyer)', 'OUT', 'school', 0, '', 1],
+  ['generator_diesel', 'Generator (DG set) diesel', 'OUT', 'school', 0, '', 1], // no vehicle: the vehicle fuel head is 'fuel'
+  ['fee_refund', 'Fee refund to a parent', 'OUT', 'fee', 0, '', 1], // group fee: nets against fee income in the ledger
+  ['library_books', 'Library books', 'OUT', 'school', 0, '', 1],
+  ['lab_consumables', 'Lab consumables', 'OUT', 'school', 0, '', 1],
+  ['furniture', 'Furniture and fixtures', 'OUT', 'school', 0, '', 1],
+  ['advertising', 'Advertising and admissions marketing', 'OUT', 'school', 0, '', 1],
+  ['staff_welfare', 'Staff welfare and training', 'OUT', 'school', 0, '', 1],
   ['other_out', 'Other payment (say what for)', 'OUT', 'school', 0, '', 1],
   ['transport_legacy', 'Transport before 23 Oct 2026 (not by vehicle)', 'OUT', 'transport', 0, '', 0], // import only: no vehicle, so no per-vehicle figure
   ['petty_expense', 'Petty expense (old)', 'OUT', 'school', 0, '', 0],
