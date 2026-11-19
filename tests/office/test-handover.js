@@ -21,6 +21,7 @@ module.exports = function run(t) {
     const h = boot(fixture);
     h.addConfig();
     ['LMS1', 'LMS2', 'HES'].forEach((c) => h.addBook(c, '2026-27'));
+    ['LMS1', 'LMS2', 'HES'].forEach((c) => ['petty', 'fee', 'other'].forEach((b) => h.ctx.officeWriteRow_(h.ctx.officeOpen_(c, '2026-27'), 'Opening', { id: 'seed-' + b, campus: c, mode: 'cash', bucket: b, amount_paise: 1000000000 }))); // lane-d: cash never below zero
     h.setNow(new Date('2026-10-21T10:00:00Z')); // 15:30 IST 2026-10-21
     return h;
   };
@@ -55,7 +56,7 @@ module.exports = function run(t) {
     assert.equal(rows(h, 'HES').length, 1);
     assert.deepEqual(list(h, 'hes-token'), []); assert.deepEqual(list(h, 'c1-token'), []);
     const b = (c) => h.call('daybook.balances', { campus: c, date: '2026-10-22' }, 'owner-token').closing.cash.fee;
-    assert.equal(b('LMS1'), -20000); assert.equal(b('HES'), 20000);
+    assert.equal(b('LMS1'), 1000000000 - 20000); assert.equal(b('HES'), 1000000000 + 20000); // on top of the seeded opening
   });
 
   t.test('wrong campus or account refused', () => {

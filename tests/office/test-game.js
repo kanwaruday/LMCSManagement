@@ -16,6 +16,7 @@ module.exports = function run(t) {
     const h = boot(fixture);
     h.addConfig();
     ['LMS1', 'LMS2', 'HES'].forEach((c) => h.addBook(c, '2026-27'));
+    ['LMS1', 'LMS2', 'HES'].forEach((c) => ['petty', 'fee', 'other'].forEach((b) => h.ctx.officeWriteRow_(h.ctx.officeOpen_(c, '2026-27'), 'Opening', { id: 'seed-' + b, campus: c, mode: 'cash', bucket: b, amount_paise: 1000000000 }))); // lane-d: cash never below zero
     h.setNow(new Date('2026-10-21T10:00:00Z'));
     h.props.OFFICE_GAME_KEY = KEY;
     h.props.OFFICE_WEBAPP_URL = 'https://script.google.com/macros/s/OFFICE/exec';

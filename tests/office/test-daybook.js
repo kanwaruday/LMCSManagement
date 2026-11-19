@@ -119,6 +119,7 @@ module.exports = function run(t) {
 
   t.test('reverse across the year boundary writes to the new book; NOT_FOUND when neither book has it', () => {
     const h = fresh(); h.addBook('LMS1', '2027-28');
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2027-28'), 'Opening', { id: 'seed-fee', campus: 'LMS1', mode: 'cash', bucket: 'fee', amount_paise: 1000000000 });
     h.setNow(new Date('2027-03-31T10:00:00Z'));
     add(h, { id: 'old', entry_date: '2027-03-31', amount_paise: 500 });
     h.setNow(new Date('2027-04-02T10:00:00Z'));
@@ -616,6 +617,35 @@ module.exports = function run(t) {
     assert.equal(h.call('daybook.add', e({ account: 'bank:LMS1', mode: 'bank', bucket: '', direction: 'OUT', category: 'utilities', amount_paise: 9 }), 'owner-token').success, true);
   });
 
+  // G2/G2b FIX on 50aa02db: no day's cash may drop below zero, whichever path writes the row or whatever date it carries
+  const petty100 = (amount = 1000) => { const h = fresh({ seed: false });
+    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'petty', amount_paise: amount }] }, 'owner-token'); return h; };
+  const pettyAt = (h, d) => h.call('daybook.balances', { campus: 'LMS1', date: d }, 'clerk-token').closing.cash.petty;
+  const spend = (o) => e(Object.assign({ direction: 'OUT', category: 'stationery', bucket: 'petty' }, o));
+  t.test('lane-d: a backdated cash OUT that would push a later day below zero is INSUFFICIENT_CASH (G2b / G2 probe A)', () => {
+    const h = petty100();
+    assert.equal(add(h, spend({ entry_date: '2026-10-20', amount_paise: 900 })).success, true);       // Tue 1000 → 100
+    assert.equal(add(h, spend({ entry_date: '2026-10-19', amount_paise: 1000 })).error, 'INSUFFICIENT_CASH', 'Mon has 1000, but Tue would be −900');
+    assert.equal(add(h, spend({ entry_date: '2026-10-19', amount_paise: 100 })).success, true, 'what every later day can spare');
+    assert.equal(pettyAt(h, '2026-10-19'), 900); assert.equal(pettyAt(h, '2026-10-21'), 0);
+  });
+  t.test('lane-d: reversing a cash IN after the cash is spent is INSUFFICIENT_CASH (G2 probe B)', () => {
+    const h = fresh({ seed: false });
+    assert.equal(add(h, { id: 'in1', bucket: 'petty', entry_date: '2026-10-20', amount_paise: 1000 }).success, true);
+    assert.equal(add(h, spend({ entry_date: '2026-10-21', amount_paise: 1000 })).success, true);
+    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 'in1', narration: 'wrong entry' }, 'clerk-token').error, 'INSUFFICIENT_CASH');
+    assert.equal(pettyAt(h, '2026-10-21'), 0, 'nothing written');
+    assert.equal(add(h, { id: 'in2', bucket: 'petty', entry_date: '2026-10-21', amount_paise: 1000 }).success, true);
+    assert.equal(h.call('daybook.reverse', { id: 'rv2', campus: 'LMS1', reverses: 'in1', narration: 'wrong entry' }, 'clerk-token').success, true, 'fine once the cash is there');
+  });
+  t.test('lane-d: two cash OUTs each fine alone but not together: the second is refused; a retry of the first is still a duplicate', () => {
+    const h = petty100();
+    const first = spend({ id: 'o1', entry_date: '2026-10-21', amount_paise: 600 });
+    assert.equal(add(h, first).success, true);
+    assert.equal(add(h, spend({ id: 'o2', entry_date: '2026-10-20', amount_paise: 600 })).error, 'INSUFFICIENT_CASH');
+    assert.equal(add(h, first).duplicate, true, 'a resend never counts itself twice');
+    assert.equal(pettyAt(h, '2026-10-21'), 400);
+  });
   t.test('lane-d: the end-of-day cash count saves the difference; a difference needs a reason; the latest count per bucket is read', () => {
     const h = fresh({ seed: false });
     h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }] }, 'owner-token');

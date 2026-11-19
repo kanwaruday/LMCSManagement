@@ -132,10 +132,6 @@ function officeDaybookAdd_(ctx, data) {
 
   // Day close is the cash count: it freezes cash-account rows only (bank, UPI and credit carry their real date).
   if (acct.kind === 'cash') officeAssertOpen_(ss, data.entry_date);
-  // lane-d: cash never goes below zero: a cash payment above what the bucket holds at the end of that day is refused (as deposits are)
-  if (mode === 'cash' && data.direction === 'OUT' && data.amount_paise > officeBalances_(officeOpening_(ss), officeRows_(ss, 'DayBook'), data.entry_date).closing.cash[data.bucket]) {
-    throw officeCoded_('INSUFFICIENT_CASH');
-  }
   if (isFuel && !odometerNote && data.odometer_km < officeLastOdometer_(data.campus, vehicle, data.entry_date)) throw officeCoded_('ODOMETER_BACKWARDS');
   const warnings = data.direction === 'OUT' ? officeRepeatWarnings_(data) : [];   // lane-d: worked out before the row lands, so it never matches itself
   const saved = officeDaybookWrite_(ss, ctx, {
@@ -181,6 +177,7 @@ function officeLastOdometer_(campus, vehicle, date) {
 }
 
 function officeDaybookWrite_(ss, ctx, row, action) {
+  officeAssertCashFloor_(ss, row);
   const res = officeAppend_(ss, 'DayBook', row, ctx.caller, { action: action, campus: row.campus });
   if (row.category === 'fuel' && !res.duplicate) { // feeds the GPS fuel checks; a failure here never loses the entry
     try { officeFuelMirror_(row.campus, Object.assign({}, row, { id: res.id })); } catch (err) { console.error('Fuel mirror: ' + err.message); }
@@ -190,6 +187,26 @@ function officeDaybookWrite_(ss, ctx, row, action) {
     try { officeServiceMirror_(row.campus, Object.assign({}, row, { id: res.id })); } catch (err) { console.error('Service mirror: ' + err.message); }
   }
   return { id: res.id, duplicate: res.duplicate };
+}
+
+// lane-d (G2b FIX): cash never goes below zero, on any day. A cash OUT lowers the closing of its own day and of every later day, so
+// the lowest end-of-day closing of that bucket from its date to the end of the book must still cover it (a backdated payment can't
+// empty a later day). Every cash row is written here (add, reverse, deposit legs, handover), each as its action's first write, and
+// the dispatcher holds the script lock around the whole action, so the check and the write are one step for two clerks at once.
+// ponytail: one financial year's book; a payment backdated into last year isn't checked against this year's days (the book's
+// opening is carried by hand at 1 April), add a cross-year walk if backdating across 1 April is ever allowed.
+function officeAssertCashFloor_(ss, row) {
+  if (row.mode !== 'cash' || row.direction !== 'OUT') return;
+  const rows = officeRows_(ss, 'DayBook');
+  if (rows.some(function (r) { return r.id === String(row.id); })) return; // a retry: the row is already counted
+  let run = officeBalances_(officeOpening_(ss), rows, row.entry_date).closing.cash[row.bucket], low = run;
+  const later = rows.filter(function (r) { return r.mode === 'cash' && r.bucket === row.bucket && r.entry_date > row.entry_date; })
+    .sort(function (a, b) { return a.entry_date < b.entry_date ? -1 : a.entry_date > b.entry_date ? 1 : 0; });
+  later.forEach(function (r, i) {
+    run += r.direction === 'IN' ? r.amount_paise : -r.amount_paise;
+    if (i === later.length - 1 || later[i + 1].entry_date !== r.entry_date) low = Math.min(low, run); // end of that day
+  });
+  if (row.amount_paise > low) throw officeCoded_('INSUFFICIENT_CASH');
 }
 
 // Reversal is dated today and written to today's book. The original, its reversals and a retry of this same
