@@ -89,7 +89,7 @@ module.exports = function run(t) {
     const flag = (tok) => h.call('config.get', {}, tok).fund_transfer_allowed;
     assert.deepEqual(['fh-token', 'owner-token', 'coord-token', 'fh2-token', 'clerk-token'].map(flag), [true, true, false, false, false]);
     xfer(h);
-    assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'fh2-token').error, 'FORBIDDEN_ROLE', 'reversal follows the same rule');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'fh2-token').error, 'FORBIDDEN_ROLE', 'reversal follows the same rule');
   });
 
   t.test('the "Fees & Accounts" function (allowlist Functions column, any case) grants transfers; no column or another function does not', () => {
@@ -110,9 +110,9 @@ module.exports = function run(t) {
     assert.ok(h.call('start.progress', {}, 'coordfn-token').progress.HES.bank, 'sees every school\'s banks');
     const test = () => h.call('start.progress', {}, 'pawan-token').fund_test;
     assert.equal(test(), false);
-    assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'pawan-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'pawan-token').success, true);
     assert.equal(test(), true, 'a reversed fund transfer closes the quest step');
-    h.call('daybook.reverse', { id: 'rv2', campus: 'LMS1', reverses: 't1-out' }, 'pawan-token');
+    h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv2', campus: 'LMS1', reverses: 't1-out' }, 'pawan-token');
     assert.equal(h.ctx.officeRows_(h.ctx.officeConfigBook_(), 'Settings').filter((r) => r.key === 'fund_test:pawan@example.org').length, 1, 'marked once');
     assert.equal(h.call('start.progress', {}, 'owner-token').fund_test, false, 'per person');
   });
@@ -138,17 +138,17 @@ module.exports = function run(t) {
   t.test('daybook.reverse of either leg reverses both, each in its own book; retry writes nothing', () => {
     const h = fresh();
     xfer(h);
-    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 't1-out' }, 'clerk-token').error, 'FORBIDDEN_ROLE');
-    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'HES', reverses: 't1-in' }, 'fh1-token').error, 'FORBIDDEN_CAMPUS');
-    const r = h.call('daybook.reverse', { id: 'rv1', campus: 'HES', reverses: 't1-in' }, 'fh-token');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv1', campus: 'LMS1', reverses: 't1-out' }, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv1', campus: 'HES', reverses: 't1-in' }, 'fh1-token').error, 'FORBIDDEN_CAMPUS');
+    const r = h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv1', campus: 'HES', reverses: 't1-in' }, 'fh-token');
     assert.equal(r.success, true);
     const pick = (x) => [x.id, x.entry_date, x.direction, x.category, x.account, x.reverses, x.amount_paise];
     assert.deepEqual(rows(h, 'LMS1').slice(1).map(pick), [['t1-out-rv', '2026-10-21', 'IN', 'fund_transfer_out', 'bank:LMS1', 't1-out', 500000]]);
     assert.deepEqual(rows(h, 'HES').slice(1).map(pick), [['t1-in-rv', '2026-10-21', 'OUT', 'fund_transfer_in', 'sbi-hes', 't1-in', 500000]]);
-    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'HES', reverses: 't1-in' }, 'fh-token').duplicate, true);
-    assert.equal(h.call('daybook.reverse', { id: 'rv2', campus: 'LMS1', reverses: 't1-out' }, 'fh-token').duplicate, true, 'the other leg is already reversed');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv1', campus: 'HES', reverses: 't1-in' }, 'fh-token').duplicate, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv2', campus: 'LMS1', reverses: 't1-out' }, 'fh-token').duplicate, true, 'the other leg is already reversed');
     assert.equal(rows(h, 'LMS1').length + rows(h, 'HES').length, 4);
-    assert.equal(h.call('daybook.reverse', { id: 'rv3', campus: 'LMS1', reverses: 't1-out-rv' }, 'fh-token').code, 'FUND_LEG');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv3', campus: 'LMS1', reverses: 't1-out-rv' }, 'fh-token').code, 'FUND_LEG');
     assert.equal(bank(h, 'LMS1').bank, 0); assert.equal(bank(h, 'HES').bank, 0);
     const s = h.call('ledger.summary', { campus: 'ALL', from: '2026-04-01', to: '2026-10-21' }, 'owner-token');
     assert.deepEqual(J(s.interSchool), []);
@@ -157,26 +157,26 @@ module.exports = function run(t) {
   t.test('reversal repairs a missing reversal leg; a transfer missing a leg is not reversed', () => {
     const h = fresh();
     xfer(h);
-    h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 't1-out' }, 'fh-token');
+    h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv1', campus: 'LMS1', reverses: 't1-out' }, 'fh-token');
     const sh = h.ctx.officeOpen_('HES', '2026-27').getSheetByName('DayBook');
     sh.deleteRow(sh.getDataRange().getValues().findIndex((r) => r[0] === 't1-in-rv') + 1);
-    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 't1-out' }, 'fh-token').duplicate, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv1', campus: 'LMS1', reverses: 't1-out' }, 'fh-token').duplicate, true);
     assert.deepEqual(rows(h, 'HES').map((x) => x.id), ['t1-in', 't1-in-rv']);
     xfer(h, { id: 't9' });
     sh.deleteRow(sh.getDataRange().getValues().findIndex((r) => r[0] === 't9-in') + 1);
-    assert.equal(h.call('daybook.reverse', { id: 'rv9', campus: 'LMS1', reverses: 't9-out' }, 'fh-token').code, 'FUND_INCOMPLETE');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv9', campus: 'LMS1', reverses: 't9-out' }, 'fh-token').code, 'FUND_INCOMPLETE');
   });
 
   t.test('reversal retry across 1 April writes only the missing reversal, never a second one', () => {
     const h = fresh();
     h.setNow(new Date('2027-03-31T06:00:00Z'));
     xfer(h, { date: '2027-03-31' });
-    h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'fh-token');
+    h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'fh-token');
     const sh = h.ctx.officeOpen_('HES', '2026-27').getSheetByName('DayBook');
     sh.deleteRow(sh.getDataRange().getValues().findIndex((r) => r[0] === 't1-in-rv') + 1);
     ['LMS1', 'HES'].forEach((c) => h.addBook(c, '2027-28'));
     h.setNow(new Date('2027-04-01T06:00:00Z'));
-    assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'fh-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv', campus: 'LMS1', reverses: 't1-out' }, 'fh-token').success, true);
     const ids = (c, fy) => h.ctx.officeRows_(h.ctx.officeOpen_(c, fy), 'DayBook').map((x) => x.id);
     assert.deepEqual(ids('LMS1', '2027-28'), [], 'the LMS1 reversal is already in last year\'s book');
     assert.deepEqual(ids('HES', '2027-28'), ['t1-in-rv']);

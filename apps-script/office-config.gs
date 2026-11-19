@@ -30,6 +30,9 @@ var OFFICE_CONFIG_SEED = {
     ['FinanceHead', '0'],
     ['Principal', '0'],
   ],
+  // lane-d: expense heads a school doesn't use, hidden from its entry form (the Owner's setting, not a code change); latest row per
+  // (campus, category) wins; hidden 'false' shows it again. Entries already made keep their head.
+  HiddenHeads: [['campus', 'category', 'hidden', 'created_at', 'created_by']],
   // Small settings, key -> value; the latest row per key wins. fund_transfer_emails: comma list of who may enter fund.transfer (besides the Owner).
   Settings: [['key', 'value', 'created_at', 'created_by']],
   // Cash handovers between campuses (office-handover.gs). Append-only events: the handover row (id = handover id, state pending)
@@ -282,6 +285,7 @@ function officeConfigActions_() {
     'vehicles.import': { roles: ['FinanceHead', 'Owner'], write: true, run: officeVehiclesImport_ },
     'account.opening': { roles: ['FinanceHead', 'Owner'], write: true, run: officeAccountOpening_ },
     'opening.set': { roles: ['FinanceHead', 'Owner'], write: true, run: officeOpeningSet_ },
+    'heads.hide': { roles: ['FinanceHead', 'Owner'], write: true, run: officeHeadsHide_ },   // lane-d
   };
 }
 
@@ -293,7 +297,7 @@ function officeConfigBook_() {
   Object.keys(OFFICE_CONFIG_SEED).forEach(function (tab) {
     const v = OFFICE_CONFIG_SEED[tab];
     const have = ss.getSheetByName(tab);
-    if (have) { if (['Accounts', 'Vehicles', 'Collections', 'StartData', 'SetupQuests', 'Settings', 'Handovers'].indexOf(tab) !== -1) officeEnsureHeader_(have, v[0]); return; }
+    if (have) { if (['Accounts', 'Vehicles', 'Collections', 'StartData', 'SetupQuests', 'Settings', 'Handovers', 'HiddenHeads'].indexOf(tab) !== -1) officeEnsureHeader_(have, v[0]); return; }
     const sh = ss.insertSheet(tab);
     sh.getRange(1, 1, v.length, v[0].length).setNumberFormat('@').setValues(v); // plain text, as in the store
     sh.setFrozenRows(1);
@@ -334,6 +338,7 @@ function officeConfigGet_(ctx) {
   officeRows_(ss, 'Limits').forEach(function (r) { limits[r.role] = r.max_amount_paise; });
   const lock = officeSchoolLock_(ctx && ctx.caller), mine = function (x) { return !lock || lock(x.campus); };
   return { categories: OFFICE_CATEGORIES, accounts: officeAccounts_().filter(mine), vehicles: officeVehicles_().filter(mine), collections: officeCollections_(), limits: limits, campuses: OFFICE_CAMPUSES,
+    hidden_heads: officeHiddenHeads_(),   // lane-d: { LMS1: ['ilp_kitchen', ...], ... }
     fund_transfer_allowed: !!(ctx && officeFundAllowed_(ctx.caller)) };
 }
 
@@ -370,4 +375,27 @@ function officeOpening_(ss) {
     if (r.mode === 'cash') o.cash[r.bucket] = r.amount_paise; else o[r.mode] = r.amount_paise;
   });
   return o;
+}
+
+// lane-d: { campus: [category, ...] } of the heads each school hides (latest row per campus and category wins)
+function officeHiddenHeads_() {
+  const last = {};
+  officeRows_(officeConfigBook_(), 'HiddenHeads').forEach(function (r) { last[r.campus + '|' + r.category] = r; });
+  const out = {};
+  Object.keys(last).forEach(function (k) { const r = last[k]; if (String(r.hidden) === 'true') (out[r.campus] = out[r.campus] || []).push(r.category); });
+  return out;
+}
+// hide (or show again) one expense head at one school: a Money-out category that exists; appends a row and audits it
+function officeHeadsHide_(ctx, data) {
+  const cat = officeCategory_(String(data.category || ''));
+  if (!cat || cat.direction !== 'OUT') throw new Error('BAD_CATEGORY');
+  if (OFFICE_CAMPUSES.indexOf(data.campus) === -1) throw new Error('MISSING_CAMPUS');
+  if (typeof data.hidden !== 'boolean') throw new Error('BAD_FIELD');
+  const iso = officeNow_().toISOString();
+  const row = { campus: data.campus, category: cat.id, hidden: String(data.hidden), created_at: iso, created_by: ctx.caller.email };
+  officeWriteRow_(officeConfigBook_(), 'HiddenHeads', row);
+  officeWriteRow_(officeCollectionAuditBook_(ctx.caller), 'Audit', {
+    id: Utilities.getUuid(), ts: iso, who: ctx.caller.email, action: 'heads.hide', tab: 'HiddenHeads', row_id: data.campus + ':' + cat.id, campus: data.campus, after: JSON.stringify(row),
+  });
+  return { campus: data.campus, category: cat.id, hidden: data.hidden };
 }

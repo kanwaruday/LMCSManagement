@@ -148,7 +148,7 @@ module.exports = function run(t) {
       if (i % 5 === 0) assert.equal(h.call('daybook.add', { id: 'b' + (++k), campus: 'LMS1', entry_date: date, account: 'bank:LMS1', direction: 'IN', mode: 'upi', category: 'fee_collection', amount_paise: 1000 }, 'owner-token').success, true); // not cash (bank rows: FinanceHead/Owner)
       if (i % 7 === 0) h.call('deposit.add', { id: 'dp' + i, campus: 'LMS1', covers_date: date, amount_paise: 1000, bank_ref: 'R' + i, file_id: 'slip' }, 'clerk-token');
       if (i % 11 === 0) h.call('deposit.add', { id: 'dh' + i, campus: 'LMS1', covers_date: date, amount_paise: 500, bank_ref: 'H' + i, file_id: 'slip' }, 'clerk-token'); // part-deposited
-      if (i % 13 === 0) assert.equal(h.call('daybook.reverse', { id: 'rv' + i, campus: 'LMS1', reverses: 'b' + k }, 'owner-token').success, true, 'reversed in full'); // b+k may be the bank row
+      if (i % 13 === 0) assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv' + i, campus: 'LMS1', reverses: 'b' + k }, 'owner-token').success, true, 'reversed in full'); // b+k may be the bank row
     });
     assert.ok(dates.length >= 300, dates.length);
     const cutoff = '2027-02-13';

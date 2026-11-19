@@ -99,7 +99,7 @@ module.exports = function run(t) {
   t.test('reversed collection reduces day-book fee cash; non-cash and other dates ignored', () => {
     const h = fresh(); fee(h, 5000, '2026-10-20', { id: 'a' }); fee(h, 700, '2026-10-20', { id: 'b' });
     fee(h, 900, '2026-10-20', { mode: 'upi', bucket: undefined }); fee(h, 400, '2026-10-19');
-    h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 'b' }, 'clerk-token');
+    h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv', campus: 'LMS1', reverses: 'b' }, 'clerk-token');
     assert.equal(recon(h).daybook_fee_cash, 5000);
   });
 
@@ -208,7 +208,7 @@ module.exports = function run(t) {
   t.test('opening.set and daybook.reverse retried across 1 April are duplicates', () => {
     const h = yearEnd();
     h.setNow(new Date('2027-03-31T07:00:00Z'));
-    const rev = { id: 'rv1', campus: 'LMS1', reverses: 'f' + n };
+    const rev = { id: 'rv1', campus: 'LMS1', reverses: 'f' + n, narration: 'Wrong entry' };
     assert.equal(h.call('daybook.reverse', rev, 'clerk-token').success, true);
     h.setNow(new Date('2027-04-01T06:00:00Z'));
     const again = h.call('daybook.reverse', rev, 'clerk-token');
@@ -231,7 +231,7 @@ module.exports = function run(t) {
       assert.equal(r.code, 'DEPOSIT_LEG_CATEGORY', c);
     });
     assert.equal(dep(h, { id: 'dep1', covers_date: '2026-10-21' }).success, true);
-    ['dep1:out', 'dep1:in'].forEach((leg) => assert.equal(h.call('daybook.reverse', { id: 'rv-' + leg, campus: 'LMS1', reverses: leg }, 'clerk-token').code, 'DEPOSIT_LEG', leg));
+    ['dep1:out', 'dep1:in'].forEach((leg) => assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv-' + leg, campus: 'LMS1', reverses: leg }, 'clerk-token').code, 'DEPOSIT_LEG', leg));
     assert.equal(rows(h, 'DayBook').filter((r) => r.reverses).length, 0);
   });
   t.test('deposit legs carry accounts; default bank account; another campus bank refused', () => {

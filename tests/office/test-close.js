@@ -43,7 +43,7 @@ module.exports = function run(t) {
     const h = fresh();
     add(h, { id: 'orig' });
     close(h, '2026-10-20');
-    const r = h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 'orig' }, 'clerk-token');
+    const r = h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv', campus: 'LMS1', reverses: 'orig' }, 'clerk-token');
     assert.equal(r.success, true);
     const e = h.call('daybook.list', { campus: 'LMS1', from: '2026-10-21' }, 'clerk-token').entries;
     assert.deepEqual(e.map((x) => [x.id, x.entry_date]), [['rv', '2026-10-21']]);
@@ -53,7 +53,7 @@ module.exports = function run(t) {
     const h = fresh();
     add(h, { id: 'orig' });
     h.ctx.officeWriteRow_(h.book, 'Closes', { id: 'x', campus: 'LMS1', close_date: '2026-10-21', closing_json: '{}', created_at: '2026-10-21T09:00:00.000Z' });
-    const r = h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 'orig' }, 'clerk-token');
+    const r = h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv', campus: 'LMS1', reverses: 'orig' }, 'clerk-token');
     assert.equal(r.code, 'DAY_CLOSED');
     assert.equal(h.call('daybook.list', { campus: 'LMS1', from: '2026-10-21' }, 'clerk-token').entries.length, 0);
   });
@@ -195,7 +195,7 @@ module.exports = function run(t) {
     assert.deepEqual(h.call('daybook.list', { campus: 'LMS1', from: '2026-10-19', to: '2026-10-20' }, 'fh-token').entries.map((x) => x.id).sort(), ['bank', 'fill', 'keep', 'upi']);
     // reversing a bank row while today is closed is not blocked; reversing a cash row is
     h.ctx.officeWriteRow_(h.book, 'Closes', { id: 'x', campus: 'LMS1', close_date: '2026-10-21', closing_json: '{}', created_at: '2026-10-21T09:00:00.000Z' });
-    assert.equal(h.call('daybook.reverse', { id: 'rb', campus: 'LMS1', reverses: 'bank' }, 'fh-token').success, true);
-    assert.equal(h.call('daybook.reverse', { id: 'rk', campus: 'LMS1', reverses: 'keep' }, 'fh-token').code, 'DAY_CLOSED');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rb', campus: 'LMS1', reverses: 'bank' }, 'fh-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rk', campus: 'LMS1', reverses: 'keep' }, 'fh-token').code, 'DAY_CLOSED');
   });
 };

@@ -89,14 +89,14 @@ module.exports = function run(t) {
     const h = fresh();
     give(h); give(h, { id: 'h2' });
     h.call('cash.dispute', { id: 'd1', handover: 'h1', note: 'Not received' }, 'hes-token');
-    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 'h1-out' }, 'c1-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv1', campus: 'LMS1', reverses: 'h1-out' }, 'c1-token').success, true);
     assert.deepEqual(list(h, 'c1-token').map((x) => x.id), ['h2']);
-    assert.equal(h.call('daybook.reverse', { id: 'rv2', campus: 'LMS1', reverses: 'h2-out' }, 'c1-token').success, true, 'a pending one too');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv2', campus: 'LMS1', reverses: 'h2-out' }, 'c1-token').success, true, 'a pending one too');
     assert.deepEqual(list(h, 'hes-token'), []);
     assert.equal(accept(h, 'h2').code, 'HANDOVER_NOT_PENDING');
     give(h, { id: 'h3' }); accept(h, 'h3');
-    assert.equal(h.call('daybook.reverse', { id: 'rv3', campus: 'LMS1', reverses: 'h3-out' }, 'c1-token').code, 'HANDOVER_ACCEPTED');
-    assert.equal(h.call('daybook.reverse', { id: 'rv4', campus: 'HES', reverses: 'h3-in' }, 'hes-token').code, 'HANDOVER_ACCEPTED');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv3', campus: 'LMS1', reverses: 'h3-out' }, 'c1-token').code, 'HANDOVER_ACCEPTED');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv4', campus: 'HES', reverses: 'h3-in' }, 'hes-token').code, 'HANDOVER_ACCEPTED');
   });
 
   t.test('day close: a pending handover never blocks closing; the IN leg lands on the acceptance day; a closed day takes no handover', () => {
@@ -121,7 +121,7 @@ module.exports = function run(t) {
     assert.deepEqual(rows(h, 'HES').map((x) => x.id), ['h1-in']);
     assert.equal(accept(h).duplicate, true); assert.equal(rows(h, 'HES').length, 1);
     h.ctx.officeHandoverEvent_(as('c1@example.org'), ho('h2'), 'closed'); // crash after the closed event, before the reversal row
-    assert.equal(h.call('daybook.reverse', { id: 'rv2', campus: 'LMS1', reverses: 'h2-out' }, 'c1-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv2', campus: 'LMS1', reverses: 'h2-out' }, 'c1-token').success, true);
     assert.deepEqual(rows(h, 'LMS1').filter((x) => x.reverses).map((x) => x.reverses), ['h2-out']);
     assert.equal(accept(h, 'h2').code, 'HANDOVER_NOT_PENDING');
   });
@@ -131,7 +131,7 @@ module.exports = function run(t) {
     give(h); give(h, { id: 'h2' });
     const legOnly = (c, row) => h.ctx.officeDaybookWrite_(h.ctx.officeOpen_(c, '2026-27'), { caller: { email: 'x' } }, row, 'test');
     legOnly('HES', { id: 'h1-in', campus: 'HES', entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'cash_received', amount_paise: 20000, account: 'cash:HES', settles: 'h1-out' });
-    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 'h1-out' }, 'c1-token').code, 'HANDOVER_ACCEPTED');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv1', campus: 'LMS1', reverses: 'h1-out' }, 'c1-token').code, 'HANDOVER_ACCEPTED');
     legOnly('LMS1', { id: 'x2', campus: 'LMS1', entry_date: '2026-10-21', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'cash_transfer', amount_paise: 20000, account: 'cash:LMS1', settles: 'h2-in', reverses: 'h2-out' });
     assert.equal(accept(h, 'h2').code, 'HANDOVER_NOT_PENDING');
     assert.equal(rows(h, 'HES').length, 1);

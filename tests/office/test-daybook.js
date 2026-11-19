@@ -18,11 +18,13 @@ const fixture = {
 const J = (x) => JSON.parse(JSON.stringify(x));
 
 module.exports = function run(t) {
-  const fresh = () => {
+  // lane-d: cash can't go below zero now, so each school's cash buckets start with money in them (seed: false for exact-balance tests)
+  const fresh = ({ seed = true } = {}) => {
     const h = boot(fixture);
     h.addConfig(); h.addBook('LMS1', '2026-27'); h.addBook('LMS1', '2025-26');
     h.setNow(new Date('2026-10-21T10:00:00Z'));
     h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files', { id: 'slip', campus: 'LMS1', drive_id: 'D1', name: 's.jpg' });
+    if (seed) ['petty', 'fee', 'other'].forEach((b) => h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Opening', { id: 'seed-' + b, campus: 'LMS1', mode: 'cash', bucket: b, amount_paise: 1000000000 }));
     return h;
   };
   let n = 0;
@@ -37,15 +39,15 @@ module.exports = function run(t) {
   });
 
   t.test('1000 entries of 10 paise sum exactly 10000', () => {
-    const h = fresh();
+    const h = fresh({ seed: false });
     for (let i = 0; i < 1000; i++) assert.equal(add(h, { id: 'm' + i, amount_paise: 10 }).success, true);
     const b = h.call('daybook.balances', { campus: 'LMS1', date: '2026-10-20' }, 'clerk-token');
     assert.equal(b.in.cash.fee, 10000); assert.equal(b.closing.cash.fee, 10000);
   });
 
   t.test('balances = opening + in - out per mode and cash bucket', () => {
-    const h = fresh();
-    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }, { mode: 'bank', amount_paise: 5000 }] }, 'owner-token');
+    const h = fresh({ seed: false });
+    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }, { mode: 'cash', bucket: 'petty', amount_paise: 500 }, { mode: 'bank', amount_paise: 5000 }] }, 'owner-token');
     add(h, { entry_date: '2026-10-19', amount_paise: 300 });
     add(h, { amount_paise: 700 });
     add(h, { direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 200 });
@@ -53,32 +55,32 @@ module.exports = function run(t) {
     h.call('daybook.add', e({ account: 'bank:LMS1', mode: 'upi', bucket: '', direction: 'OUT', category: 'utilities', amount_paise: 9 }), 'owner-token');
     add(h, { entry_date: '2026-10-21', amount_paise: 4 });
     const b = h.call('daybook.balances', { campus: 'LMS1', date: '2026-10-20' }, 'clerk-token');
-    assert.deepEqual(J(b.opening), { cash: { petty: 0, fee: 1300, other: 0 }, bank: 5000, upi: 0 });
+    assert.deepEqual(J(b.opening), { cash: { petty: 500, fee: 1300, other: 0 }, bank: 5000, upi: 0 });
     assert.deepEqual(J(b.in), { cash: { petty: 0, fee: 700, other: 0 }, bank: 50, upi: 0 });
     assert.deepEqual(J(b.out), { cash: { petty: 200, fee: 0, other: 0 }, bank: 0, upi: 9 });
-    assert.deepEqual(J(b.closing), { cash: { petty: -200, fee: 2000, other: 0 }, bank: 5050, upi: -9 });
+    assert.deepEqual(J(b.closing), { cash: { petty: 300, fee: 2000, other: 0 }, bank: 5050, upi: -9 });   // lane-d: cash can't go below zero; bank still may
   });
 
   t.test('reverse creates opposite entry and nets to zero', () => {
-    const h = fresh();
+    const h = fresh({ seed: false });
     add(h, { id: 'orig', entry_date: '2026-10-21', amount_paise: 4200 });
-    const r = h.call('daybook.reverse', { id: 'rev', campus: 'LMS1', reverses: 'orig' }, 'clerk-token');
+    const r = h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rev', campus: 'LMS1', reverses: 'orig' }, 'clerk-token');
     assert.equal(r.success, true);
     const rows = h.call('daybook.list', { campus: 'LMS1', from: '2026-10-21' }, 'clerk-token').entries;
     const rv = rows.find((x) => x.id === 'rev');
     assert.equal(rv.direction, 'OUT'); assert.equal(rv.reverses, 'orig'); assert.equal(rv.amount_paise, 4200);
-    assert.equal(rv.category, 'fee_collection'); assert.equal(rv.narration, 'Reversal of orig'); assert.equal(rv.entry_date, '2026-10-21');
+    assert.equal(rv.category, 'fee_collection'); assert.equal(rv.narration, 'Wrong entry');   // lane-d: the reversal's reason, now required assert.equal(rv.entry_date, '2026-10-21');
     assert.equal(h.call('daybook.balances', { campus: 'LMS1', date: '2026-10-21' }, 'clerk-token').closing.cash.fee, 0);
-    assert.equal(h.call('daybook.reverse', { id: 'rev', campus: 'LMS1', reverses: 'orig' }, 'clerk-token').duplicate, true, 'retry is idempotent');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rev', campus: 'LMS1', reverses: 'orig' }, 'clerk-token').duplicate, true, 'retry is idempotent');
   });
 
   t.test('reversing twice, or a reversal, returns ALREADY_REVERSED; unknown is NOT_FOUND', () => {
     const h = fresh();
     add(h, { id: 'orig' });
-    assert.equal(h.call('daybook.reverse', { id: 'r1', campus: 'LMS1', reverses: 'orig' }, 'clerk-token').success, true);
-    assert.equal(h.call('daybook.reverse', { id: 'r2', campus: 'LMS1', reverses: 'orig' }, 'clerk-token').error, 'ALREADY_REVERSED');
-    assert.equal(h.call('daybook.reverse', { id: 'r3', campus: 'LMS1', reverses: 'r1' }, 'clerk-token').error, 'ALREADY_REVERSED');
-    assert.equal(h.call('daybook.reverse', { id: 'r4', campus: 'LMS1', reverses: 'nope' }, 'clerk-token').error, 'NOT_FOUND');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'r1', campus: 'LMS1', reverses: 'orig' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'r2', campus: 'LMS1', reverses: 'orig' }, 'clerk-token').error, 'ALREADY_REVERSED');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'r3', campus: 'LMS1', reverses: 'r1' }, 'clerk-token').error, 'ALREADY_REVERSED');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'r4', campus: 'LMS1', reverses: 'nope' }, 'clerk-token').error, 'NOT_FOUND');
   });
 
   t.test('validation: bucket, mode, category, direction, dates', () => {
@@ -120,23 +122,23 @@ module.exports = function run(t) {
     h.setNow(new Date('2027-03-31T10:00:00Z'));
     add(h, { id: 'old', entry_date: '2027-03-31', amount_paise: 500 });
     h.setNow(new Date('2027-04-02T10:00:00Z'));
-    assert.equal(h.call('daybook.reverse', { id: 'r', campus: 'LMS1', reverses: 'old' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'r', campus: 'LMS1', reverses: 'old' }, 'clerk-token').success, true);
     assert.deepEqual(h.call('daybook.list', { campus: 'LMS1', from: '2027-04-01', to: '2027-04-02' }, 'clerk-token').entries.map((x) => x.id), ['r']);
     assert.deepEqual(h.call('daybook.list', { campus: 'LMS1', from: '2027-03-31' }, 'clerk-token').entries.map((x) => x.id), ['old']);
-    assert.equal(h.call('daybook.reverse', { id: 'r2', campus: 'LMS1', reverses: 'old' }, 'clerk-token').error, 'ALREADY_REVERSED');
-    assert.equal(h.call('daybook.reverse', { id: 'r', campus: 'LMS1', reverses: 'old' }, 'clerk-token').duplicate, true);
-    assert.equal(h.call('daybook.reverse', { id: 'r3', campus: 'LMS1', reverses: 'nope' }, 'clerk-token').error, 'NOT_FOUND');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'r2', campus: 'LMS1', reverses: 'old' }, 'clerk-token').error, 'ALREADY_REVERSED');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'r', campus: 'LMS1', reverses: 'old' }, 'clerk-token').duplicate, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'r3', campus: 'LMS1', reverses: 'nope' }, 'clerk-token').error, 'NOT_FOUND');
   });
 
   t.test('reverse with no previous-year book is NOT_FOUND, not an error', () => {
     const h = boot(fixture); h.addConfig(); h.addBook('LMS1', '2026-27'); h.setNow(new Date('2026-10-21T10:00:00Z'));
-    assert.equal(h.call('daybook.reverse', { id: 'r', campus: 'LMS1', reverses: 'x' }, 'clerk-token').error, 'NOT_FOUND');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'r', campus: 'LMS1', reverses: 'x' }, 'clerk-token').error, 'NOT_FOUND');
   });
   // ── Day Book v2: accounts, charged_to, vehicles, fuel, credit, settlements ──
   // Config rows written straight to the fake Config book: pump1 (credit, LMS1), pump2 (credit, LMS2), sbi1 (bank, LMS1),
   // old1 (credit, LMS1, inactive); vehicles HP665805 (LMS1) and HP660001 (LMS1), and HP669999 (inactive).
-  const v2 = () => {
-    const h = fresh(); h.addBook('LMS2', '2026-27');
+  const v2 = (o) => {
+    const h = fresh(o); h.addBook('LMS2', '2026-27');
     const cfg = h.ctx.officeConfigBook_();
     [['pump1', 'credit', 'LMS1', 'true'], ['pump2', 'credit', 'LMS2', 'true'], ['sbi1', 'bank', 'LMS1', 'true'], ['old1', 'credit', 'LMS1', 'false']]
       .forEach(([id, kind, campus, active]) => h.ctx.officeWriteRow_(cfg, 'Accounts', { id, label: id, kind, campus, active }));
@@ -234,7 +236,7 @@ module.exports = function run(t) {
       assert.equal(add(h, { category: c, direction: cat.direction, bucket: 'petty' }).error, 'CATEGORY_INACTIVE', c);
     });
     h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook', { id: 'oldp', campus: 'LMS1', entry_date: '2026-10-01', direction: 'OUT', mode: 'cash', bucket: 'petty', category: 'petty_expense', amount_paise: 300 });
-    assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 'oldp' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv', campus: 'LMS1', reverses: 'oldp' }, 'clerk-token').success, true);
   });
 
   t.test('vehicles: required for vehicle categories, normalised, FLEET allowed, unknown/inactive/on other categories BAD_VEHICLE', () => {
@@ -286,7 +288,7 @@ module.exports = function run(t) {
     // a typo'd odometer that was reversed no longer blocks
     assert.equal(f({ id: 'typo', entry_date: '2026-10-21', odometer_km: 99999 }).success, true);
     assert.equal(f({ entry_date: '2026-10-21', odometer_km: 1100 }).code, 'ODOMETER_BACKWARDS');
-    assert.equal(h.call('daybook.reverse', { id: 'rv-typo', campus: 'LMS1', reverses: 'typo' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv-typo', campus: 'LMS1', reverses: 'typo' }, 'clerk-token').success, true);
     assert.equal(f({ id: 'e', entry_date: '2026-10-21', odometer_km: 1100 }).success, true);
     assert.equal(rowsOf(h).find((r) => r.id === 'b2').odometer_note, 'meter replaced');
   });
@@ -318,9 +320,9 @@ module.exports = function run(t) {
   t.test('reversal copies account, charged_to, vehicle and the fuel/settlement fields', () => {
     const h = v2();
     assert.equal(h.call('daybook.add', fuel({ id: 'f', charged_to: 'HES', supplier_bill_no: 'B9', odometer_note: 'n' }), 'clerk-token').success, true);
-    assert.equal(h.call('daybook.reverse', { id: 'rf', campus: 'LMS1', reverses: 'f' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rf', campus: 'LMS1', reverses: 'f' }, 'clerk-token').success, true);
     assert.equal(as(h, 'fh-token', { id: 's', account: 'sbi1', mode: 'upi', bucket: '', direction: 'OUT', category: 'credit_settlement', settles_account: 'pump1', settles: 'B9' }).success, true);
-    assert.equal(h.call('daybook.reverse', { id: 'rs', campus: 'LMS1', reverses: 's' }, 'fh-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rs', campus: 'LMS1', reverses: 's' }, 'fh-token').success, true);
     const by = Object.fromEntries(rowsOf(h).map((r) => [r.id, r]));
     const keep = ['account', 'charged_to', 'vehicle', 'litres_ml', 'odometer_km', 'odometer_note', 'supplier_bill_no', 'settles_account', 'settles', 'mode', 'bucket', 'category', 'amount_paise'];
     keep.forEach((k) => { assert.deepEqual(by.rf[k], by.f[k], k); assert.deepEqual(by.rs[k], by.s[k], k); });
@@ -330,10 +332,10 @@ module.exports = function run(t) {
   t.test('Fee Clerk cannot reverse a bank row or a settlement (FORBIDDEN_ACCOUNT)', () => {
     const h = v2();
     as(h, 'fh-token', { id: 'b', account: 'bank:LMS1', mode: 'bank', bucket: '' });
-    assert.equal(h.call('daybook.reverse', { id: 'rb', campus: 'LMS1', reverses: 'b' }, 'clerk-token').code, 'FORBIDDEN_ACCOUNT');
-    assert.equal(h.call('daybook.reverse', { id: 'rb', campus: 'LMS1', reverses: 'b' }, 'fh-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rb', campus: 'LMS1', reverses: 'b' }, 'clerk-token').code, 'FORBIDDEN_ACCOUNT');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rb', campus: 'LMS1', reverses: 'b' }, 'fh-token').success, true);
     as(h, 'fh-token', { id: 's', account: 'sbi1', mode: 'bank', bucket: '', direction: 'OUT', category: 'credit_settlement', settles_account: 'pump1' });
-    assert.equal(h.call('daybook.reverse', { id: 'rs', campus: 'LMS1', reverses: 's' }, 'clerk-token').code, 'FORBIDDEN_ACCOUNT', 'settlement');
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rs', campus: 'LMS1', reverses: 's' }, 'clerk-token').code, 'FORBIDDEN_ACCOUNT', 'settlement');
   });
 
   t.test('a v1-shaped entry with no account saves to the campus cash or bank account (pre-deploy outbox)', () => {
@@ -347,7 +349,7 @@ module.exports = function run(t) {
   });
 
   t.test('an old-style row (no account) balances as cash and defaults account/charged_to; credit rows are not cash or bank', () => {
-    const h = v2();
+    const h = v2({ seed: false });
     const ss = h.ctx.officeOpen_('LMS1', '2026-27');
     h.ctx.officeWriteRow_(ss, 'DayBook', { id: 'old', campus: 'LMS1', entry_date: '2026-10-20', direction: 'IN', mode: 'cash', bucket: 'fee', category: 'fee_collection', amount_paise: 700 });
     h.ctx.officeWriteRow_(ss, 'DayBook', { id: 'oldb', campus: 'LMS1', entry_date: '2026-10-20', direction: 'IN', mode: 'upi', bucket: '', category: 'other_in', amount_paise: 30 });
@@ -357,7 +359,7 @@ module.exports = function run(t) {
     const old = rowsOf(h).find((r) => r.id === 'old'), oldb = rowsOf(h).find((r) => r.id === 'oldb');
     assert.deepEqual([h.ctx.officeRowAccount_(old), h.ctx.officeRowChargedTo_(old)], ['cash:LMS1', 'LMS1']);
     assert.deepEqual([h.ctx.officeRowAccount_(oldb), h.ctx.officeRowChargedTo_(oldb)], ['bank:LMS1', 'LMS1']);
-    assert.equal(h.call('daybook.reverse', { id: 'rold', campus: 'LMS1', reverses: 'old' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rold', campus: 'LMS1', reverses: 'old' }, 'clerk-token').success, true);
     const rv = rowsOf(h).find((r) => r.id === 'rold');
     assert.deepEqual([rv.account, rv.charged_to, rv.source, rv.mode, rv.bucket], ['cash:LMS1', 'LMS1', 'live', 'cash', 'fee']);
   });
@@ -412,7 +414,7 @@ module.exports = function run(t) {
   t.test('reversal copies the collection', () => {
     const h = v2();
     h.call('daybook.add', sc({ id: 'c1', entry_date: '2026-10-21' }), 'clerk-token');
-    assert.equal(h.call('daybook.reverse', { id: 'rc1', campus: 'LMS1', reverses: 'c1' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rc1', campus: 'LMS1', reverses: 'c1' }, 'clerk-token').success, true);
     assert.equal(rowsOf(h).find((r) => r.id === 'rc1').collection, 'mun');
   });
 
@@ -432,7 +434,7 @@ module.exports = function run(t) {
     assert.equal(add({ account: 'sbi1', mode: 'bank', bucket: '', category: 'credit_settlement', settles_account: 'pump1', file_id: '' }, 'fh-token').code, 'FILE_REQUIRED');
     assert.equal(h.call('daybook.add', e({ id: 'in1' }), 'clerk-token').success, true, 'money in needs no photo');
     // a reversal of a photographed payment needs none
-    assert.equal(h.call('daybook.reverse', { id: 'rok1', campus: 'LMS1', reverses: 'ok1' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rok1', campus: 'LMS1', reverses: 'ok1' }, 'clerk-token').success, true);
   });
   // ── garage data: which parts a vehicle service bill was for ──
   const svc = (o) => e(Object.assign({ direction: 'OUT', category: 'tyres', bucket: 'petty', vehicle: 'HP665805', components: ['tyre_fl', 'puncture'] }, o));
@@ -515,7 +517,7 @@ module.exports = function run(t) {
   t.test('reversal row carries no video (the video stays on the original fill)', () => {
     const h = withVideo();
     h.call('daybook.add', fuel({ id: 'fr', video_file_id: 'vid' }), 'clerk-token');
-    assert.equal(h.call('daybook.reverse', { id: 'rfr', campus: 'LMS1', reverses: 'fr' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rfr', campus: 'LMS1', reverses: 'fr' }, 'clerk-token').success, true);
     assert.equal(rowsOf(h).find((r) => r.id === 'rfr').video_file_id, '');
   });
 
@@ -543,7 +545,7 @@ module.exports = function run(t) {
     h.call('daybook.add', fuel({ id: 'fa' }), 'clerk-token');
     h.call('daybook.add', e({ id: 'nf' }), 'clerk-token');
     h.call('daybook.add', fuel({ id: 'fr', odometer_km: 1100 }), 'clerk-token');
-    h.call('daybook.reverse', { id: 'rfr', campus: 'LMS1', reverses: 'fr' }, 'clerk-token');
+    h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rfr', campus: 'LMS1', reverses: 'fr' }, 'clerk-token');
     assert.equal(attach(h, {}, 'other-token').error, 'FORBIDDEN_CAMPUS');
     assert.equal(h.call('daybook.attach_video', { id: 'x1', campus: 'LMS2', entry_id: 'fa', file_id: 'vid2' }, 'other-token').error, 'NOT_FOUND', 'the entry is not in that campus');
     assert.equal(attach(h, { entry_id: 'nf' }).code, 'NOT_FUEL');
@@ -581,7 +583,7 @@ module.exports = function run(t) {
   t.test('reversal copies the components', () => {
     const h = v2();
     h.call('daybook.add', svc({ id: 'k2', entry_date: '2026-10-21' }), 'clerk-token');
-    assert.equal(h.call('daybook.reverse', { id: 'rk2', campus: 'LMS1', reverses: 'k2' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rk2', campus: 'LMS1', reverses: 'k2' }, 'clerk-token').success, true);
     assert.equal(rowsOf(h).find((r) => r.id === 'rk2').components, 'tyre_fl,puncture');
   });
 
@@ -592,5 +594,68 @@ module.exports = function run(t) {
     assert.deepEqual(of('vehicle_body').map((x) => x.id), ['body_paint', 'seats_windows', 'door', 'other']);
     assert.ok(of('tyres').every((x) => x.label) && !of('tyres').some((x) => x.id === 'battery'));
     assert.deepEqual(of('fuel'), []);
+  });
+
+  // ── lane-d: game Day Book slice 1 (Uday, 19 Nov: daily expenses "set up and flawless first") ──
+  t.test('lane-d: a reversal needs a reason (3+ characters); the list shows who reversed, when and why', () => {
+    const h = fresh();
+    const r = add(h, { id: 'o1', entry_date: '2026-10-21', amount_paise: 500 }).id;
+    assert.equal(h.call('daybook.reverse', { id: 'rv0', campus: 'LMS1', reverses: r }, 'clerk-token').error, 'REASON_REQUIRED');
+    assert.equal(h.call('daybook.reverse', { id: 'rv0', campus: 'LMS1', reverses: r, narration: '  x ' }, 'clerk-token').error, 'REASON_REQUIRED');
+    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: r, narration: 'Typed twice' }, 'clerk-token').success, true);
+    const row = h.call('daybook.list', { campus: 'LMS1', from: '2026-10-21' }, 'clerk-token').entries.find((x) => x.id === 'o1');
+    assert.deepEqual([row.reversed_by, row.reversed_on, row.reversal_reason], ['clerk@example.org', '2026-10-21', 'Typed twice']);
+  });
+
+  t.test('lane-d: a cash payment above what its bucket holds that day is INSUFFICIENT_CASH; bank is not checked', () => {
+    const h = fresh({ seed: false });
+    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'petty', amount_paise: 100 }, { mode: 'bank', amount_paise: 0 }] }, 'owner-token');
+    assert.equal(add(h, { direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 150 }).error, 'INSUFFICIENT_CASH');
+    assert.equal(add(h, { direction: 'OUT', category: 'stationery', bucket: 'fee', amount_paise: 1 }).error, 'INSUFFICIENT_CASH', 'another bucket has nothing');
+    assert.equal(add(h, { direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 100 }).success, true, 'exactly what it holds');
+    assert.equal(h.call('daybook.add', e({ account: 'bank:LMS1', mode: 'bank', bucket: '', direction: 'OUT', category: 'utilities', amount_paise: 9 }), 'owner-token').success, true);
+  });
+
+  t.test('lane-d: the end-of-day cash count saves the difference; a difference needs a reason; the latest count per bucket is read', () => {
+    const h = fresh({ seed: false });
+    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }] }, 'owner-token');
+    const c = (o) => h.call('daybook.count', Object.assign({ id: 'c' + (++n), campus: 'LMS1', count_date: '2026-10-20', bucket: 'fee', counted_paise: 1000 }, o), 'clerk-token');
+    assert.deepEqual([c({}).difference_paise], [0], 'matches: no reason needed');
+    assert.equal(c({ counted_paise: 900 }).error, 'REASON_REQUIRED');
+    const short = c({ counted_paise: 900, reason: 'Change given twice' });
+    assert.deepEqual([short.closing_paise, short.difference_paise], [1000, -100]);
+    assert.equal(c({ count_date: '2026-10-22' }).error, 'BAD_DATE', 'not the future');
+    assert.equal(c({ bucket: 'safe' }).error, 'BUCKET_REQUIRED');
+    assert.equal(c({ counted_paise: -1 }).error, 'BAD_AMOUNT');
+    const read = h.call('daybook.counts', { campus: 'LMS1', date: '2026-10-20' }, 'clerk-token').counts;
+    assert.deepEqual(read.map((x) => [x.bucket, Number(x.difference_paise), x.reason]), [['fee', -100, 'Change given twice']]);
+    assert.equal(h.call('daybook.count', { id: 'cz', campus: 'LMS2', count_date: '2026-10-20', bucket: 'fee', counted_paise: 0 }, 'clerk-token').error, 'FORBIDDEN_CAMPUS');
+  });
+
+  t.test('lane-d: the Owner hides an expense head per school (config.get lists it); shows it again; a clerk can\'t; money-in heads can\'t be hidden', () => {
+    const h = fresh();
+    assert.equal(h.call('heads.hide', { campus: 'LMS1', category: 'ilp_kitchen', hidden: true }, 'owner-token').success, true);
+    assert.deepEqual(J(h.call('config.get', {}, 'clerk-token').hidden_heads), { LMS1: ['ilp_kitchen'] });
+    assert.equal(h.call('heads.hide', { campus: 'LMS1', category: 'ilp_kitchen', hidden: false }, 'owner-token').success, true);
+    assert.deepEqual(J(h.call('config.get', {}, 'clerk-token').hidden_heads), {});
+    assert.equal(h.call('heads.hide', { campus: 'LMS1', category: 'stationery', hidden: true }, 'clerk-token').success, false);
+    assert.equal(h.call('heads.hide', { campus: 'LMS1', category: 'fee_collection', hidden: true }, 'owner-token').error, 'BAD_CATEGORY');
+    assert.equal(h.call('heads.hide', { campus: 'LMS1', category: 'stationery', hidden: 'yes' }, 'owner-token').error, 'BAD_FIELD');
+  });
+
+  t.test('lane-d: a payment like one already in the books still saves, with warnings: same bill photo, same payee + amount + day; a reversed one doesn\'t count', () => {
+    const h = fresh();
+    const ss = h.ctx.officeOpen_('LMS1', '2026-27');
+    h.ctx.officeWriteRow_(ss, 'Files', { id: 'b1', campus: 'LMS1', drive_id: 'D2', name: 'b.jpg', fingerprint: 'fp-a' });
+    h.ctx.officeWriteRow_(ss, 'Files', { id: 'b2', campus: 'LMS1', drive_id: 'D3', name: 'b.jpg', fingerprint: 'fp-a' });
+    h.ctx.officeWriteRow_(ss, 'Files', { id: 'b3', campus: 'LMS1', drive_id: 'D4', name: 'c.jpg', fingerprint: 'fp-c' });
+    const first = add(h, { id: 'p1', direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 250, payee: 'Shop', file_id: 'b1' });
+    assert.deepEqual([first.success, first.warnings], [true, undefined]);
+    const again = add(h, { id: 'p2', direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 250, payee: ' shop ', file_id: 'b2' });
+    assert.deepEqual([again.success, again.warnings], [true, ['same_bill_photo', 'same_payee_amount_day']]);
+    assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 'p1', narration: 'Typed twice' }, 'clerk-token').success, true);
+    assert.equal(h.call('daybook.reverse', { id: 'rv2', campus: 'LMS1', reverses: 'p2', narration: 'Typed twice' }, 'clerk-token').success, true);
+    const third = add(h, { id: 'p3', direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 250, payee: 'Shop', file_id: 'b3' });
+    assert.deepEqual([third.success, third.warnings], [true, undefined], 'the earlier ones are reversed');
   });
 };

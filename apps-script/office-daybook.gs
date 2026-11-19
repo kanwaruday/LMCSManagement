@@ -8,6 +8,9 @@ function officeDaybookActions_() {
     'daybook.attach_video': { roles: ['FeeClerk', 'Owner'], write: true, run: officeDaybookAttachVideo_ },
     'daybook.list': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookList_ },
     'daybook.balances': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookBalances_ },
+    // lane-d (game Day Book slice 1, Uday 19 Nov: daily expenses "set up and flawless first"): the end-of-day cash count per bucket
+    'daybook.count': { roles: ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'], write: true, run: officeDaybookCount_ },
+    'daybook.counts': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookCounts_ },
   };
 }
 
@@ -129,8 +132,13 @@ function officeDaybookAdd_(ctx, data) {
 
   // Day close is the cash count: it freezes cash-account rows only (bank, UPI and credit carry their real date).
   if (acct.kind === 'cash') officeAssertOpen_(ss, data.entry_date);
+  // lane-d: cash never goes below zero: a cash payment above what the bucket holds at the end of that day is refused (as deposits are)
+  if (mode === 'cash' && data.direction === 'OUT' && data.amount_paise > officeBalances_(officeOpening_(ss), officeRows_(ss, 'DayBook'), data.entry_date).closing.cash[data.bucket]) {
+    throw officeCoded_('INSUFFICIENT_CASH');
+  }
   if (isFuel && !odometerNote && data.odometer_km < officeLastOdometer_(data.campus, vehicle, data.entry_date)) throw officeCoded_('ODOMETER_BACKWARDS');
-  return officeDaybookWrite_(ss, ctx, {
+  const warnings = data.direction === 'OUT' ? officeRepeatWarnings_(data) : [];   // lane-d: worked out before the row lands, so it never matches itself
+  const saved = officeDaybookWrite_(ss, ctx, {
     id: data.id, campus: data.campus, entry_date: data.entry_date, direction: data.direction, mode: mode,
     bucket: mode === 'cash' ? data.bucket : '', category: data.category, amount_paise: data.amount_paise,
     payee: data.payee || '', narration: data.narration || '', file_id: data.file_id || '', reverses: '',
@@ -138,6 +146,26 @@ function officeDaybookAdd_(ctx, data) {
     odometer_note: odometerNote, supplier_bill_no: String(data.supplier_bill_no || '').trim(), settles_account: settlesAccount,
     settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection, components: components, video_file_id: videoId,
   }, 'daybook.add');
+  return warnings.length ? Object.assign({}, saved, { warnings: warnings }) : saved;
+}
+
+// lane-d: a payment that looks like one already in the books (it is still saved: the clerk reverses it if it was a mistake).
+//   same_bill_photo         the bill photo's bytes are on another payment that isn't reversed (file.upload's fingerprint)
+//   same_payee_amount_day   another payment that day to the same payee for the same amount, not reversed
+function officeRepeatWarnings_(data) {
+  const books = officeRecentBooks_(data.campus), out = [];
+  const rows = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, []);
+  const files = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'Files')); }, []);
+  const reversed = {}; rows.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
+  const live = rows.filter(function (r) { return r.direction === 'OUT' && !r.reverses && !reversed[r.id]; });
+  const mine = files.filter(function (f) { return f.id === String(data.file_id); })[0];
+  if (mine && mine.fingerprint) {
+    const same = {}; files.forEach(function (f) { if (f.fingerprint === mine.fingerprint && f.id !== mine.id) same[f.id] = true; });
+    if (live.some(function (r) { return same[r.file_id] || r.file_id === mine.id; })) out.push('same_bill_photo');
+  }
+  const payee = String(data.payee || '').trim().toLowerCase();
+  if (payee && live.some(function (r) { return r.entry_date === data.entry_date && Number(r.amount_paise) === data.amount_paise && String(r.payee || '').trim().toLowerCase() === payee; })) out.push('same_payee_amount_day');
+  return out;
 }
 
 // Highest odometer of the vehicle's fuel fills dated on or before `date` in the campus's recent books (P4).
@@ -171,6 +199,8 @@ function officeDaybookReverse_(ctx, data) {
   const books = officeRecentBooks_(data.campus), ss = books[0];
   const all = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, []);
   if (all.some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry, even across 1 April
+  // lane-d: a reversal says why (at least 3 characters); the row keeps it and the list shows it with who reversed
+  if (String(data.narration || '').trim().length < 3) throw officeCoded_('REASON_REQUIRED');
   const orig = all.filter(function (r) { return r.id === String(data.reverses) && r.campus === data.campus; })[0];
   if (!orig) throw new Error('NOT_FOUND');
   // A leg reversed alone would split a deposit; correcting a deposit is a later feature (R37).
@@ -191,7 +221,7 @@ function officeDaybookReverse_(ctx, data) {
   const res = officeDaybookWrite_(ss, ctx, {
     id: data.id, campus: data.campus, entry_date: officeToday_(), direction: orig.direction === 'IN' ? 'OUT' : 'IN',
     mode: orig.mode, bucket: orig.bucket, category: orig.category, amount_paise: orig.amount_paise, payee: orig.payee,
-    narration: data.narration || 'Reversal of ' + orig.id, file_id: '', reverses: orig.id,
+    narration: String(data.narration).trim(), file_id: '', reverses: orig.id,
     account: account, charged_to: officeRowChargedTo_(orig), vehicle: orig.vehicle, litres_ml: orig.litres_ml, odometer_km: orig.odometer_km,
     odometer_note: orig.odometer_note, supplier_bill_no: orig.supplier_bill_no, settles_account: orig.settles_account, settles: orig.settles,
     source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by, collection: orig.collection, components: orig.components,
@@ -231,7 +261,11 @@ function officeDaybookList_(ctx, data) {
   const ss = officeOpen_(data.campus, fy);
   const links = officeVideoLinks_(officeRows_(ss, 'Files')); // a fill video attached after the save shows as the entry's video_file_id
   const noBus = officeNoBusMoney_(ctx && ctx.caller); // office-ledger.gs: a Principal sees the school's money, not which bus it went on
+  // lane-d: each entry says who reversed it, when and why, even when the reversal sits on a later day or in next year's book
+  const rev = {};
+  officeRecentBooks_(data.campus).forEach(function (b) { officeRows_(b, 'DayBook').forEach(function (r) { if (r.reverses) rev[r.reverses] = r; }); });
   return { entries: officeRows_(ss, 'DayBook').filter(function (r) { return r.entry_date >= data.from && r.entry_date <= to; })
+    .map(function (r) { const x = rev[r.id]; return x ? Object.assign({}, r, { reversed_by: x.created_by, reversed_on: x.entry_date, reversal_reason: x.narration }) : r; })
     .map(function (r) { return links[r.id] ? Object.assign({}, r, { video_file_id: links[r.id] }) : r; })
     .map(function (r) { return noBus && r.vehicle ? Object.assign({}, r, { vehicle: '', litres_ml: '', odometer_km: '', odometer_note: '' }) : r; }) };
 }
@@ -262,4 +296,32 @@ function officeBalances_(opening, rows, date) {
     add(close, r, sign);
   });
   return { opening: open, in: inn, out: out, closing: close };
+}
+
+// lane-d: the end-of-day cash count. The Fee Clerk types what each cash bucket physically holds; the difference against the day's
+// closing is saved with it, and a difference that isn't zero needs a one-line reason. One count per bucket per day is kept (a later
+// count of the same day and bucket is a new row; the latest wins in daybook.counts). Today or a past open day only.
+function officeDaybookCount_(ctx, data) {
+  if (!data.id) throw new Error('MISSING_ID');
+  if (!officeIsoDate_(data.count_date) || data.count_date > officeToday_()) throw new Error('BAD_DATE');
+  if (OFFICE_BUCKETS.indexOf(data.bucket) === -1) throw new Error('BUCKET_REQUIRED');
+  if (typeof data.counted_paise !== 'number' || !Number.isSafeInteger(data.counted_paise) || data.counted_paise < 0) throw new Error('BAD_AMOUNT');
+  const ss = officeOpen_(data.campus, officeFy_(data.count_date));
+  if (officeRows_(ss, 'CashCounts').some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true };
+  officeAssertOpen_(ss, data.count_date);
+  const closing = officeBalances_(officeOpening_(ss), officeRows_(ss, 'DayBook'), data.count_date).closing.cash[data.bucket];
+  const diff = data.counted_paise - closing, reason = String(data.reason || '').trim();
+  if (diff !== 0 && reason.length < 3) throw officeCoded_('REASON_REQUIRED');
+  const res = officeAppend_(ss, 'CashCounts', { id: data.id, campus: data.campus, count_date: data.count_date, bucket: data.bucket,
+    counted_paise: data.counted_paise, closing_paise: closing, difference_paise: diff, reason: reason }, ctx.caller, { action: 'daybook.count', campus: data.campus });
+  return { id: res.id, duplicate: res.duplicate, closing_paise: closing, difference_paise: diff };
+}
+// a day's counts, the latest per bucket, with who counted
+function officeDaybookCounts_(ctx, data) {
+  if (!officeIsoDate_(data.date)) throw new Error('BAD_DATE');
+  const latest = {};
+  officeRows_(officeOpen_(data.campus, officeFy_(data.date)), 'CashCounts').forEach(function (r) {
+    if (r.count_date === data.date && (!latest[r.bucket] || String(r.created_at) >= String(latest[r.bucket].created_at))) latest[r.bucket] = r;
+  });
+  return { counts: OFFICE_BUCKETS.filter(function (b) { return latest[b]; }).map(function (b) { return latest[b]; }) };
 }

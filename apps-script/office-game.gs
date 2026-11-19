@@ -43,6 +43,8 @@ var OFFICE_GAME_ACTIONS = {
   gameStartGet: { act: 'start.get' },                                          // W2 slice 4: the Day Book starting-data quests
   gameStartSave: { act: 'start.save', write: true, json: ['fields'], bool: ['skip'] },
   gameStartSubmit: { act: 'start.submit', write: true },
+  gameDaybookCount: { act: 'daybook.count', write: true, num: ['counted_paise'] },   // lane-d: the end-of-day cash count
+  gameDaybookCounts: { act: 'daybook.counts' },
   gameFileView: { act: 'file.view' }, // the office marks it write only to take the lock for its Audit row; it changes no data
   gameFileTicket: { ticket: true, write: true },
   // lane-d (16 Nov; Jarvis/Uday: "OWNER ONLY", as the office's own rule FinanceHead/Owner): the accounts set-up. owner: true is the one
@@ -55,6 +57,7 @@ var OFFICE_GAME_ACTIONS = {
   gameVehicleAdd: { act: 'vehicle.add', write: true, owner: true },
   gameVehiclesImport: { act: 'vehicles.import', write: true, owner: true, json: ['vehicles'], campusRows: 'vehicles' },
   gameCollectionAdd: { act: 'collection.add', write: true, owner: true },
+  gameHeadsHide: { act: 'heads.hide', write: true, owner: true, bool: ['hidden'] },   // lane-d: per-school hidden expense heads
 };
 // who may write through the game: the Fee Clerk, or for an owner: true action the set-up roles (a Finance Head joins this list when
 // the game has one)

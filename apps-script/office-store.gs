@@ -16,6 +16,7 @@ var OFFICE_TABLES = {
   ErpTotals: ['id', 'campus', 'total_date', 'amount_paise', 'created_at', 'created_by'],
   Files: ['id', 'campus', 'drive_id', 'name', 'size', 'fingerprint', 'category', 'belongs_to', 'created_at', 'created_by'],
   Substitutes: ['id', 'campus', 'email', 'from_date', 'to_date', 'created_at', 'created_by'],
+  CashCounts: ['id', 'campus', 'count_date', 'bucket', 'counted_paise', 'closing_paise', 'difference_paise', 'reason', 'created_at', 'created_by'], // lane-d: end-of-day cash count
   Audit: ['id', 'ts', 'who', 'action', 'tab', 'row_id', 'campus', 'after'],
 };
 

@@ -18,7 +18,7 @@ const J = (x) => JSON.parse(JSON.stringify(x));
 
 module.exports = function run(t) {
   // LMS1 and LMS2 books for 2026-27 (LMS3..HES have none); pump1 (credit, LMS1), pump2 (credit, LMS2), sbi1 (bank, LMS1).
-  const fresh = () => {
+  const fresh = ({ seed = true } = {}) => {
     const h = boot(fixture);
     h.addConfig(); h.addBook('LMS1', '2026-27'); h.addBook('LMS2', '2026-27');
     h.setNow(new Date('2026-10-21T10:00:00Z'));
@@ -27,8 +27,12 @@ module.exports = function run(t) {
       .forEach(([id, kind, campus]) => h.ctx.officeWriteRow_(cfg, 'Accounts', { id, label: id + ' label', kind, campus, active: 'true' }));
     ['HP665805', 'HP660001'].forEach((reg) => h.ctx.officeWriteRow_(cfg, 'Vehicles', { reg, label: reg, kind: 'bus', campus: 'LMS1', active: 'true' }));
     ['LMS1', 'LMS2'].forEach((c) => h.ctx.officeWriteRow_(h.ctx.officeOpen_(c, '2026-27'), 'Files', { id: 'slip' + c, campus: c, drive_id: 'D', name: 's.jpg' }));
+    // lane-d: cash can't go below zero now; the seed sits a day before the books start so it's in every opening, never in a period
+    if (seed) ['LMS1', 'LMS2'].forEach((c) => ['petty', 'fee', 'other'].forEach((b) => h.ctx.officeWriteRow_(h.ctx.officeOpen_(c, '2026-27'), 'Opening', { id: 'seed-' + c + b, campus: c, mode: 'cash', bucket: b, amount_paise: SEED })));
     return h;
   };
+  const SEED = 1000000;   // ₹10,000 a bucket; an exact cash assertion adds it back (cash(x) below)
+  const SEEDS = 3 * SEED;   // the cash account holds the three buckets' seeds
   let n = 0;
   const add = (h, o) => {
     const r = h.call('daybook.add', Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-10', account: 'cash:LMS1', direction: 'OUT', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 100, file_id: 'slipLMS1' }, o), 'owner-token');
@@ -68,7 +72,7 @@ module.exports = function run(t) {
   });
 
   t.test('Review Focus 3: credit fuel 5000 then bank settlement 5000 -> fuel -5000 once, owed 0, bank -5000', () => {
-    const h = fresh();
+    const h = fresh({ seed: false });
     fuel(h, { amount_paise: 5000, entry_date: '2026-10-05' });
     let s = sum(h);
     assert.equal(s.success, true, JSON.stringify(s));
@@ -95,7 +99,7 @@ module.exports = function run(t) {
   });
 
   t.test('owed and balances start from the account openings; cash = opening + in - out with buckets', () => {
-    const h = fresh();
+    const h = fresh({ seed: false });
     h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }, { mode: 'cash', bucket: 'petty', amount_paise: 50 }, { mode: 'bank', amount_paise: 7000 }, { mode: 'upi', amount_paise: 3 }] }, 'owner-token');
     assert.equal(h.call('account.opening', { id: 'ao1', campus: 'LMS1', account: 'pump1', amount_paise: 900 }, 'owner-token').success, true);
     assert.equal(h.call('account.opening', { id: 'ao2', campus: 'LMS1', account: 'sbi1', amount_paise: 400 }, 'owner-token').success, true);
@@ -117,12 +121,12 @@ module.exports = function run(t) {
     add(h, { charged_to: 'HES', amount_paise: 700 });
     add(h, { charged_to: 'HES', amount_paise: 50, category: 'utilities' });
     const r = add(h, { charged_to: 'LMS2', amount_paise: 300, entry_date: '2026-10-21' });
-    assert.equal(h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: r }, 'owner-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv', campus: 'LMS1', reverses: r }, 'owner-token').success, true);
     add(h, { direction: 'IN', bucket: 'fee', category: 'fee_collection', amount_paise: 999 });
     const s = sum(h);
     assert.deepEqual(J(s.byChargedTo), { HES: { stationery: -700, utilities: -50 }, LMS2: { stationery: 0 }, LMS1: { fee_collection: 999 } });
     assert.deepEqual(J(s.interSchool), [{ from: 'LMS1', to: 'HES', paise: 750 }], 'fully reversed LMS2 entry drops out');
-    assert.equal(acct(s, 'cash:LMS1').balance_paise, 999 - 750);
+    assert.equal(acct(s, 'cash:LMS1').balance_paise, SEEDS + 999 - 750);
   });
 
   t.test('period: from..to filters byChargedTo/interSchool/vehicles/fuel; balances and owed are as at to', () => {
@@ -137,7 +141,7 @@ module.exports = function run(t) {
     assert.deepEqual(J(s.vehicles), { HP665805: { fuel: -200 } });
     assert.equal(s.fuel.HP665805.length, 1);
     assert.equal(acct(s, 'pump1').owed_paise, 300, 'everything up to to, from the opening');
-    assert.equal(acct(s, 'cash:LMS1').balance_paise, -10);
+    assert.equal(acct(s, 'cash:LMS1').balance_paise, SEEDS - 10);
   });
 
   t.test('vehicles sum by pnl_column (income positive); fuel lists fills with km per litre from the previous fill', () => {
@@ -145,7 +149,7 @@ module.exports = function run(t) {
     fuel(h, { id: 'f1', entry_date: '2026-10-01', odometer_km: 1000, litres_ml: 40000, amount_paise: 4000 });
     fuel(h, { id: 'f2', entry_date: '2026-10-03', odometer_km: 1400, litres_ml: 30000, amount_paise: 3000 });
     fuel(h, { id: 'bad', entry_date: '2026-10-03', odometer_km: 9999, litres_ml: 1000, amount_paise: 77 });
-    assert.equal(h.call('daybook.reverse', { id: 'badrev', campus: 'LMS1', reverses: 'bad' }, 'owner-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'badrev', campus: 'LMS1', reverses: 'bad' }, 'owner-token').success, true);
     fuel(h, { id: 'f3', entry_date: '2026-10-08', odometer_km: 1777, litres_ml: 25500, amount_paise: 2500 });
     fuel(h, { id: 'g1', entry_date: '2026-10-02', vehicle: 'HP660001', odometer_km: 50, amount_paise: 1 });
     add(h, { account: 'pump1', mode: '', bucket: '', category: 'vehicle_service', vehicle: 'HP660001', components: ['other'], amount_paise: 800 });
@@ -184,7 +188,7 @@ module.exports = function run(t) {
   });
 
   t.test('P12: cash balance = opening + signed rows, so a blank-bucket row still counts', () => {
-    const h = fresh();
+    const h = fresh({ seed: false });
     h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }] }, 'owner-token');
     h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook', { id: 'x', campus: 'LMS1', entry_date: '2026-10-01', direction: 'OUT', mode: 'cash', bucket: '', category: 'stationery', amount_paise: 300 });
     const c = acct(sum(h), 'cash:LMS1');
@@ -197,7 +201,7 @@ module.exports = function run(t) {
     fuel(h, { amount_paise: 5000 });
     const sid = settle(h, { amount_paise: 2000 });
     assert.equal(acct(sum(h), 'pump1').owed_paise, 3000);
-    assert.equal(h.call('daybook.reverse', { id: 'srev', campus: 'LMS1', reverses: sid }, 'owner-token').success, true);
+    assert.equal(h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'srev', campus: 'LMS1', reverses: sid }, 'owner-token').success, true);
     const s = sum(h);
     assert.equal(acct(s, 'pump1').owed_paise, 5000);
     assert.equal(acct(s, 'sbi1').balance_paise, 0);
@@ -234,7 +238,7 @@ module.exports = function run(t) {
     const paid = (o) => col(Object.assign({ direction: 'OUT', category: 'student_collection_paid', amount_paise: 400 }, o));
     col({}); col({ amount_paise: 500, charged_to: 'LMS2' }); col({ collection: 'sports', amount_paise: 70 });
     paid({}); const mistake = paid({ amount_paise: 99 });
-    h.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: mistake }, 'owner-token');
+    h.call('daybook.reverse', { narration: 'Wrong entry',  id: 'rv', campus: 'LMS1', reverses: mistake }, 'owner-token');
     h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook', { id: 'old', campus: 'LMS1', entry_date: '2026-10-11', direction: 'IN', mode: 'cash', bucket: 'other', category: 'student_collection', amount_paise: 25 });
     const c = sum(h).collections;
     assert.deepEqual(J(c.mun), { collected_paise: 1500, paid_paise: 400, balance_paise: 1100, bySchool: {
