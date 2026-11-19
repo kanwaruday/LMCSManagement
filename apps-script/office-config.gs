@@ -300,6 +300,7 @@ function officeConfigActions_() {
     'account.opening': { roles: ['FinanceHead', 'Owner'], write: true, run: officeAccountOpening_ },
     'opening.set': { roles: ['FinanceHead', 'Owner'], write: true, run: officeOpeningSet_ },
     'heads.hide': { roles: ['FinanceHead', 'Owner'], write: true, run: officeHeadsHide_ },   // lane-d
+    'limit.set': { roles: ['Owner'], write: true, run: officeLimitSet_ },   // lane-d slice 2: a school's cash approval limit
   };
 }
 
@@ -321,6 +322,21 @@ function officeConfigBook_() {
 }
 
 // Latest Settings value for `key` ('' when unset).
+// lane-d slice 2: a cash payment above this (paise) waits for the Principal's approval. Per school, the Owner's setting; ₹2,000 by default.
+var OFFICE_APPROVAL_LIMIT_DEFAULT = 200000;
+function officeApprovalLimit_(campus) {
+  const v = officeSetting_('approval_limit:' + campus);
+  return /^\d{1,12}$/.test(v) ? Number(v) : OFFICE_APPROVAL_LIMIT_DEFAULT;
+}
+function officeLimitSet_(ctx, data) {
+  if (OFFICE_CAMPUSES.indexOf(data.campus) === -1) throw new Error('MISSING_CAMPUS');
+  if (typeof data.limit_paise !== 'number' || !Number.isSafeInteger(data.limit_paise) || data.limit_paise < 0) throw new Error('BAD_AMOUNT');
+  const iso = officeNow_().toISOString(), row = { key: 'approval_limit:' + data.campus, value: String(data.limit_paise), created_at: iso, created_by: ctx.caller.email };
+  officeWriteRow_(officeConfigBook_(), 'Settings', row);
+  officeWriteRow_(officeCollectionAuditBook_(ctx.caller), 'Audit', { id: Utilities.getUuid(), ts: iso, who: ctx.caller.email, action: 'limit.set', tab: 'Settings', row_id: row.key, campus: data.campus, after: JSON.stringify(row) });
+  return { campus: data.campus, limit_paise: data.limit_paise };
+}
+
 function officeSetting_(key) {
   return officeRows_(officeConfigBook_(), 'Settings').reduce(function (v, r) { return r.key === key ? String(r.value) : v; }, '');
 }
@@ -351,7 +367,7 @@ function officeConfigGet_(ctx) {
   const limits = {};
   officeRows_(ss, 'Limits').forEach(function (r) { limits[r.role] = r.max_amount_paise; });
   const lock = officeSchoolLock_(ctx && ctx.caller), mine = function (x) { return !lock || lock(x.campus); };
-  return { categories: OFFICE_CATEGORIES, accounts: officeAccounts_().filter(mine), vehicles: officeVehicles_().filter(mine), collections: officeCollections_(), limits: limits, campuses: OFFICE_CAMPUSES,
+  return { categories: OFFICE_CATEGORIES, accounts: officeAccounts_().filter(mine), vehicles: officeVehicles_().filter(mine), collections: officeCollections_(), limits: limits, approval_limits: OFFICE_CAMPUSES.reduce(function (m, c) { m[c] = officeApprovalLimit_(c); return m; }, {}), campuses: OFFICE_CAMPUSES,
     hidden_heads: officeHiddenHeads_(),   // lane-d: { LMS1: ['ilp_kitchen', ...], ... }
     fund_transfer_allowed: !!(ctx && officeFundAllowed_(ctx.caller)) };
 }

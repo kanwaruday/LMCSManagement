@@ -11,6 +11,9 @@ function officeDaybookActions_() {
     // lane-d (game Day Book slice 1, Uday 19 Nov: daily expenses "set up and flawless first"): the end-of-day cash count per bucket
     'daybook.count': { roles: ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'], write: true, run: officeDaybookCount_ },
     'daybook.counts': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookCounts_ },
+    // lane-d slice 2 (Uday, 19 Nov: "a cash entry above 2000 should be sent for approvals"): the Principal (or the Owner) decides
+    'daybook.pending': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookPending_ },
+    'daybook.decide': { roles: ['Principal', 'Owner'], write: true, run: officeDaybookDecide_ },
   };
 }
 
@@ -49,6 +52,8 @@ function officeDaybookAdd_(ctx, data) {
   // vehicle switched off, day closed) never strands it in the outbox.
   const ss = officeOpen_(data.campus, officeFy_(data.entry_date));
   if (officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true };
+  const waiting = officeRows_(ss, 'Pending').filter(function (r) { return r.id === String(data.id); })[0];
+  if (waiting) return { id: waiting.id, duplicate: true, pending: !officeDecision_(ss, waiting.id) };
   // typeof number only: "1,234.50" and other strings never reach arithmetic; floats and 0/negatives fail safe-integer > 0.
   if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise) || data.amount_paise <= 0) throw new Error('BAD_AMOUNT');
   const cat = officeCategory_(data.category);
@@ -134,14 +139,17 @@ function officeDaybookAdd_(ctx, data) {
   if (acct.kind === 'cash') officeAssertOpen_(ss, data.entry_date);
   if (isFuel && !odometerNote && data.odometer_km < officeLastOdometer_(data.campus, vehicle, data.entry_date)) throw officeCoded_('ODOMETER_BACKWARDS');
   const warnings = data.direction === 'OUT' ? officeRepeatWarnings_(data) : [];   // lane-d: worked out before the row lands, so it never matches itself
-  const saved = officeDaybookWrite_(ss, ctx, {
+  const row = {
     id: data.id, campus: data.campus, entry_date: data.entry_date, direction: data.direction, mode: mode,
     bucket: mode === 'cash' ? data.bucket : '', category: data.category, amount_paise: data.amount_paise,
     payee: data.payee || '', narration: data.narration || '', file_id: data.file_id || '', reverses: '',
     account: acct.id, charged_to: chargedTo, vehicle: vehicle, litres_ml: isFuel ? data.litres_ml : '', odometer_km: isFuel ? data.odometer_km : '',
     odometer_note: odometerNote, supplier_bill_no: String(data.supplier_bill_no || '').trim(), settles_account: settlesAccount,
     settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection, components: components, video_file_id: videoId,
-  }, 'daybook.add');
+  };
+  // lane-d slice 2: a cash payment above the school's limit waits for approval and counts nowhere until then (Pending tab)
+  const saved = mode === 'cash' && data.direction === 'OUT' && data.amount_paise > officeApprovalLimit_(data.campus)
+    ? officePendingAdd_(ss, ctx, row) : officeDaybookWrite_(ss, ctx, row, 'daybook.add');
   return warnings.length ? Object.assign({}, saved, { warnings: warnings }) : saved;
 }
 
@@ -176,9 +184,9 @@ function officeLastOdometer_(campus, vehicle, date) {
   }, -1);
 }
 
-function officeDaybookWrite_(ss, ctx, row, action) {
+function officeDaybookWrite_(ss, ctx, row, action, createdBy) {
   officeAssertCashFloor_(ss, row);
-  const res = officeAppend_(ss, 'DayBook', row, ctx.caller, { action: action, campus: row.campus });
+  const res = officeAppend_(ss, 'DayBook', row, ctx.caller, { action: action, campus: row.campus, createdBy: createdBy });
   if (row.category === 'fuel' && !res.duplicate) { // feeds the GPS fuel checks; a failure here never loses the entry
     try { officeFuelMirror_(row.campus, Object.assign({}, row, { id: res.id })); } catch (err) { console.error('Fuel mirror: ' + err.message); }
   }
@@ -207,6 +215,73 @@ function officeAssertCashFloor_(ss, row) {
     if (i === later.length - 1 || later[i + 1].entry_date !== r.entry_date) low = Math.min(low, run); // end of that day
   });
   if (row.amount_paise > low) throw officeCoded_('INSUFFICIENT_CASH');
+  // lane-d slice 2 (G2b low): a payment backdated into last year also leaves this year's cash short (its opening was carried over),
+  // so it must fit under the lowest closing of every day in this year's book too
+  const nowFy = officeFy_(officeToday_());
+  if (officeFy_(row.entry_date) !== nowFy && officeHasBook_(row.campus, nowFy)) {
+    const cur = officeOpen_(row.campus, nowFy), curRows = officeRows_(cur, 'DayBook').filter(function (r) { return r.mode === 'cash' && r.bucket === row.bucket; })
+      .sort(function (a, b) { return a.entry_date < b.entry_date ? -1 : a.entry_date > b.entry_date ? 1 : 0; });
+    let run2 = officeOpening_(cur).cash[row.bucket], low2 = run2;
+    curRows.forEach(function (r, i) {
+      run2 += r.direction === 'IN' ? r.amount_paise : -r.amount_paise;
+      if (i === curRows.length - 1 || curRows[i + 1].entry_date !== r.entry_date) low2 = Math.min(low2, run2);
+    });
+    if (row.amount_paise > low2) throw officeCoded_('INSUFFICIENT_CASH');
+  }
+}
+
+// ── lane-d slice 2: cash approvals (Uday, 19 Nov: "a cash entry above 2000 should be sent for approvals") ──
+// A gated payment is saved to Pending with the exact DayBook row it becomes. Approving writes that row (same id, dated as entered,
+// still the clerk's) through officeDaybookWrite_, so the cash floor and the day's close apply at approval time; rejecting needs a
+// reason. Either way one Decisions row; the entry is decided once. The entry stays listed (pending / rejected) in daybook.list.
+function officePendingAdd_(ss, ctx, row) {
+  const res = officeAppend_(ss, 'Pending', {
+    id: row.id, campus: row.campus, entry_date: row.entry_date, direction: row.direction, mode: row.mode, bucket: row.bucket, category: row.category,
+    amount_paise: row.amount_paise, payee: row.payee, narration: row.narration, file_id: row.file_id, account: row.account, row: JSON.stringify(row),
+  }, ctx.caller, { action: 'daybook.add', campus: row.campus });
+  return { id: res.id, duplicate: res.duplicate, pending: true, limit_paise: officeApprovalLimit_(row.campus) };
+}
+function officeDecision_(ss, entryId) { return officeRows_(ss, 'Decisions').filter(function (d) { return d.entry_id === entryId; })[0] || null; }
+
+// {state?: 'pending'|'approved'|'rejected'} -> {entries}: this school's gated payments in this year's and last year's books, newest first
+function officeDaybookPending_(ctx, data) {
+  const out = [];
+  officeRecentBooks_(data.campus).forEach(function (b) {
+    const dec = {};
+    officeRows_(b, 'Decisions').forEach(function (d) { dec[d.entry_id] = d; });
+    officeRows_(b, 'Pending').forEach(function (p) {
+      const d = dec[p.id], state = d ? d.state : 'pending';
+      if (data.state && data.state !== state) return;
+      const r = Object.assign({}, p); delete r.row;
+      out.push(Object.assign(r, { state: state, decided_by: d ? d.created_by : '', decided_at: d ? d.created_at : '', reason: d ? d.reason : '' }));
+    });
+  });
+  return { entries: out.sort(function (a, b) { return a.created_at < b.created_at ? 1 : -1; }), limit_paise: officeApprovalLimit_(data.campus) };
+}
+
+// {id (this decision's), entry_id, approve: boolean, reason?} -> {entry_id, state, duplicate}
+function officeDaybookDecide_(ctx, data) {
+  if (!data.id) throw new Error('MISSING_ID');
+  if (typeof data.approve !== 'boolean') throw new Error('BAD_FIELD');
+  const book = officeRecentBooks_(data.campus).filter(function (b) { return officeRows_(b, 'Pending').some(function (p) { return p.id === String(data.entry_id); }); })[0];
+  if (!book) throw new Error('NOT_FOUND');
+  const p = officeRows_(book, 'Pending').filter(function (x) { return x.id === String(data.entry_id); })[0];
+  if (p.campus !== data.campus) throw new Error('NOT_FOUND');
+  const prior = officeDecision_(book, p.id);
+  if (prior) {
+    if (prior.id === String(data.id)) return { entry_id: p.id, state: prior.state, duplicate: true }; // a retry of this decision
+    throw officeCoded_('ALREADY_DECIDED');
+  }
+  if (String(p.created_by).toLowerCase() === String(ctx.caller.email).toLowerCase() && ctx.caller.roles.indexOf('Owner') === -1) throw officeCoded_('OWN_ENTRY'); // nobody approves their own payment (the Owner may)
+  const reason = String(data.reason || '').trim();
+  if (!data.approve && reason.length < 3) throw officeCoded_('REASON_REQUIRED');
+  if (data.approve) {
+    officeAssertOpen_(book, p.entry_date); // a closed day takes no cash row: the Owner reopens it first
+    officeDaybookWrite_(book, ctx, JSON.parse(p.row), 'daybook.approve', p.created_by); // INSUFFICIENT_CASH here if the cash isn't there now
+  }
+  officeAppend_(book, 'Decisions', { id: String(data.id), campus: p.campus, entry_id: p.id, state: data.approve ? 'approved' : 'rejected', reason: reason.slice(0, 300) },
+    ctx.caller, { action: 'daybook.decide', campus: p.campus });
+  return { entry_id: p.id, state: data.approve ? 'approved' : 'rejected', duplicate: false };
 }
 
 // Reversal is dated today and written to today's book. The original, its reversals and a retry of this same
@@ -281,7 +356,15 @@ function officeDaybookList_(ctx, data) {
   // lane-d: each entry says who reversed it, when and why, even when the reversal sits on a later day or in next year's book
   const rev = {};
   officeRecentBooks_(data.campus).forEach(function (b) { officeRows_(b, 'DayBook').forEach(function (r) { if (r.reverses) rev[r.reverses] = r; }); });
+  // lane-d slice 2: a gated payment shows in its day as pending or rejected (it counts nowhere); an approved one says who approved it
+  const dec = {};
+  officeRows_(ss, 'Decisions').forEach(function (d) { dec[d.entry_id] = d; });
+  const waiting = officeRows_(ss, 'Pending').filter(function (p) { return p.entry_date >= data.from && p.entry_date <= to && (!dec[p.id] || dec[p.id].state === 'rejected'); })
+    .map(function (p) { const r = Object.assign({}, JSON.parse(p.row), { created_at: p.created_at, created_by: p.created_by }), d = dec[p.id];
+      return Object.assign(r, { approval: d ? 'rejected' : 'pending', decided_by: d ? d.created_by : '', reject_reason: d ? d.reason : '' }); });
   return { entries: officeRows_(ss, 'DayBook').filter(function (r) { return r.entry_date >= data.from && r.entry_date <= to; })
+    .map(function (r) { const d = dec[r.id]; return d && d.state === 'approved' ? Object.assign({}, r, { approval: 'approved', decided_by: d.created_by }) : r; })
+    .concat(waiting)
     .map(function (r) { const x = rev[r.id]; return x ? Object.assign({}, r, { reversed_by: x.created_by, reversed_on: x.entry_date, reversal_reason: x.narration }) : r; })
     .map(function (r) { return links[r.id] ? Object.assign({}, r, { video_file_id: links[r.id] }) : r; })
     .map(function (r) { return noBus && r.vehicle ? Object.assign({}, r, { vehicle: '', litres_ml: '', odometer_km: '', odometer_note: '' }) : r; }) };

@@ -11,7 +11,7 @@
 // Who: a Fee Clerk at their own school reads and writes; the Owner reads only (V2, 12 Nov). Script Property OFFICE_GAME_KEY (set by
 // Uday; the same value as the game's CLASSIC_OFFICE_KEY secret). Never logs the key, email, params or amounts.
 
-var OFFICE_GAME_ROLE = { fee_clerk: 'FeeClerk', owner: 'Owner' };
+var OFFICE_GAME_ROLE = { fee_clerk: 'FeeClerk', owner: 'Owner', principal: 'Principal' }; // principal: the cash approvals (lane-d slice 2)
 var OFFICE_GAME_TICKET_MS = 10 * 60 * 1000;
 var OFFICE_GAME_PART_MAX = 2000000; // base64 characters per part (~1.5 MB of bytes)
 var OFFICE_GAME_PARTS_MAX = 20;     // a 25 MB fuel video is 18 parts
@@ -45,7 +45,7 @@ var OFFICE_GAME_ACTIONS = {
   gameStartSubmit: { act: 'start.submit', write: true },
   gameDaybookCount: { act: 'daybook.count', write: true, num: ['counted_paise'] },   // lane-d: the end-of-day cash count
   gameDaybookCounts: { act: 'daybook.counts' },
-  gameFileView: { act: 'file.view' }, // the office marks it write only to take the lock for its Audit row; it changes no data
+  gameFileView: { act: 'file.view', principal: true }, // the office marks it write only to take the lock for its Audit row; it changes no data
   gameFileTicket: { ticket: true, write: true },
   // lane-d (16 Nov; Jarvis/Uday: "OWNER ONLY", as the office's own rule FinanceHead/Owner): the accounts set-up. owner: true is the one
   // exception to "the Owner reads only here", for these five only; a Fee Clerk is refused here (read_only) and by the office rule.
@@ -58,6 +58,10 @@ var OFFICE_GAME_ACTIONS = {
   gameVehiclesImport: { act: 'vehicles.import', write: true, owner: true, json: ['vehicles'], campusRows: 'vehicles' },
   gameCollectionAdd: { act: 'collection.add', write: true, owner: true },
   gameHeadsHide: { act: 'heads.hide', write: true, owner: true, bool: ['hidden'] },   // lane-d: per-school hidden expense heads
+  // lane-d slice 2: cash payments above the school's limit wait for the Principal (or the Owner)
+  gamePending: { act: 'daybook.pending', principal: true },
+  gameDecide: { act: 'daybook.decide', write: true, approver: true, bool: ['approve'] },
+  gameLimitSet: { act: 'limit.set', write: true, owner: true, num: ['limit_paise'] },
 };
 // who may write through the game: the Fee Clerk, or for an owner: true action the set-up roles (a Finance Head joins this list when
 // the game has one)
@@ -79,7 +83,8 @@ function officeGame_(b) {
   const spec = Object.prototype.hasOwnProperty.call(OFFICE_GAME_ACTIONS, b.action) ? OFFICE_GAME_ACTIONS[b.action] : null;
   const role = Object.prototype.hasOwnProperty.call(OFFICE_GAME_ROLE, b.role) ? OFFICE_GAME_ROLE[b.role] : null;
   if (!spec || !role) return officeGameRefuse_('unknown_action');
-  if (spec.write && !(spec.owner ? OFFICE_GAME_SETUP_ROLES.indexOf(b.role) !== -1 : b.role === 'fee_clerk')) return officeGameRefuse_('read_only'); // the Owner reads only here, but for the set-up
+  if (b.role === 'principal' && !spec.principal && !spec.approver) return officeGameRefuse_('unknown_action'); // a Principal reaches only the cash approvals
+  if (spec.write && !(spec.approver ? ['principal', 'owner'].indexOf(b.role) !== -1 : spec.owner ? OFFICE_GAME_SETUP_ROLES.indexOf(b.role) !== -1 : b.role === 'fee_clerk')) return officeGameRefuse_('read_only'); // the Owner reads only here, but for the set-up
   const campus = String(b.campus || '').trim().toUpperCase();
   if (!/^[A-Z0-9]{2,8}$/.test(campus)) return officeGameRefuse_('campus_needed');
   if (spec.write && !(typeof b.email === 'string' && /^[^\s@]+@[^\s@]+$/.test(b.email))) return officeGameRefuse_('who');

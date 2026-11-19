@@ -17,6 +17,11 @@ var OFFICE_TABLES = {
   Files: ['id', 'campus', 'drive_id', 'name', 'size', 'fingerprint', 'category', 'belongs_to', 'created_at', 'created_by'],
   Substitutes: ['id', 'campus', 'email', 'from_date', 'to_date', 'created_at', 'created_by'],
   CashCounts: ['id', 'campus', 'count_date', 'bucket', 'counted_paise', 'closing_paise', 'difference_paise', 'reason', 'created_at', 'created_by'], // lane-d: end-of-day cash count
+  // lane-d slice 2 (Uday, 19 Nov: "a cash entry above 2000 should be sent for approvals"): a cash payment above the school's limit waits
+  // here, outside the DayBook, so no balance, floor or summary counts it until the Principal (or the Owner) approves it; `row` is the
+  // exact DayBook row to write then. Decisions: one per pending entry (approved | rejected, a rejection says why).
+  Pending: ['id', 'campus', 'entry_date', 'direction', 'mode', 'bucket', 'category', 'amount_paise', 'payee', 'narration', 'file_id', 'account', 'row', 'created_at', 'created_by'],
+  Decisions: ['id', 'campus', 'entry_id', 'state', 'reason', 'created_at', 'created_by'],
   Audit: ['id', 'ts', 'who', 'action', 'tab', 'row_id', 'campus', 'after'],
 };
 
@@ -172,7 +177,7 @@ function officeAppend_(ss, tab, row, caller, opts) {
   const id = String(row[key]);
   if (officeRows_(ss, tab).some(function (r) { return String(r[key]) === id; })) return { id: id, duplicate: true };
   const iso = officeNow_().toISOString();
-  const full = Object.assign({}, row, { [key]: id, created_at: iso, created_by: caller.email });
+  const full = Object.assign({}, row, { [key]: id, created_at: iso, created_by: (opts && opts.createdBy) || caller.email }); // createdBy: an approved entry stays the clerk's
   if (!full.campus) full.campus = (opts && opts.campus) || '';
   officeWriteRow_(ss, tab, full);
   officeWriteRow_((opts && opts.auditSs) || ss, 'Audit', {

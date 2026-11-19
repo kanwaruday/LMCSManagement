@@ -33,10 +33,12 @@ module.exports = function run(t) {
     assert.deepStrictEqual(h.game('gameToday', {}), { success: false, error: 'not_authorized' });
   });
 
-  t.test('game bridge: only listed game actions and the two game roles', () => {
+  t.test('game bridge: only listed game actions and the game roles; a Principal reaches only the cash approvals', () => {
     const h = fresh();
     assert.strictEqual(h.game('gameDayClose', {}).data.code, 'unknown_action');
     assert.strictEqual(h.game('gameToday', {}, { role: 'principal' }).data.code, 'unknown_action');
+    assert.strictEqual(h.game('gameToday', {}, { role: 'driver' }).data.code, 'unknown_action');
+    assert.notStrictEqual(h.game('gamePending', {}, { role: 'principal' }).data.code, 'unknown_action');
     assert.strictEqual(h.game('gameToday', {}, { campus: '' }).data.code, 'campus_needed');
   });
 
