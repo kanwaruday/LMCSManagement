@@ -356,4 +356,13 @@ test('health: a long or odd video value never reaches the cache key (it is ignor
   assert.strictEqual(t.health({ video: VIDEO }).data.row.status, 'found');
   assert.deepStrictEqual(keys, ['afv_health_-', 'afv_health_' + VIDEO]);
 });
+test('the part cap is 240 (300 MB originals, lms-game 649): a 240-part upload starts; 241 parts is refused before any Drive call', () => {
+  const t = setup({ groups: [] });
+  const u = new URL(t.ticket({}).data.url), tk = u.searchParams.get('ticket');
+  const one = clip(PART).toString('base64');
+  assert.deepStrictEqual(t.part({ ticket: tk, part: 1, of: 241, base64: one }), { success: false, error: 'BAD_PART' });
+  const before = t.calls.filter((c) => /upload\/drive/.test(c.url)).length;
+  assert.strictEqual(before, 0, 'no Drive session for a refused upload');
+  assert.deepStrictEqual(t.part({ ticket: tk, part: 1, of: 240, base64: one }), { success: true });
+});
 console.log('af-video: all ' + n + ' passed (synthetic clip, fake Drive)');

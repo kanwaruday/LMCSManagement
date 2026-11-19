@@ -24,7 +24,7 @@
 
 var AFV_TICKET_MS_ = 2 * 60 * 60 * 1000;   // a ticket starts an upload within 2 h; its parts then have the 6 h of the cache
 var AFV_PART_BYTES_ = 1310720;             // = app/src/classic/upload.ts PART_BYTES: 5 × 256 KiB, as Drive needs for every part but the last
-var AFV_PARTS_MAX_ = 40;                   // 52.4 MB; lms-game caps a clip at 50 MB (541 bytes check), so a bigger upload is refused here too
+var AFV_PARTS_MAX_ = 240;                  // 314.6 MB; lms-game takes up to 300 MB (649: a clip the phone can't shrink goes as the original), so a bigger upload is refused here too
 var AFV_ORPHAN_AGE_MS_ = 36 * 60 * 60 * 1000; // af_video_done must come within a day of the start
 var AFV_MIME_ = { mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' };
 var AFV_DRIVE_ = 'https://www.googleapis.com/drive/v3/files';
