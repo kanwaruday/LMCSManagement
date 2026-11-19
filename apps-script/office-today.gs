@@ -72,7 +72,7 @@ function officeTodayDepositTasks_(ctx) {
     if (!officeTodayHasBook_(ctx.campus, date)) return;
     const r = officeReconGet_({ caller: ctx.caller }, { campus: ctx.campus, date: date });
     if (r.overdue) out.push({ id: 'deposit:' + date, title: 'Deposit fee cash for ' + date, due: officeAddDays_(date, 1), status: 'overdue', action: 'deposits' });
-    else if (i === 0 && r.deposited < r.daybook_fee_cash) out.push({ id: 'deposit:' + date, title: 'Deposit fee cash for ' + date, due: ctx.today, status: 'due', action: 'deposits' });
+    else if (i === 0 && r.deposited < r.to_deposit) out.push({ id: 'deposit:' + date, title: 'Deposit fee cash for ' + date, due: ctx.today, status: 'due', action: 'deposits' });
   });
   // Older than the window, this financial year only (M7): one summary task, so nothing is forgotten. One pass over
   // DayBook + Deposits across the recent books, the same totals recon.get gives per day (R43: not a recon per day).
@@ -80,10 +80,10 @@ function officeTodayDepositTasks_(ctx) {
   const rows = function (tab) {
     return officeRecentBooks_(ctx.campus).reduce(function (acc, b) { return acc.concat(officeRows_(b, tab)); }, []).filter(function (r) { return r.campus === ctx.campus; });
   };
-  const cash = officeFeeCashByDate_(rows('DayBook')), deposited = {};
+  const book = rows('DayBook'), cash = officeFeeCashByDate_(book), refunds = officeFeeRefundsByDate_(book), deposited = {}; // lane-d: refunds from fee cash aren't deposited
   rows('Deposits').forEach(function (d) { deposited[d.covers_date] = (deposited[d.covers_date] || 0) + d.amount_paise; });
   const short = Object.keys(cash).filter(function (date) {
-    return date < cutoff && officeFy_(date) === fy && (deposited[date] || 0) < cash[date];
+    return date < cutoff && officeFy_(date) === fy && (deposited[date] || 0) < cash[date] - (refunds[date] || 0);
   }).sort();
   if (short.length) out.push({ id: 'deposit:older', title: 'Fee cash not fully deposited for ' + short.length + ' older day' + (short.length > 1 ? 's' : '') + ', oldest ' + short[0], due: officeAddDays_(short[0], 1), status: 'overdue', action: 'deposits' });
   return out;

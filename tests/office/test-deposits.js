@@ -260,4 +260,17 @@ module.exports = function run(t) {
     ])));
     assert.deepEqual(out, { '2026-10-20': 500 });
   });
+
+  t.test('lane-d (G2): a ₹1,000 cash fee refund from the fee box on a ₹10,000 fee day → ₹9,000 to deposit; the ERP still compares with ₹10,000', () => {
+    const h = fresh(); fee(h, 1000000);
+    assert.equal(h.call('daybook.add', { id: 'rf', campus: 'LMS1', entry_date: '2026-10-20', account: 'cash:LMS1', direction: 'OUT', mode: 'cash', bucket: 'fee', category: 'fee_refund',
+      amount_paise: 100000, payee: 'Parent', narration: 'Refund', file_id: 'slip' }, 'clerk-token').success, true);
+    let r = recon(h);
+    assert.equal(r.daybook_fee_cash, 1000000); assert.equal(r.fee_refunds, 100000); assert.equal(r.to_deposit, 900000);
+    assert.equal(dep(h, { amount_paise: 900000 }).success, true);
+    r = recon(h);
+    assert.deepEqual(r.differences.filter((d) => d.b === 'deposited'), [], 'deposited exactly what is due');
+    h.setNow(new Date('2026-10-25T10:00:00Z'));
+    assert.equal(recon(h).overdue, false);
+  });
 };

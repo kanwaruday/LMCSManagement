@@ -134,6 +134,19 @@ function officeFeeCashByDate_(rows) {
   return out;
 }
 
+// lane-d (G2 on 608e02bd): fee refunds paid in cash from the fee box, per entry_date, less their reversals. That cash never reaches
+// the bank, so the day's deposit due is fee cash taken minus these (the ERP still compares with the fee cash taken).
+function officeFeeRefundsByDate_(rows) {
+  const dateOf = {}, out = {};
+  rows.forEach(function (r) {
+    if (r.category !== 'fee_refund' || r.direction !== 'OUT' || r.mode !== 'cash' || r.bucket !== 'fee' || r.reverses) return;
+    dateOf[r.id] = r.entry_date;
+    out[r.entry_date] = (out[r.entry_date] || 0) + r.amount_paise;
+  });
+  rows.forEach(function (r) { if (r.reverses && dateOf[r.reverses] !== undefined) out[dateOf[r.reverses]] -= r.amount_paise; });
+  return out;
+}
+
 function officeReconGet_(ctx, data) {
   const date = data.date;
   if (!officeIsoDate_(date)) throw new Error('BAD_DATE');
@@ -146,19 +159,19 @@ function officeReconGet_(ctx, data) {
   const erpRows = officeRows_(dateBook, 'ErpTotals').filter(function (r) { return r.campus === data.campus && r.total_date === date; });
   const latest = erpRows.reduce(function (m, r) { return !m || r.created_at >= m.created_at ? r : m; }, null);
   const erp = latest ? latest.amount_paise : null;
-  const daybook = officeFeeCashByDate_(all('DayBook'))[date] || 0;
+  const book = all('DayBook'), daybook = officeFeeCashByDate_(book)[date] || 0, refunds = officeFeeRefundsByDate_(book)[date] || 0, toDeposit = daybook - refunds;
   const deps = all('Deposits').filter(function (d) { return d.covers_date === date; });
   const signed = {};
   all('DepositSigns').forEach(function (s) { signed[s.deposit_id] = true; });
   const deposited = deps.reduce(function (n, d) { return n + d.amount_paise; }, 0);
   const differences = [];
   if (erp !== null && erp !== daybook) differences.push({ a: 'erp', b: 'daybook_fee_cash', delta_paise: erp - daybook });
-  if (daybook !== deposited) differences.push({ a: 'daybook_fee_cash', b: 'deposited', delta_paise: daybook - deposited });
+  if (toDeposit !== deposited) differences.push({ a: 'daybook_fee_cash', b: 'deposited', delta_paise: toDeposit - deposited });
   return {
-    erp: erp, daybook_fee_cash: daybook, deposited: deposited,
+    erp: erp, daybook_fee_cash: daybook, fee_refunds: refunds, to_deposit: toDeposit, deposited: deposited,
     unsigned: deps.filter(function (d) { return !signed[d.id]; }).map(function (d) { return d.id; }),
     closed: officeIsFrozen_(dateBook, date), // closed itself or under a later closed day (R36)
-    overdue: officeToday_() > officeAddDays_(date, 1) && deposited < daybook, // due by the end of the next IST day
+    overdue: officeToday_() > officeAddDays_(date, 1) && deposited < toDeposit, // due by the end of the next IST day
     differences: differences,
   };
 }
