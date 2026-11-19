@@ -24,7 +24,7 @@
 
 var AFV_TICKET_MS_ = 2 * 60 * 60 * 1000;   // a ticket starts an upload within 2 h; its parts then have the 6 h of the cache
 var AFV_PART_BYTES_ = 1310720;             // = app/src/classic/upload.ts PART_BYTES: 5 × 256 KiB, as Drive needs for every part but the last
-var AFV_PARTS_MAX_ = 240;                  // 314.6 MB; lms-game takes up to 300 MB (649: a clip the phone can't shrink goes as the original), so a bigger upload is refused here too
+var AFV_PARTS_MAX_ = 240;                  // 314.6 MB of headroom; lms-game shrinks clips to ~40 MB and sends an unshrinkable original only up to 100 MB (649)
 var AFV_ORPHAN_AGE_MS_ = 36 * 60 * 60 * 1000; // af_video_done must come within a day of the start
 var AFV_MIME_ = { mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' };
 var AFV_DRIVE_ = 'https://www.googleapis.com/drive/v3/files';
@@ -203,10 +203,33 @@ function afvFinish_(t, cache, res) {
     afvLog_(!ok ? (viewers ? 'share_failed' : 'share_failed_no_viewers') : member ? 'overshared_shared_drive_members' : 'overshared');
     return { success: false, error: ok ? 'OVERSHARED' : 'SHARE_FAILED' };
   }
+  // lms-game 652: record the file this upload made, server to server, so af_video_done accepts only this id. If that can't be done
+  // the app's done would be refused anyway, so the file is trashed now (no orphan) and the teacher's Try again starts afresh.
+  if (!afvRecord_(t.v, id)) {
+    afvApi_('patch', AFV_DRIVE_ + '/' + id + '?supportsAllDrives=true', { trashed: true });
+    cache.remove('afv_st_' + t.r); cache.put('afv_fail_' + t.r, '1', 21600);
+    console.error('af-video: record_failed'); afvLog_('record_failed');
+    return { success: false, error: 'RECORD' };
+  }
   cache.put('afv_done_' + t.r, id, 21600);
   cache.remove('afv_st_' + t.r);
   afvLog_('uploaded');
   return { success: true, fileId: id };
+}
+
+/** af-drive POST ?done=1: the Drive file this upload made, for af_video_done's check (lms-game 652). Two tries; true once recorded. */
+function afvRecord_(video, file) {
+  const p = afvProps_(), url = String(p.getProperty('AF_VIDEO_LIVE_URL') || ''), key = p.getProperty('ROSTER_GAME_KEY');
+  if (!/^https:\/\//.test(url) || !key || !video) return false;
+  for (let i = 0; i < 2; i++) {
+    try {
+      const r = UrlFetchApp.fetch(url + '?done=1', { method: 'post', contentType: 'application/json', payload: JSON.stringify({ video: video, file: file }),
+        headers: { 'x-roster-key': key }, muteHttpExceptions: true });
+      if (r.getResponseCode() === 200 && JSON.parse(r.getContentText()).ok === true) return true;
+      if (r.getResponseCode() === 409 || r.getResponseCode() === 400) return false;   // can't bind: no point trying again
+    } catch (e) { /* a network hiccup: the second try */ }
+  }
+  return false;
 }
 
 // ── health (18 Nov: uploads started but never finished) ──────────────

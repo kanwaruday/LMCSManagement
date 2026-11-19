@@ -11,9 +11,9 @@ const signed = (buf) => Array.from(buf, (b) => (b > 127 ? b - 256 : b));
 // the event_videos rows af-drive answers (541's, as the server reads them): the caller's own unfinished row unless a test says otherwise
 const row = (o = {}) => Object.assign({ campus: 'LMS1', event: 'af2026', mime: 'video/mp4', deleteAfter: '2026-12-24', email: 'teacher@test.invalid', open: true,
   viewers: [PRINCIPAL, ACC, ME] }, o);
-function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode = 200, rows = {}, rowCode = 200, groups = null, permFail = false, now = Date.parse('2026-11-14T05:00:00Z') } = {}) {
+function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode = 200, rows = {}, rowCode = 200, groups = null, permFail = false, recordCode = 200, now = Date.parse('2026-11-14T05:00:00Z') } = {}) {
   let ids = 0, sessions = {}, lost = 0;
-  const reg = {}, store = {}, logs = [], calls = [];
+  const reg = {}, store = {}, logs = [], calls = [], records = [];
   const folder = (name) => {
     const f = { name, id: 'FOLDER' + String(++ids).padStart(6, '0'), kids: [], files: [], getId: () => f.id, getName: () => name,
       getFoldersByName(n) { const m = f.kids.filter((k) => k.name === n); let i = 0; return { hasNext: () => i < m.length, next: () => m[i++] }; },
@@ -65,6 +65,11 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
         if (h['x-roster-key'] !== KEY) return resp(401);
         const v = url.split('?video=')[1], r = v in rows ? rows[v] : row();
         return rowCode !== 200 ? resp(rowCode) : r === false ? resp(404, '{}') : resp(200, JSON.stringify({ video: r }));
+      }
+      if (url === P.AF_VIDEO_LIVE_URL + '?done=1' && m === 'post') {   // lms-game 652: the Roster records the file it made
+        if (h['x-roster-key'] !== KEY) return resp(401);
+        const b = JSON.parse(o.payload); records.push(b);
+        return recordCode === 200 ? resp(200, JSON.stringify({ ok: true })) : resp(recordCode, JSON.stringify({ ok: false }));
       }
       if (url === P.AF_VIDEO_LIVE_URL + '?groups=1') return h['x-roster-key'] === KEY ? resp(groups ? 200 : 500, JSON.stringify({ groups: typeof groups === 'function' ? groups() : groups })) : resp(401);
       if (url === P.AF_VIDEO_LIVE_URL) return h['x-roster-key'] === KEY ? resp(liveCode, JSON.stringify({ ids: typeof live === 'function' ? live() : live || [] })) : resp(401);
@@ -123,7 +128,7 @@ function setup({ props = {}, lose = 0, inherited = null, live = null, liveCode =
     }
     return last;
   };
-  return { ctx, central, store, logs, calls, cache, P, rows, ticket, upload, J, health: (b) => J(ctx.gameAfVideoHealth_(Object.assign({ key: KEY }, b || {}))), healthRaw: (b) => J(ctx.gameAfVideoHealth_(b)), daily: () => J(ctx.afVideoDaily()), sync: (full) => J(ctx.afVideoShareSync(full)), part: (b) => J(ctx.gameAfVideoPart_(b)) };
+  return { ctx, central, store, logs, calls, records, cache, P, rows, ticket, upload, J, health: (b) => J(ctx.gameAfVideoHealth_(Object.assign({ key: KEY }, b || {}))), healthRaw: (b) => J(ctx.gameAfVideoHealth_(b)), daily: () => J(ctx.afVideoDaily()), sync: (full) => J(ctx.afVideoShareSync(full)), part: (b) => J(ctx.gameAfVideoPart_(b)) };
 }
 const clip = (n) => { const b = Buffer.alloc(n); Buffer.from('\x00\x00\x00\x18ftypmp42synthetic').copy(b); for (let i = 24; i < n; i++) b[i] = (i * 7) & 255; return b; };
 const find = (root, ...names) => names.reduce((f, n) => f && f.kids.find((k) => k.name === n), root);
@@ -364,5 +369,17 @@ test('the part cap is 240 (300 MB originals, lms-game 649): a 240-part upload st
   const before = t.calls.filter((c) => /upload\/drive/.test(c.url)).length;
   assert.strictEqual(before, 0, 'no Drive session for a refused upload');
   assert.deepStrictEqual(t.part({ ticket: tk, part: 1, of: 240, base64: one }), { success: true });
+});
+test('lms-game 652: a finished upload records its file id with af-drive before answering; if that fails, the file is trashed and refused (RECORD)', () => {
+  const t = setup({ groups: [] });
+  const ok = t.upload(t.ticket({}).data.url, clip(PART + 10));
+  assert.ok(ok.success);
+  assert.deepStrictEqual(t.records, [{ video: VIDEO, file: ok.fileId }]);
+  const f = setup({ groups: [], recordCode: 409 });
+  const r = f.upload(f.ticket({}).data.url, clip(PART + 10), { tries: 1 });
+  assert.deepStrictEqual(r, { success: false, error: 'RECORD' });
+  assert.ok(Object.values(f.store).every((x) => x.trashed), 'the unrecorded file is trashed');
+  assert.ok(f.logs.includes('af-video: record_failed') && !f.logs.some((l) => /@|DRIVEfile/.test(l)), 'a code only in the log');
+  assert.deepStrictEqual(f.health({}).data.log.map((x) => x[1]), ['record_failed']);
 });
 console.log('af-video: all ' + n + ' passed (synthetic clip, fake Drive)');
