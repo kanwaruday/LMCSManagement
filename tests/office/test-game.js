@@ -212,4 +212,19 @@ module.exports = function run(t) {
     const logs = (h.drive.logs || []).join('\n');
     assert.ok(!logs.includes(KEY) && !logs.includes('c1@example.org'));
   });
+
+  t.test('lane-d go-live: the Owner\'s seal sets the Day Book\'s opening (cash per box + bank) through the bridge; a Fee Clerk can\'t; locked after the first entry', () => {
+    const h = fresh();
+    const O = { role: 'owner', email: 'owner@example.org', campus: 'LMS2' };
+    const bal = [{ mode: 'cash', bucket: 'petty', amount_paise: 120000 }, { mode: 'cash', bucket: 'fee', amount_paise: 845000 }, { mode: 'cash', bucket: 'other', amount_paise: 0 }, { mode: 'bank', amount_paise: 2500000 }];
+    assert.strictEqual(h.game('gameOpeningSet', { id: 'seal-LMS2', balances: JSON.stringify(bal) }, { campus: 'LMS2' }).data.code, 'read_only', 'a Fee Clerk');
+    const r = h.game('gameOpeningSet', { id: 'seal-LMS2', balances: JSON.stringify(bal) }, O);
+    assert.deepStrictEqual(J(r.data.opening.cash), { petty: 120000, fee: 845000, other: 0 });
+    const b = h.call('daybook.balances', { campus: 'LMS2', date: '2026-10-21' }, 'owner-token');
+    assert.deepStrictEqual([b.opening.cash.petty, b.opening.cash.fee, b.opening.bank], [120000, 845000, 2500000], 'the Day Book starts from the sealed count');
+    assert.strictEqual(h.game('gameOpeningSet', { id: 'seal-LMS2', balances: JSON.stringify(bal) }, O).data.duplicate, true, 'a resend');
+    assert.strictEqual(h.game('gameDaybookAdd', { id: 'f1', entry_date: '2026-10-21', account: 'cash:LMS2', direction: 'IN', bucket: 'fee', category: 'fee_collection', amount_paise: '1000' }, { campus: 'LMS2' }).data.duplicate, false);
+    assert.strictEqual(h.game('gameOpeningSet', { id: 'seal-LMS2-b', balances: JSON.stringify(bal) }, O).data.code, 'OPENING_LOCKED', 'not after the first entry');
+    assert.strictEqual(h.game('gameOpeningSet', { id: 'x', balances: '{bad' }, O).data.code, 'BAD_INPUT');
+  });
 };
