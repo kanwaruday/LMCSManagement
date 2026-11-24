@@ -37,8 +37,8 @@ module.exports = function run(t) {
     const above = pay(h, { id: 'big', amount_paise: 200001 });
     assert.equal(above.pending, true); assert.equal(above.limit_paise, 200000);
     assert.equal(petty(h), 1000000, 'a pending payment isn\'t in the balance');
-    assert.equal(pay(h, { id: 'at', amount_paise: 200000 }).pending, undefined);
-    assert.equal(pay(h, { id: 'below', amount_paise: 199999 }).pending, undefined);
+    assert.equal(pay(h, { id: 'at', amount_paise: 200000, payee: 'Shop A' }).pending, undefined);
+    assert.equal(pay(h, { id: 'below', amount_paise: 199999, payee: 'Shop B' }).pending, undefined);
     assert.equal(petty(h), 1000000 - 399999);
     assert.equal(h.call('daybook.add', { id: 'bk', campus: 'LMS1', entry_date: '2026-10-21', account: 'bank:LMS1', mode: 'bank', direction: 'OUT', category: 'utilities', amount_paise: 900000, payee: 'P', narration: 'x', file_id: 'slip' }, 'owner-token').pending, undefined);
     const big = listed(h).find((e) => e.id === 'big');
@@ -101,11 +101,51 @@ module.exports = function run(t) {
     assert.equal(pay(h, { amount_paise: 500001 }).pending, true);
   });
 
-  t.test('approvals: a closed day takes no approval (the Owner reopens it first)', () => {
+  t.test('approvals (G2): a day with payments waiting can\'t close (PENDING_APPROVALS); once they\'re decided it closes', () => {
     const h = fresh();
-    pay(h, { id: 'big', entry_date: '2026-10-20' });
-    assert.equal(h.call('day.close', { id: 'c1', campus: 'LMS1', close_date: '2026-10-20' }, 'owner-token').success, true);
-    assert.equal(decide(h, 'big', true).error, 'DAY_CLOSED');
+    pay(h, { id: 'big', entry_date: '2026-10-19' });
+    const close = (id, d) => h.call('day.close', { id, campus: 'LMS1', close_date: d }, 'owner-token');
+    assert.equal(close('c1', '2026-10-19').error, 'PENDING_APPROVALS');
+    assert.equal(close('c2', '2026-10-20').error, 'PENDING_APPROVALS', 'a later day would freeze it too');
+    assert.equal(decide(h, 'big', false, { reason: 'Wrong school' }).state, 'rejected');
+    assert.equal(close('c3', '2026-10-19').success, true);
+  });
+
+  t.test('approvals (G2): a bill split to stay under the limit: 1,500 + 1,500 to one payee waits; 1,500 + 400 doesn\'t', () => {
+    const h = fresh();
+    assert.equal(pay(h, { id: 's1', amount_paise: 150000, payee: 'Demo Traders' }).pending, undefined);
+    const second = pay(h, { id: 's2', amount_paise: 150000, payee: '  demo   TRADERS ' });
+    assert.equal(second.pending, true, 'same payee, spaces and case aside'); assert.equal(second.split_total_paise, 300000);
+    const h2 = fresh();
+    pay(h2, { id: 't1', amount_paise: 150000, payee: 'Demo Traders' });
+    assert.equal(pay(h2, { id: 't2', amount_paise: 40000, payee: 'Demo Traders' }).pending, undefined);
+    assert.equal(pay(h2, { id: 't3', amount_paise: 150000, payee: 'Other Shop' }).pending, undefined, 'another payee');
+    assert.equal(pay(h2, { id: 't4', amount_paise: 150000, payee: 'Demo Traders', entry_date: '2026-10-20' }).pending, undefined, 'another day');
+    // a payment already waiting counts too, a reversed one doesn't
+    const h3 = fresh();
+    pay(h3, { id: 'w1', amount_paise: 250000, payee: 'Shop' });
+    assert.equal(pay(h3, { id: 'w2', amount_paise: 10000, payee: 'Shop' }).pending, true);
+    const h4 = fresh();
+    pay(h4, { id: 'v1', amount_paise: 150000, payee: 'Shop' });
+    assert.equal(h4.call('daybook.reverse', { id: 'rv', campus: 'LMS1', reverses: 'v1', narration: 'wrong entry' }, 'clerk-token').success, true);
+    assert.equal(pay(h4, { id: 'v2', amount_paise: 150000, payee: 'Shop' }).pending, undefined);
+  });
+
+  t.test('approvals (G2): reversing a ₹3,000 cash receipt waits for approval with its reason; a small one doesn\'t', () => {
+    const h = fresh();
+    const rin = (id, amt) => h.call('daybook.add', { id, campus: 'LMS1', entry_date: '2026-10-21', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'petty',
+      category: 'other_in', amount_paise: amt, payee: 'Parent', narration: 'x' }, 'clerk-token');
+    assert.equal(rin('in1', 300000).success, true); assert.equal(rin('in2', 50000).success, true);
+    const r = h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 'in1', narration: 'Entered twice' }, 'clerk-token');
+    assert.equal(r.pending, true);
+    assert.equal(petty(h), 1000000 + 350000, 'not counted while it waits');
+    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 'in1', narration: 'Entered twice' }, 'clerk-token').duplicate, true);
+    assert.equal(h.call('daybook.reverse', { id: 'rv2', campus: 'LMS1', reverses: 'in1', narration: 'again' }, 'clerk-token').error, 'REVERSAL_PENDING');
+    const w = h.call('daybook.pending', { campus: 'LMS1', state: 'pending' }, 'p1-token').entries[0];
+    assert.equal(w.reverses, 'in1'); assert.equal(w.narration, 'Entered twice');
+    assert.equal(decide(h, 'rv1', true).state, 'approved');
+    assert.equal(petty(h), 1000000 + 50000);
+    assert.equal(h.call('daybook.reverse', { id: 'rv3', campus: 'LMS1', reverses: 'in2', narration: 'Wrong entry' }, 'clerk-token').pending, undefined);
   });
 
   t.test('floor across 1 April (G2b low): a payment backdated into last year must also fit this year\'s cash', () => {

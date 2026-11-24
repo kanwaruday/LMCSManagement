@@ -47,6 +47,11 @@ function officeDayClose_(ctx, data) {
   const ss = officeOpen_(data.campus, officeFy_(date));
   if (officeRows_(ss, 'Closes').some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry
   if (officeIsFrozen_(ss, date)) throw new Error('ALREADY_CLOSED'); // a day before a closed day is closed too
+  // lane-d slice 2 (G2): closing freezes this day and every earlier one, so a payment from then still waiting for approval could
+  // never be approved; the day closes once they're decided
+  const decided = {};
+  officeRows_(ss, 'Decisions').forEach(function (d) { decided[d.entry_id] = true; });
+  if (officeRows_(ss, 'Pending').some(function (p) { return p.entry_date <= date && !decided[p.id]; })) throw officeCoded_('PENDING_APPROVALS');
   const book = officeRows_(ss, 'DayBook');
   // Most recent earlier day with entries (this book only: the year's first day has no predecessor).
   const prev = book.reduce(function (m, r) { return r.entry_date < date && r.entry_date > m ? r.entry_date : m; }, '');

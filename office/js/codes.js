@@ -67,6 +67,8 @@ export const CODES = {
   HANDOVER_SELF: 'You handed this cash over yourself, so someone at the receiving school has to accept it or report it.',
   HANDOVER_ACCEPTED: 'This cash handover was accepted by the receiving school, so it cannot be reversed. Tell Uday if it is wrong.',
   ALREADY_REVERSED: 'This entry was already reversed.',
+  PENDING_APPROVALS: 'Payments from this day are waiting for the Principal’s approval. Close the day after they are decided.', // lane-d slice 2
+  REVERSAL_PENDING: 'A reversal of this entry is already waiting for the Principal’s approval.',
   ALREADY_SIGNED: 'This deposit was already signed.',
   NOT_FOUND: 'The record was not found.',
   MISSING_DEPOSIT: 'The deposit was not found. Refresh and try again.',

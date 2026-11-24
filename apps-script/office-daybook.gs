@@ -148,8 +148,11 @@ function officeDaybookAdd_(ctx, data) {
     settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection, components: components, video_file_id: videoId,
   };
   // lane-d slice 2: a cash payment above the school's limit waits for approval and counts nowhere until then (Pending tab)
-  const saved = mode === 'cash' && data.direction === 'OUT' && data.amount_paise > officeApprovalLimit_(data.campus)
-    ? officePendingAdd_(ss, ctx, row) : officeDaybookWrite_(ss, ctx, row, 'daybook.add');
+  // (G2) and so does one that, with the day's other cash payments to the same payee, adds up to more: no splitting a bill in two
+  const limit = officeApprovalLimit_(data.campus), cashOut = mode === 'cash' && data.direction === 'OUT';
+  const others = cashOut && data.amount_paise <= limit ? officeSameDayPayee_(ss, row) : 0;
+  const saved = cashOut && data.amount_paise + others > limit
+    ? officePendingAdd_(ss, ctx, row, others ? { split_total_paise: data.amount_paise + others } : null) : officeDaybookWrite_(ss, ctx, row, 'daybook.add');
   return warnings.length ? Object.assign({}, saved, { warnings: warnings }) : saved;
 }
 
@@ -234,12 +237,27 @@ function officeAssertCashFloor_(ss, row) {
 // A gated payment is saved to Pending with the exact DayBook row it becomes. Approving writes that row (same id, dated as entered,
 // still the clerk's) through officeDaybookWrite_, so the cash floor and the day's close apply at approval time; rejecting needs a
 // reason. Either way one Decisions row; the entry is decided once. The entry stays listed (pending / rejected) in daybook.list.
-function officePendingAdd_(ss, ctx, row) {
+// The day's other cash payments to this payee (live, not reversed; or waiting for approval), in paise. Payee compared trimmed,
+// lower-case, spaces collapsed; a blank payee matches nothing.
+function officePayeeKey_(s) { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+function officeSameDayPayee_(ss, row) {
+  const key = officePayeeKey_(row.payee);
+  if (!key) return 0;
+  const same = function (r) { return r.entry_date === row.entry_date && r.mode === 'cash' && r.direction === 'OUT' && !r.reverses && officePayeeKey_(r.payee) === key; };
+  const book = officeRows_(ss, 'DayBook'), reversed = {}, decided = {};
+  book.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
+  officeRows_(ss, 'Decisions').forEach(function (d) { decided[d.entry_id] = true; });
+  const live = book.filter(function (r) { return same(r) && !reversed[r.id]; });
+  const waiting = officeRows_(ss, 'Pending').filter(function (p) { return !decided[p.id]; }).map(function (p) { return JSON.parse(p.row); }).filter(same);
+  return live.concat(waiting).reduce(function (n, r) { return n + r.amount_paise; }, 0);
+}
+
+function officePendingAdd_(ss, ctx, row, extra) {
   const res = officeAppend_(ss, 'Pending', {
     id: row.id, campus: row.campus, entry_date: row.entry_date, direction: row.direction, mode: row.mode, bucket: row.bucket, category: row.category,
     amount_paise: row.amount_paise, payee: row.payee, narration: row.narration, file_id: row.file_id, account: row.account, row: JSON.stringify(row),
   }, ctx.caller, { action: 'daybook.add', campus: row.campus });
-  return { id: res.id, duplicate: res.duplicate, pending: true, limit_paise: officeApprovalLimit_(row.campus) };
+  return Object.assign({ id: res.id, duplicate: res.duplicate, pending: true, limit_paise: officeApprovalLimit_(row.campus) }, extra || {});
 }
 function officeDecision_(ss, entryId) { return officeRows_(ss, 'Decisions').filter(function (d) { return d.entry_id === entryId; })[0] || null; }
 
@@ -252,7 +270,7 @@ function officeDaybookPending_(ctx, data) {
     officeRows_(b, 'Pending').forEach(function (p) {
       const d = dec[p.id], state = d ? d.state : 'pending';
       if (data.state && data.state !== state) return;
-      const r = Object.assign({}, p); delete r.row;
+      const r = Object.assign({}, p, { reverses: JSON.parse(p.row).reverses || '' }); delete r.row; // a reversal waiting says what it reverses
       out.push(Object.assign(r, { state: state, decided_by: d ? d.created_by : '', decided_at: d ? d.created_at : '', reason: d ? d.reason : '' }));
     });
   });
@@ -291,6 +309,14 @@ function officeDaybookReverse_(ctx, data) {
   const books = officeRecentBooks_(data.campus), ss = books[0];
   const all = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, []);
   if (all.some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true }; // retry, even across 1 April
+  // lane-d slice 2: a reversal waiting for approval (a retry of it, or a second request while it waits)
+  const waitingRev = books.reduce(function (acc, b) {
+    const decided = {};
+    officeRows_(b, 'Decisions').forEach(function (d) { decided[d.entry_id] = true; });
+    return acc.concat(officeRows_(b, 'Pending').filter(function (p) { return !decided[p.id]; }));
+  }, []);
+  if (waitingRev.some(function (p) { return p.id === String(data.id); })) return { id: String(data.id), duplicate: true, pending: true };
+  if (waitingRev.some(function (p) { return JSON.parse(p.row).reverses === String(data.reverses); })) throw officeCoded_('REVERSAL_PENDING');
   // lane-d: a reversal says why (at least 3 characters); the row keeps it and the list shows it with who reversed
   if (String(data.narration || '').trim().length < 3) throw officeCoded_('REASON_REQUIRED');
   const orig = all.filter(function (r) { return r.id === String(data.reverses) && r.campus === data.campus; })[0];
@@ -309,16 +335,19 @@ function officeDaybookReverse_(ctx, data) {
   officeAssertAccountAllowed_(ctx.caller, acct, officeCategory_(orig.category)); // inactive categories still reverse
   // defence in depth: day.close refuses today, but a closed today must never take a cash row
   if (orig.mode === 'cash') officeAssertOpen_(ss, officeToday_());
-  if (handover) officeHandoverEvent_(ctx, handover, 'closed'); // before the row: a retry finding closed writes the missing reversal
-  const res = officeDaybookWrite_(ss, ctx, {
+  const row = {
     id: data.id, campus: data.campus, entry_date: officeToday_(), direction: orig.direction === 'IN' ? 'OUT' : 'IN',
     mode: orig.mode, bucket: orig.bucket, category: orig.category, amount_paise: orig.amount_paise, payee: orig.payee,
     narration: String(data.narration).trim(), file_id: '', reverses: orig.id,
     account: account, charged_to: officeRowChargedTo_(orig), vehicle: orig.vehicle, litres_ml: orig.litres_ml, odometer_km: orig.odometer_km,
     odometer_note: orig.odometer_note, supplier_bill_no: orig.supplier_bill_no, settles_account: orig.settles_account, settles: orig.settles,
     source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by, collection: orig.collection, components: orig.components,
-  }, 'daybook.reverse');
-  return res;
+  };
+  // lane-d slice 2 (G2): taking back a cash receipt above the limit pays cash out, so it waits for approval like a payment would
+  // (it counts only once approved; its reason is the row's narration). A handover leg is never a cash IN, so it never waits here.
+  if (!handover && orig.mode === 'cash' && orig.direction === 'IN' && orig.amount_paise > officeApprovalLimit_(data.campus)) return officePendingAdd_(ss, ctx, row);
+  if (handover) officeHandoverEvent_(ctx, handover, 'closed'); // before the row: a retry finding closed writes the missing reversal
+  return officeDaybookWrite_(ss, ctx, row, 'daybook.reverse');
 }
 
 // Attaches the driver's fill video to a saved fuel entry. The day book stays append-only: the link is a new Files row (category
