@@ -122,6 +122,31 @@ function officeCheckHeaders() {
   return out;
 }
 
+// lane-d go-live: run from the editor (reads only). Per school book: how many DayBook rows (and how many are money out), Closes and
+// school-level Opening rows, and the first and last entry date: counts and dates only, no amounts, names or ids. A book with any DayBook
+// row or Close can't take an opening any more (opening.set: OPENING_LOCKED). Reads the sheets raw, so a tab with a bad header is counted too.
+function officeGoLiveCheck() {
+  const props = PropertiesService.getScriptProperties().getProperties(), out = [];
+  const rows = function (ss, tab) {
+    const sh = ss.getSheetByName(tab);
+    if (!sh || sh.getLastRow() < 2) return { head: [], list: [] };
+    const v = sh.getDataRange().getValues();
+    return { head: v[0].map(String), list: v.slice(1).filter(function (r) { return String(r[0]).trim() !== ''; }) };
+  };
+  Object.keys(props).filter(function (k) { return /^OFFICE_SS_/.test(k); }).sort().forEach(function (k) {
+    const ss = SpreadsheetApp.openById(props[k]);
+    const db = rows(ss, 'DayBook'), di = db.head.indexOf('direction'), dd = db.head.indexOf('entry_date');
+    const dates = db.list.map(function (r) { const x = r[dd]; return x instanceof Date ? Utilities.formatDate(x, 'Asia/Kolkata', 'yyyy-MM-dd') : String(x || ''); }).filter(Boolean).sort();
+    const op = rows(ss, 'Opening'), ai = op.head.indexOf('account');
+    const n = { daybook: db.list.length, out: db.list.filter(function (r) { return String(r[di]) === 'OUT'; }).length, closes: rows(ss, 'Closes').list.length,
+      opening: op.list.filter(function (r) { return ai === -1 || String(r[ai] || '') === ''; }).length };
+    out.push(k.replace('OFFICE_SS_', '') + ': DayBook rows ' + n.daybook + ' (money out ' + n.out + '), Closes ' + n.closes + ', school Opening rows ' + n.opening +
+      (dates.length ? ', entries ' + dates[0] + ' to ' + dates[dates.length - 1] : '') + ' → ' + (n.daybook || n.closes ? 'OPENING LOCKED' : 'opening can be set'));
+  });
+  Logger.log(out.length ? out.join('\n') : 'No school books in Script Properties.');
+  return out;
+}
+
 function officeConfig_() {
   const id = PropertiesService.getScriptProperties().getProperty('OFFICE_CONFIG_SS');
   if (!id) throw new Error('NO_BOOK');

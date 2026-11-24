@@ -696,4 +696,15 @@ module.exports = function run(t) {
     assert.deepEqual(add(h, { id: 'o1', direction: 'OUT', category: 'stationery', payee: 'Parent A', amount_paise: 150000 }).warnings, undefined, 'a payment never matches a receipt');
     assert.deepEqual(add(h, { id: 'i3', payee: 'Parent A', amount_paise: 160000 }).warnings, undefined);
   });
+
+  t.test('lane-d go-live: officeGoLiveCheck counts rows per school book (no amounts) and says which can still take an opening', () => {
+    const h = fresh({ seed: false });
+    let out = h.ctx.officeGoLiveCheck();
+    assert.ok(out.some((l) => /^LMS1_2026-27: DayBook rows 0 \(money out 0\), Closes 0, school Opening rows 0 → opening can be set$/.test(l)), out.join('\n'));
+    assert.equal(add(h, { id: 'g1', entry_date: '2026-10-20' }).success, true);
+    out = h.ctx.officeGoLiveCheck();
+    const line = out.find((l) => l.startsWith('LMS1_2026-27'));
+    assert.match(line, /DayBook rows 1 \(money out 0\).*entries 2026-10-20 to 2026-10-20 → OPENING LOCKED/);
+    assert.doesNotMatch(line, /\d{4,}00\b|₹/, 'no amounts');
+  });
 };
