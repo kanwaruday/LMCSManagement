@@ -688,4 +688,12 @@ module.exports = function run(t) {
     const third = add(h, { id: 'p3', direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 250, payee: 'Shop', file_id: 'b3' });
     assert.deepEqual([third.success, third.warnings], [true, undefined], 'the earlier ones are reversed');
   });
+
+  t.test('lane-d go-live: money in from the same person for the same amount that day warns too; never against money out', () => {
+    const h = fresh();
+    assert.deepEqual(add(h, { id: 'i1', payee: 'Parent A', amount_paise: 150000 }).warnings, undefined);
+    assert.deepEqual(add(h, { id: 'i2', payee: ' parent a ', amount_paise: 150000 }).warnings, ['same_payee_amount_day']);
+    assert.deepEqual(add(h, { id: 'o1', direction: 'OUT', category: 'stationery', payee: 'Parent A', amount_paise: 150000 }).warnings, undefined, 'a payment never matches a receipt');
+    assert.deepEqual(add(h, { id: 'i3', payee: 'Parent A', amount_paise: 160000 }).warnings, undefined);
+  });
 };

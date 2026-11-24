@@ -138,7 +138,7 @@ function officeDaybookAdd_(ctx, data) {
   // Day close is the cash count: it freezes cash-account rows only (bank, UPI and credit carry their real date).
   if (acct.kind === 'cash') officeAssertOpen_(ss, data.entry_date);
   if (isFuel && !odometerNote && data.odometer_km < officeLastOdometer_(data.campus, vehicle, data.entry_date)) throw officeCoded_('ODOMETER_BACKWARDS');
-  const warnings = data.direction === 'OUT' ? officeRepeatWarnings_(data) : [];   // lane-d: worked out before the row lands, so it never matches itself
+  const warnings = officeRepeatWarnings_(data); // lane-d go-live: money in gets the same-person warning too   // lane-d: worked out before the row lands, so it never matches itself
   const row = {
     id: data.id, campus: data.campus, entry_date: data.entry_date, direction: data.direction, mode: mode,
     bucket: mode === 'cash' ? data.bucket : '', category: data.category, amount_paise: data.amount_paise,
@@ -164,9 +164,9 @@ function officeRepeatWarnings_(data) {
   const rows = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, []);
   const files = books.reduce(function (acc, b) { return acc.concat(officeRows_(b, 'Files')); }, []);
   const reversed = {}; rows.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
-  const live = rows.filter(function (r) { return r.direction === 'OUT' && !r.reverses && !reversed[r.id]; });
+  const live = rows.filter(function (r) { return r.direction === data.direction && !r.reverses && !reversed[r.id]; }); // same direction only
   const mine = files.filter(function (f) { return f.id === String(data.file_id); })[0];
-  if (mine && mine.fingerprint) {
+  if (data.direction === 'OUT' && mine && mine.fingerprint) {
     const same = {}; files.forEach(function (f) { if (f.fingerprint === mine.fingerprint && f.id !== mine.id) same[f.id] = true; });
     if (live.some(function (r) { return same[r.file_id] || r.file_id === mine.id; })) out.push('same_bill_photo');
   }
