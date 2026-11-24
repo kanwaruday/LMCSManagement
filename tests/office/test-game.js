@@ -227,4 +227,16 @@ module.exports = function run(t) {
     assert.strictEqual(h.game('gameOpeningSet', { id: 'seal-LMS2-b', balances: JSON.stringify(bal) }, O).data.code, 'OPENING_LOCKED', 'not after the first entry');
     assert.strictEqual(h.game('gameOpeningSet', { id: 'x', balances: '{bad' }, O).data.code, 'BAD_INPUT');
   });
+
+  t.test('lane-d go-live (G2): seal A → unseal → re-seal B (a new id) while the book is empty: the Day Book opens at B; the same id again is a duplicate', () => {
+    const h = fresh();
+    const O = { role: 'owner', email: 'owner@example.org', campus: 'LMS2' };
+    const A = [{ mode: 'cash', bucket: 'petty', amount_paise: 120000 }, { mode: 'cash', bucket: 'fee', amount_paise: 845000 }, { mode: 'cash', bucket: 'other', amount_paise: 0 }, { mode: 'bank', amount_paise: 2500000 }];
+    const B = [{ mode: 'cash', bucket: 'petty', amount_paise: 100000 }, { mode: 'cash', bucket: 'fee', amount_paise: 865000 }, { mode: 'cash', bucket: 'other', amount_paise: 0 }, { mode: 'bank', amount_paise: 2500000 }];
+    assert.strictEqual(h.game('gameOpeningSet', { id: 'open-LMS2-2026-11-25-aaaaaaaa', balances: JSON.stringify(A) }, O).data.duplicate, undefined);
+    assert.strictEqual(h.game('gameOpeningSet', { id: 'open-LMS2-2026-11-25-bbbbbbbb', balances: JSON.stringify(B) }, O).data.duplicate, undefined);
+    assert.strictEqual(h.game('gameOpeningSet', { id: 'open-LMS2-2026-11-25-bbbbbbbb', balances: JSON.stringify(B) }, O).data.duplicate, true);
+    const b = h.call('daybook.balances', { campus: 'LMS2', date: '2026-10-21' }, 'owner-token');
+    assert.deepStrictEqual([b.opening.cash.petty, b.opening.cash.fee, b.opening.bank], [100000, 865000, 2500000], 'the latest split');
+  });
 };
