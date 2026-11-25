@@ -92,13 +92,21 @@ function gameHrLog_(caller, op, id) {
 }
 
 /** One applicant in full (still masked): the room's detail view. */
-function gameHrDetail_(a, schools, nowMs) {
+/** G2 FIX (security): the notes as a non-Owner may see them. Recording an offer appends "Salary Offer recorded: … CTI ₹…" to the row's
+ *  notes (the old page and gameHrOffer_ alike), so for anyone but the Owner every " | " segment that carries a salary line or a rupee
+ *  figure is dropped. Salary stays the Owner's. */
+function gameHrNotesFor_(notes, role) {
+  if (role === 'Owner') return notes;
+  return String(notes || '').split(' | ').filter(function (seg) { return !/salary|offer|ctc|cti|net bank|₹|\brs\.?\s*\d|inr\s*\d/i.test(seg); }).join(' | ');
+}
+
+function gameHrDetail_(a, schools, nowMs, role) {
   const reports = function (list, kind) {
     return (list || []).map(function (r) { return { kind: kind, at: r['Submitted At'] || '', recommendation: r.recommendation || '' }; });
   };
   return {
     applicant: gameHrRow_(a, schools, nowMs),
-    notes: a.notes,
+    notes: gameHrNotesFor_(a.notes, role),
     appointments: (a.appointments || []).map(function (x) { return { id: x.id, kind: x.kind, start: x.start, status: x.status, reportFiled: !!x.reportFiled,
       calendarMissing: x.status === 'accepted' && x.calendarMode === 'none' }; }), // S2: accepted, but the calendar write failed (Retry)
     reports: reports(a.interviewReports, 'interview').concat(reports(a.demoReports, 'demo')),
@@ -314,7 +322,7 @@ function gameHrDispatch_(body) {
       case 'gameHrApplicant': {
         const a = gameHrList_(caller, schools).filter(function (x) { return x.applicantId === String(p.id || ''); })[0];
         if (!a) return gameNo_('not_found');
-        return gameOk_(gameHrDetail_(a, schools, nowMs));
+        return gameOk_(gameHrDetail_(a, schools, nowMs, role));
       }
       case 'gameHrAct': {
         if (ops.indexOf(String(p.op || '')) === -1) return gameNo_('not_authorized');
@@ -326,7 +334,7 @@ function gameHrDispatch_(body) {
         try { gameHrDo_(caller, a, p); } catch (err) { return { success: true, data: { ok: false, code: 'refused', say: gameHrSay_(err) } }; }
         gameHrLog_(caller, String(p.op), a.applicantId);
         const fresh = gameHrList_(caller, schools).filter(function (x) { return x.applicantId === a.applicantId; })[0];
-        return gameOk_(fresh ? gameHrDetail_(fresh, schools, Date.now()) : { gone: true });
+        return gameOk_(fresh ? gameHrDetail_(fresh, schools, Date.now(), role) : { gone: true });
       }
       case 'gameHrScanTicket': {
         if (ops.indexOf(String(p.kind || '')) === -1) return gameNo_('not_authorized'); // the report steps are the Owner's and the Principal's
