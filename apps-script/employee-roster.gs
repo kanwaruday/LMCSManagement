@@ -212,6 +212,10 @@ function doPost(e) {
     if (body && body.actAs !== undefined && body.actAs !== null && body.actAs !== '') return staffJsonOut_(SUPPORT_READ_ONLY); // a supporting Principal's switch: no writes here
     if (body.action === 'gameAfVideoTicket') return staffJsonOut_(gameAfVideoTicket_(body)); // af-video.gs: lms-game's classic proxy, ROSTER_GAME_KEY
     if (body.action === 'gameAfVideoPart') return staffJsonOut_(gameAfVideoPart_(body)); // af-video.gs: the browser's parts against that ticket
+    if (body.action === 'gameMsgFileTicket') return staffJsonOut_(gameMsgFileTicket_(body)); // msg-file.gs: messaging files (lms-game 678), the proxy's ROSTER_GAME_KEY
+    if (body.action === 'gameMsgFilePart') return staffJsonOut_(gameMsgFilePart_(body)); // msg-file.gs: the phone's parts against that ticket
+    if (body.action === 'gameMsgFileView') return staffJsonOut_(gameMsgFileView_(body)); // msg-file.gs: a member opens a file (msg_file_can_view)
+    if (body.action === 'gameMsgFileRead') return staffJsonOut_(gameMsgFileRead_(body)); // msg-file.gs: the read parts, membership asked on each
     if (body.action === 'gameAfVideoHealth') return staffJsonOut_(gameAfVideoHealth_(body)); // af-video.gs: read-only booleans/counts/codes (18 Nov upload fault)
     if (body.action === 'gameStaffLogins') return staffJsonOut_(gameStaffLogins_(body)); // staff-logins.gs: lms-game's teacher-rollout, ROSTER_GAME_KEY
     if (body.action === 'uploaddocument') return staffJsonOut_(sdocUpload_(body));
