@@ -76,12 +76,19 @@ function gamePayMonth_(caller, month, schools) {
 
 function gamePayDispatch_(body) {
   if (!gamePayKeyOk_(body)) return { success: false, error: 'not_authorized' };
-  if (GAME_PAY_ACTIONS.indexOf(String(body.action)) === -1) return { success: false, error: 'unknown_action' };
+  // S5e (B7, 26 Nov): game-pay-out.gs (outputs, final settlements, increments) answers every gamePayOut* action itself, in this file's envelope.
+  // Same gate as everything here: the key above, the Owner by the verified email below. Missing file = unknown_action, never a half answer.
+  const isOut = /^gamePayOut[A-Z]/.test(String(body.action || ''));
+  if (isOut ? typeof gamePayOutRun_ !== 'function' : GAME_PAY_ACTIONS.indexOf(String(body.action)) === -1) return { success: false, error: 'unknown_action' };
   let caller = null;
   try { caller = body.role === 'owner' ? gamePayOwner_(body.email) : null; } catch (err) { caller = null; }
   if (!caller) return gamePayNo_('not_authorized');
   const p = body.params || {};
   const schools = Array.isArray(body.campuses) ? body.campuses.map(function (c) { return String(c).toUpperCase(); }) : [];
+  if (isOut) {
+    try { return gamePayOutRun_(body, caller, p, schools); }
+    catch (err) { return gamePayNo_('refused', gamePaySay_(err)); }
+  }
   if (String(body.action) === 'gamePayMonth') {
     try { return gamePayOk_(gamePayMonth_(caller, String(p.month || ''), schools)); }
     catch (err) { return gamePayNo_('refused', gamePaySay_(err)); }

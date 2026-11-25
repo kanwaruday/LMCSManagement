@@ -86,6 +86,20 @@ assert.strictEqual(g.PAY_MEMO, null, 'the memo is cleared after a read');
 // no write path: the month handler never calls a writer
 assert.ok(!/payWrite_|payLock_|payUnlock_|paySaveInputs_/.test(require('fs').readFileSync(path.join(__dirname, '../../apps-script/game-pay.gs'), 'utf8').replace(/\/\/.*$/gm, '')), 'game-pay.gs calls no payroll writer in S5a');
 
+// S5e hook: a gamePayOut* action goes to game-pay-out.gs's gamePayOutRun_ after the same key and Owner checks; missing file = unknown_action
+assert.deepStrictEqual(call({ action: 'gamePayOutMonth' }, { month: '2026-11' }), { success: false, error: 'unknown_action' }, 'no outputs file loaded');
+assert.deepStrictEqual(call({ action: 'gamePayOutMonth', key: 'bad' }, {}), { success: false, error: 'not_authorized' });
+let seen = null;
+g.gamePayOutRun_ = (body, caller, p, schools) => { seen = [body.action, caller.email, p.month, schools]; return { success: true, data: { ok: true, routed: true } }; };
+assert.strictEqual(call({ action: 'gamePayOutMonth', email: 'principal@lms.org.in' }, { month: '2026-11' }).data.code, 'not_authorized', 'the Owner check comes before it');
+assert.strictEqual(seen, null);
+assert.deepStrictEqual(call({ action: 'gamePayOutMonth' }, { month: '2026-11' }).data, { ok: true, routed: true });
+assert.deepStrictEqual(JSON.parse(JSON.stringify(seen)), ['gamePayOutMonth', 'owner@lms.org.in', '2026-11', ['LMS1', 'LMS2']]);
+g.gamePayOutRun_ = () => { throw new Error('Pick a month'); };
+assert.deepStrictEqual(call({ action: 'gamePayOutMonth' }, {}).data, { ok: false, code: 'refused', say: 'Pick a month' });
+assert.deepStrictEqual(call({ action: 'gamePayOutlaw' }, {}), { success: false, error: 'unknown_action' }, 'only gamePayOut + a capital letter');
+delete g.gamePayOutRun_;
+
 // payroll.gs routes gamePay* to the gate before any ID-token path; projects.json deploys game-pay with the Payroll project
 const src = fs.readFileSync(path.join(__dirname, '../../apps-script/payroll.gs'), 'utf8');
 const post = src.slice(src.indexOf('function doPost('));
