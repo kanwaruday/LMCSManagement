@@ -191,6 +191,7 @@ const ROSTER_SUPPORT_READS_ = ['roster', 'employees', 'designations', 'drivechec
 function doGet(e) {
   const action = (e.parameter.action || 'roster').toLowerCase();
   if (e.parameter.actAs && ROSTER_SUPPORT_READS_.indexOf(action) === -1) return jsonOut(SUPPORT_READ_ONLY);
+  if (e.parameter.op === 'hrSetupStatus') return jsonOut(hrfSetupStatus_()); // hr-file.gs: booleans only, read-only; never runs the setup itself
   hrfSelfSetup_(); // hr-file.gs: derives HR_DRIVE_LIVE_URL and installs the sweep trigger once; never throws (after the support refusal: that touches no service)
   if (STAFF_ACTIONS_.indexOf(action) !== -1) return staffDoGet_(e);
   if (ALLOWLIST_ACTIONS_.indexOf(action) !== -1) return allowlistDoGet_(e);

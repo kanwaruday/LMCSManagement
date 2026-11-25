@@ -237,6 +237,16 @@ T('self-setup: a second hit while the lock is held skips (no trigger, no flag); 
   b.ctx.hrfSelfSetup_();
   assert.strictEqual(b.ctx.LockService.held, false, 'released even when the install throws');
 });
+T('hrSetupStatus: three booleans, read-only, never runs the setup, nothing else in the answer', () => {
+  const s = fresh({ PROOF_MIRROR_URL: 'https://abcdefgh.supabase.co/x' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(s.ctx.hrfSetupStatus_())), { url_set: false, trigger: false, flag: false });
+  assert.strictEqual(prop(s, 'HR_DRIVE_LIVE_URL'), null, 'asking derived nothing');
+  assert.strictEqual(s.ctx.ScriptApp.triggers.length, 0, 'and installed nothing');
+  s.ctx.hrfSelfSetup_();
+  const r = s.ctx.hrfSetupStatus_();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { url_set: true, trigger: true, flag: true });
+  assert.ok(!/supabase|https|abcdefgh|key/i.test(JSON.stringify(r)));
+});
 
 console.log(results.join('\n'));
 if (results.some((r) => r.includes('FAIL'))) process.exit(1);

@@ -211,3 +211,11 @@ function hrfSelfSetup_() {
     } finally { lock.releaseLock(); }
   } catch (e) { console.error('hr-file: setup_failed'); }
 }
+
+/** Read-only proof for Jarvis (it can't read Roster logs): three booleans, no URL, id or auth data. Never runs the setup. */
+function hrfSetupStatus_() {
+  const out = { url_set: false, trigger: false, flag: false };
+  try { const p = afvProps_(); out.url_set = !!String(p.getProperty('HR_DRIVE_LIVE_URL') || '').trim(); out.flag = p.getProperty('HRF_SETUP') === '1'; } catch (e) { /* stays false */ }
+  try { out.trigger = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'hrFileDaily'; }); } catch (e) { /* stays false */ }
+  return out;
+}
