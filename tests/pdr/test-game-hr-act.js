@@ -42,7 +42,7 @@ const h = boot({
     apptDecide_: fake('apptDecide_'), apptCancel_: fake('apptCancel_'), hiringConfirmReject_: fake('hiringConfirmReject_'), hiringRevive_: fake('hiringRevive_'),
   },
 });
-const act = (who, params, extra) => h.post('gameHrAct', Object.assign({ key: KEY, email: who ? who + '@lms.org.in' : null, campus: null,
+const act = (who, params, extra) => h.post('gameHrAct', Object.assign({ key: KEY, role: 'owner', email: who ? who + '@lms.org.in' : null, campus: null,
   campuses: ['LMS1', 'LMS2'], params }, extra));
 const data = (r) => { assert.strictEqual(r.success, true, JSON.stringify(r)); return JSON.parse(JSON.stringify(r.data)); };
 const logged = () => ((tabs['Game Actions'] || { rows: [] }).rows.filter((x) => x[0] !== 'At')).map((x) => JSON.parse(JSON.stringify(x.slice(1))));
@@ -50,7 +50,7 @@ const logged = () => ((tabs['Game Actions'] || { rows: [] }).rows.filter((x) => 
 // the gate: key, Owner only, known steps, the applicant must be in the proxy's schools
 assert.deepStrictEqual(act('owner', { op: 'shortlist', id: 'T-0002' }, { key: 'wrong' }), { success: false, error: 'not_authorized' });
 for (const who of ['coord', 'principal', 'stranger', null]) assert.strictEqual(data(act(who, { op: 'shortlist', id: 'T-0002' })).code, 'not_authorized', String(who));
-assert.strictEqual(data(act('owner', { op: 'starthire', id: 'T-0002' })).code, 'bad_input', 'Start Hiring Process is not a game step');
+assert.strictEqual(data(act('owner', { op: 'starthire', id: 'T-0002' })).code, 'not_authorized', 'Start Hiring Process is not a game step');
 assert.strictEqual(data(act('owner', { op: 'shortlist', id: 'T-9999' })).code, 'not_found');
 assert.strictEqual(data(act('owner', { op: 'shortlist', id: 'T-0002' }, { campuses: ['LMS2'] })).code, 'not_found', 'another school’s applicant');
 assert.strictEqual(data(act('owner', { op: 'shortlist', id: 'T-0002', row: '3' }, { campuses: [] })).code, 'not_found', 'no schools = nothing');
@@ -80,10 +80,10 @@ assert.deepStrictEqual(logged().map((x) => x[1]), steps.map(([p]) => p.op), 'eve
 assert.deepStrictEqual(logged()[0], ['Owner Person', 'shortlist', 'T-0002']);
 
 // the detail now carries appointment ids and a pending reject (the reason only)
-const d = data(h.post('gameHrApplicant', { key: KEY, email: 'owner@lms.org.in', campuses: ['LMS1', 'LMS2'], params: { id: 'T-0003' } }));
+const d = data(h.post('gameHrApplicant', { key: KEY, role: 'owner', email: 'owner@lms.org.in', campuses: ['LMS1', 'LMS2'], params: { id: 'T-0003' } }));
 assert.strictEqual(d.pendingReject, 'Demo not up to the mark');
 assert.ok(!JSON.stringify(d).includes('"note"'), 'the clerk’s note stays in the sheet');
-assert.strictEqual(data(h.post('gameHrApplicant', { key: KEY, email: 'owner@lms.org.in', campuses: ['LMS1'], params: { id: 'T-0002' } })).appointments[0].id, 'AP-1');
+assert.strictEqual(data(h.post('gameHrApplicant', { key: KEY, role: 'owner', email: 'owner@lms.org.in', campuses: ['LMS1'], params: { id: 'T-0002' } })).appointments[0].id, 'AP-1');
 
 // an appointment must be this applicant's; refusals carry hiring.gs's plain words (unless they could hold data) and aren't logged
 const n0 = logged().length;

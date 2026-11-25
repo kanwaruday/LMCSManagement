@@ -4,7 +4,8 @@
 // Called only by lms-game's `classic` Edge Function (classic-proxy-contract.md), POST text/plain:
 //   { action, key, role, campus, campuses, email, params }
 // Same gate as game-approvals.gs (gameKeyOk_, gameOk_, gameNo_ live there, same project): the PDR GAME_KEY; the person is the game's
-// verified email, re-checked against this project's own Allowlist (pdrCallerForEmail_). OWNER ONLY: anyone else gets not_authorized.
+// verified email, re-checked against this project's own Allowlist (pdrCallerForEmail_), acting as body.role (Owner, Principal or
+// FeeClerk, W7 S2): that role must be on the person's own row, and it picks the allowed steps (GAME_HR_ROLE_OPS). Anyone else: not_authorized.
 // Tenant scope: applicants are limited to the proxy's school list (`campuses`); missing = none (fails closed).
 // Nothing personal leaves unmasked: phones come back as last 4, no salary figure, no report contents, no emails.
 // gameHrReveal is the one way to see a full phone number or the offer breakdown; every reveal is written to the "Game Reveals" tab
@@ -18,7 +19,25 @@
 // ═══════════════════════════════════════════════════════════════════
 
 const GAME_HR_ACTIONS = ['gameHrPipeline', 'gameHrApplicant', 'gameHrReveal', 'gameHrAct'];
-const GAME_HR_OPS = ['shortlist', 'unshortlist', 'markstage', 'propose', 'held', 'appt', 'confirmreject', 'revive'];
+const GAME_HR_OPS = ['shortlist', 'unshortlist', 'markstage', 'propose', 'held', 'appt', 'confirmreject', 'revive', 'interview', 'demo', 'add', 'dupsettle', 'calretry'];
+// W7 S2 (N3, 25 Nov; Uday: "keep it in the game"): the room opens to the Principal and the Fee Clerk/PRO too. The game says which role
+// it acts as (body.role); that role must be on this person's own Allowlist row, and it picks the steps. Every step is still the old
+// page's own function, so hiring.gs's scoping (hirScopedRow_: the caller's schools) and its role checks keep applying underneath.
+// Principal: the old hiring/index.html steps, minus the Owner's (settle a pending reject, revive, refresh the tracker, Start Hiring).
+// Fee Clerk/PRO: the old office/hiring.html legwork (main.gs PDR_FEECLERK_*): add an applicant, propose / record / cancel a visit.
+const GAME_HR_ROLES = { owner: 'Owner', principal: 'Principal', fee_clerk: 'FeeClerk' };
+const GAME_HR_ROLE_OPS = {
+  Owner: GAME_HR_OPS,
+  Principal: ['shortlist', 'unshortlist', 'markstage', 'propose', 'held', 'appt', 'interview', 'demo', 'add', 'dupsettle', 'calretry'],
+  FeeClerk: ['propose', 'held', 'appt', 'add'], // appt: cancel only (the Fee Clerk never accepts or declines)
+};
+// the report forms' own fields (hiring.gs hirInterviewRecord_ / hirDemoRecord_); anything else in the form is dropped, never passed on
+const GAME_HR_FORM_KEYS = {
+  interview: ['interviewDate', 'position', 'confidence', 'english', 'commitment', 'experience', 'capability', 'qualificationRemarks', 'otherSkills',
+    'strengths', 'weaknesses', 'expectedSalary', 'familySupport', 'spouseOccupation', 'remarks'],
+  demo: ['demoDate', 'class', 'subject', 'scores', 'strengths', 'improve', 'studentFeedback', 'remarks', 'nextDemoAt'],
+};
+const GAME_HR_ADD_KEYS = ['name', 'phone', 'age', 'gender', 'qualification', 'bed', 'subjects', 'source', 'notes'];
 const GAME_HR_REVEAL_FIELDS = ['phone', 'offer'];
 
 const gameHrTags_ = function (branches) { return (String(branches || '').match(/LMS-\d/g) || []).map(function (t) { return 'LMS' + t.slice(4); }); };
@@ -52,7 +71,7 @@ function gameHrAudit_(caller, field, id) {
   const wb = hirWorkbook_();
   const sh = wb.getSheetByName('Game Reveals') || wb.insertSheet('Game Reveals');
   if (sh.getLastRow() < 1) sh.appendRow(['At', 'Who', 'Field', 'Applicant ID']);
-  sh.appendRow([new Date(), caller.name || 'Owner', field, id]);
+  sh.appendRow([new Date(), caller.name || 'Owner', field, id]); // the person by name (the Principal or Fee Clerk too); never the value
 }
 
 function gameHrLog_(caller, op, id) {
@@ -95,6 +114,21 @@ function gameHrDo_(caller, a, p) {
   if (op === 'held') return apptHeld_(caller, { row: row, kind: String(p.kind || ''), start: String(p.at || '') }); // P52: already happened
   if (op === 'confirmreject') return hiringConfirmReject_(caller, { row: row, confirm: p.confirm === '1' });
   if (op === 'revive') return hiringRevive_(caller, { row: row, note: String(p.note || '') });
+  if (op === 'interview' || op === 'demo') {
+    const form = gameHrForm_(p.form), b = { row: row, recommendation: String(p.recommendation || ''), rejectReason: String(p.rejectReason || ''), rejectNote: String(p.rejectNote || '') };
+    GAME_HR_FORM_KEYS[op].forEach(function (k) { if (form[k] !== undefined) b[k] = form[k]; });
+    return (op === 'interview' ? hiringSubmitInterview_ : hiringSubmitDemo_)(caller, b);
+  }
+  if (op === 'dupsettle') {
+    const other = (p.otherList || []).filter(function (x) { return x.applicantId === String(p.other || ''); })[0];
+    if (!other) throw new Error('Pick the other candidate from your list.');
+    return hiringDupSettle_(caller, { row: row, otherRow: other.row, same: p.same === '1' });
+  }
+  if (op === 'calretry') {
+    const appt = (a.appointments || []).filter(function (x) { return x.id === String(p.appt || ''); })[0];
+    if (!appt) throw new Error('That appointment isn’t this applicant’s.');
+    return apptCalendarRetry_(caller, { id: appt.id });
+  }
   if (op === 'appt') {
     const appt = (a.appointments || []).filter(function (x) { return x.id === String(p.appt || ''); })[0];
     if (!appt) throw new Error('That appointment isn’t this applicant’s.');
@@ -104,12 +138,34 @@ function gameHrDo_(caller, a, p) {
   throw new Error('Unknown step');
 }
 
+/** the report form, sent as one JSON string: an object, or nothing */
+function gameHrForm_(raw) {
+  let f = {};
+  try { f = JSON.parse(String(raw || '{}')); } catch (err) { throw new Error('The form didn’t come through. Try again.'); }
+  return f && typeof f === 'object' && !Array.isArray(f) ? f : {};
+}
+
+/** add an applicant (hiring.gs hiringAddApplicant_) at one of the proxy's schools; only the add form's own fields pass */
+function gameHrAdd_(caller, p, schools) {
+  const campus = String(p.campus || '').toUpperCase();
+  if (schools.indexOf(campus) === -1) return gameNo_('not_found');
+  const b = { campusId: campus };
+  GAME_HR_ADD_KEYS.forEach(function (k) { if (p[k] !== undefined) b[k] = String(p[k]); });
+  let res;
+  try { res = hiringAddApplicant_(caller, b); } catch (err) { return { success: true, data: { ok: false, code: 'refused', say: gameHrSay_(err) } }; }
+  if (res && res.duplicate) return gameOk_({ ok: false, code: 'duplicate', id: res.applicantId || '' }); // an id only if it's in their own list
+  gameHrLog_(caller, 'add', (res && res.applicantId) || '');
+  return gameOk_({ ok: true, id: (res && res.applicantId) || '' });
+}
+
 function gameHrDispatch_(body) {
   if (!gameKeyOk_(body)) return { success: false, error: 'not_authorized' };
   if (GAME_HR_ACTIONS.indexOf(String(body.action)) === -1) return { success: false, error: 'unknown_action' };
   let caller;
   try { caller = pdrCallerForEmail_(body.email); } catch (err) { caller = null; }
-  if (!caller || !callerHasRole_(caller, 'Owner')) return gameNo_('not_authorized'); // the hiring room is the Owner's alone
+  const role = GAME_HR_ROLES[String(body.role || '')]; // the role the game acts as; it must be on this person's own Allowlist row
+  if (!caller || !role || !callerHasRole_(caller, role)) return gameNo_('not_authorized');
+  const ops = GAME_HR_ROLE_OPS[role];
   const p = body.params || {}, nowMs = Date.now();
   const schools = Array.isArray(body.campuses) ? body.campuses.map(function (c) { return String(c).toUpperCase(); }) : [];
   try {
@@ -130,9 +186,12 @@ function gameHrDispatch_(body) {
         return gameOk_(gameHrDetail_(a, schools, nowMs));
       }
       case 'gameHrAct': {
-        if (GAME_HR_OPS.indexOf(String(p.op || '')) === -1) return gameNo_('bad_input');
+        if (ops.indexOf(String(p.op || '')) === -1) return gameNo_('not_authorized');
+        if (role === 'FeeClerk' && p.op === 'appt' && p.decision !== 'cancel') return gameNo_('not_authorized');
+        if (p.op === 'add') return gameHrAdd_(caller, p, schools);
         const a = gameHrList_(caller, schools).filter(function (x) { return x.applicantId === String(p.id || ''); })[0];
         if (!a) return gameNo_('not_found');
+        if (p.op === 'dupsettle') p.otherList = gameHrList_(caller, schools); // the other candidate by id, from this caller's own list
         try { gameHrDo_(caller, a, p); } catch (err) { return { success: true, data: { ok: false, code: 'refused', say: gameHrSay_(err) } }; }
         gameHrLog_(caller, String(p.op), a.applicantId);
         const fresh = gameHrList_(caller, schools).filter(function (x) { return x.applicantId === a.applicantId; })[0];
@@ -141,6 +200,7 @@ function gameHrDispatch_(body) {
       case 'gameHrReveal': {
         const field = String(p.field || '');
         if (GAME_HR_REVEAL_FIELDS.indexOf(field) === -1) return gameNo_('bad_input');
+        if (field === 'offer' && role !== 'Owner') return gameNo_('not_authorized'); // salary stays the Owner's
         const a = gameHrList_(caller, schools).filter(function (x) { return x.applicantId === String(p.id || ''); })[0];
         if (!a) return gameNo_('not_found');
         const value = field === 'phone' ? a.phone : a.offerBreakdown;

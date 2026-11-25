@@ -41,7 +41,7 @@ const fresh = () => boot({
 });
 
 const h = fresh();
-const call = (action, who, extra) => h.post(action, Object.assign({ key: KEY, email: who ? who + '@lms.org.in' : null, campus: null, campuses: ['LMS1', 'LMS2', 'LMS3'], params: {} }, extra));
+const call = (action, who, extra) => h.post(action, Object.assign({ key: KEY, role: 'owner', email: who ? who + '@lms.org.in' : null, campus: null, campuses: ['LMS1', 'LMS2', 'LMS3'], params: {} }, extra));
 const data = (r) => { assert.strictEqual(r.success, true, JSON.stringify(r)); return r.data; };
 const clean = (r, what) => {
   const s = JSON.stringify(r);
