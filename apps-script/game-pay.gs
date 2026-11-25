@@ -11,7 +11,12 @@
 // No figures are logged; refusals come back as plain words unless they could carry data.
 // ═══════════════════════════════════════════════════════════════════
 
-const GAME_PAY_ACTIONS = ['gamePayRecordOffer'];
+const GAME_PAY_ACTIONS = ['gamePayRecordOffer', 'gamePayMonth'];
+// S5a (N3, 26 Nov): gamePayMonth, the month's draft register, read-only: payMonth_ cut to the schools the proxy gives this Owner and to the
+// columns the old Review step shows. An Owner-only POST (View as can't send it); the look is audited first (who, month, never a figure);
+// nothing is written to the payroll sheets. Payroll runs stay the Owner's own step (S5c): nothing here locks, runs or schedules one.
+const GAME_PAY_ROW_KEYS = ['code', 'name', 'entity', 'designation', 'paidDays', 'basic', 'ada', 'da', 'gross', 'epf', 'esi', 'esiEmployer', 'rrf', 'tds', 'loanRecovery',
+  'totalDeductions', 'net', 'bankPayable', 'cti', 'gratuityProvision', 'prevNet', 'prevCti', 'heldForFnF', 'withheld', 'released'];
 
 function gamePaySameKey_(want, got) {
   if (!want || typeof got !== 'string' || want.length !== got.length) return false;
@@ -42,6 +47,33 @@ function gamePaySay_(err) {
   return m && !/@|\d{5,}/.test(m) ? m : '';
 }
 
+function gamePayAudit_(who, what, month) {
+  const ss = payOpen_();
+  const sh = ss.getSheetByName('Game Looks') || ss.insertSheet('Game Looks');
+  if (sh.getLastRow() < 1) sh.appendRow(['At', 'Who', 'What', 'Month']);
+  sh.appendRow([new Date(), who, what, month]);
+}
+
+/** payMonth_ for the schools given: the register rows (the old Review columns), warnings, what is locked and the six-step checklist */
+function gamePayMonth_(caller, month, schools) {
+  payCheckMonth_(month);
+  gamePayAudit_(caller.email, 'month', month); // audited before the figures go out
+  PAY_MEMO = new Map();
+  let m;
+  try { m = payMonth_(payOpen_(), month); } finally { PAY_MEMO = null; }
+  const mine = function (e) { return schools.indexOf(payEntity_(e)) !== -1; };
+  const rows = (m.rows || []).filter(function (r) { return mine(r.entity); }).map(function (r) {
+    const o = {};
+    GAME_PAY_ROW_KEYS.forEach(function (k) { o[k] = r[k] === undefined ? null : r[k]; });
+    o.adjustments = (r.adjustments || []).map(function (a) { return { type: a.type, direction: a.direction, amount: a.amount }; }); // the note stays in the sheet
+    return o;
+  });
+  const keep = function (src) { const o = {}; Object.keys(src || {}).filter(mine).forEach(function (e) { o[e] = src[e]; }); return o; };
+  return { month: month, daysInMonth: m.daysInMonth, steps: m.steps, rows: rows,
+    warnings: (m.warnings || []).filter(function (w) { return mine(w.entity); }).map(function (w) { return { entity: payEntity_(w.entity), text: String(w.text || '').slice(0, 300) }; }),
+    locked: keep(m.locked), checklist: keep(m.checklist) };
+}
+
 function gamePayDispatch_(body) {
   if (!gamePayKeyOk_(body)) return { success: false, error: 'not_authorized' };
   if (GAME_PAY_ACTIONS.indexOf(String(body.action)) === -1) return { success: false, error: 'unknown_action' };
@@ -50,6 +82,10 @@ function gamePayDispatch_(body) {
   if (!caller) return gamePayNo_('not_authorized');
   const p = body.params || {};
   const schools = Array.isArray(body.campuses) ? body.campuses.map(function (c) { return String(c).toUpperCase(); }) : [];
+  if (String(body.action) === 'gamePayMonth') {
+    try { return gamePayOk_(gamePayMonth_(caller, String(p.month || ''), schools)); }
+    catch (err) { return gamePayNo_('refused', gamePaySay_(err)); }
+  }
   if (String(body.action) === 'gamePayRecordOffer') {
     const entity = String(p.campus || '').toUpperCase();
     if (schools.indexOf(entity) === -1) return gamePayNo_('not_found'); // only a school the proxy says this Owner reaches
