@@ -18,10 +18,15 @@
 // Not here: Start Hiring Process (it calls the Roster proxy with the person's Google token, which a game call doesn't carry).
 // ═══════════════════════════════════════════════════════════════════
 
-const GAME_HR_ACTIONS = ['gameHrPipeline', 'gameHrApplicant', 'gameHrReveal', 'gameHrAct', 'gameHrSalaryConfig', 'gameHrOffer', 'gameHrEpf'];
+const GAME_HR_ACTIONS = ['gameHrPipeline', 'gameHrApplicant', 'gameHrReveal', 'gameHrAct', 'gameHrSalaryConfig', 'gameHrOffer', 'gameHrEpf', 'gameHrScanTicket'];
 // W7 S3 (N3, 25 Nov): the Offer Calculator (salary/index.html) for the Owner: its config, recording an offer on an applicant, and the EPF
 // exemption. Owner only; every one is a POST (so View as can't send it); salary figures are never logged, the config look is audited.
 const GAME_HR_OWNER_ACTIONS = ['gameHrSalaryConfig', 'gameHrOffer', 'gameHrEpf'];
+// S3 part 2 (N3, 26 Nov): the interview / demo report as a scan (hiringUploadReport_), for the Owner and the Principal. The proxy hands
+// out a ticket (gameHrScanTicket: the report form is bound to it server-side, in the script cache, for 10 minutes); the browser sends the
+// file straight here in parts (gameHrUploadPart, no key: the signed ticket is the gate); the last part files the report as the old page.
+const GAME_HR_TICKET_MS = 10 * 60 * 1000, GAME_HR_PARTS_MAX = 6, GAME_HR_PART_MAX = 1900000; // 6 x 1.3 MB raw covers the 7 MB scan cap
+const GAME_HR_SCAN_MIMES = ['application/pdf', 'image/jpeg', 'image/png'];
 const GAME_HR_OFFER_NUMS = ['basic', 'da', 'ada', 'epfE', 'pfE', 'esiE', 'totEpf', 'totEsi', 'rrf', 'tuition', 'cti', 'net', 'lmsExp', 'otherExp'];
 const GAME_HR_OPS = ['shortlist', 'unshortlist', 'markstage', 'propose', 'held', 'appt', 'confirmreject', 'revive', 'interview', 'demo', 'add', 'dupsettle', 'calretry'];
 // W7 S2 (N3, 25 Nov; Uday: "keep it in the game"): the room opens to the Principal and the Fee Clerk/PRO too. The game says which role
@@ -213,7 +218,77 @@ function gameHrOffer_(caller, a, p, schools) {
   return res && res.success ? 'submitted' : 'failed';
 }
 
+// ── S3 part 2: scan tickets ──────────────────────────────────────────
+function gameHrB64_(s) { return Utilities.base64EncodeWebSafe(s).replace(/=+$/, ''); }
+function gameHrSign_(body) {
+  return gameHrB64_(Utilities.computeHmacSha256Signature(body, String(PropertiesService.getScriptProperties().getProperty('GAME_KEY') || '')));
+}
+/** a ticket for one report scan: who, which applicant row, which kind, and the report form, bound server-side for 10 minutes */
+function gameHrScanTicket_(caller, role, a, p) {
+  const kind = String(p.kind || '');
+  if (kind !== 'interview' && kind !== 'demo') throw new Error('Pick interview or demo for the report');
+  if (GAME_HR_SCAN_MIMES.indexOf(String(p.mime || '')) === -1) throw new Error('The scan must be a PDF, JPG or PNG file');
+  const form = { recommendation: String(p.recommendation || ''), rejectReason: String(p.rejectReason || ''), rejectNote: String(p.rejectNote || '') };
+  GAME_HR_FORM_KEYS[kind].forEach(function (k) { if (p[k] !== undefined) form[k] = GAME_HR_JSON_KEYS.indexOf(k) !== -1 ? gameHrJson_(p[k]) : String(p[k]); });
+  const nonce = Utilities.getUuid(), exp = Date.now() + GAME_HR_TICKET_MS;
+  CacheService.getScriptCache().put('game_hr_scan_' + nonce, JSON.stringify({ e: caller.email, r: role, id: a.applicantId, row: a.row, k: kind, f: form, x: exp }), GAME_HR_TICKET_MS / 1000);
+  const body = gameHrB64_(nonce);
+  const url = PropertiesService.getScriptProperties().getProperty('PDR_WEBAPP_URL') || ScriptApp.getService().getUrl();
+  return { url: url + '?ticket=' + body + '.' + gameHrSign_(body) + '&action=gameHrUploadPart', expiresAt: new Date(exp).toISOString() };
+}
+/** the ticket's bound request if its signature holds, it hasn't expired and it hasn't been used; else null */
+function gameHrTicketOk_(s) {
+  const at = String(s || '').indexOf('.');
+  if (at < 1 || String(PropertiesService.getScriptProperties().getProperty('GAME_KEY') || '').length < 32) return null;
+  const body = s.slice(0, at), sig = s.slice(at + 1);
+  if (!gameSameKey_(gameHrSign_(body), sig)) return null;
+  let nonce;
+  try { nonce = Utilities.newBlob(Utilities.base64DecodeWebSafe(body + '==='.slice((body.length + 3) % 4))).getDataAsString(); } catch (err) { return null; }
+  const raw = CacheService.getScriptCache().get('game_hr_scan_' + nonce);
+  if (!raw) return null; // expired or burnt
+  const t = JSON.parse(raw);
+  if (typeof t.x !== 'number' || t.x < Date.now()) return null;
+  t.nonce = nonce;
+  return t;
+}
+/** one part of a scan. Parts wait in the hiring scans folder (_game_parts/<nonce>), a resent part replaces its file; the last part
+ *  reassembles the file and files the report with hiringUploadReport_ as the ticket's person (re-checked now), then burns the ticket. */
+function gameHrUploadPart_(b) {
+  const t = gameHrTicketOk_(b.ticket);
+  if (!t) return { success: false, error: 'not_authorized' };
+  const part = Number(b.part), of = Number(b.of), base64 = String(b.base64 || '');
+  if (!Number.isInteger(part) || !Number.isInteger(of) || of < 1 || of > GAME_HR_PARTS_MAX || part < 1 || part > of) return { success: false, error: 'BAD_PART' };
+  if (!base64 || base64.length > GAME_HR_PART_MAX || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) return { success: false, error: 'BAD_PART' };
+  const rootId = PropertiesService.getScriptProperties().getProperty('HIR_SCAN_FOLDER_ID');
+  if (!rootId) return { success: false, error: 'NOT_SET_UP' };
+  const root = DriveApp.getFolderById(rootId);
+  const sub = function (parent, name) { const it = parent.getFoldersByName(name); return it.hasNext() ? it.next() : parent.createFolder(name); };
+  const dir = sub(sub(root, '_game_parts'), t.nonce);
+  const name = 'part-' + part + '-of-' + of;
+  const old = dir.getFilesByName(name);
+  while (old.hasNext()) old.next().setTrashed(true);
+  dir.createFile(name, base64, 'text/plain');
+  if (part < of) return { success: true };
+  const bytes = [];
+  for (let i = 1; i <= of; i++) {
+    const it = dir.getFilesByName('part-' + i + '-of-' + of);
+    if (!it.hasNext()) return { success: false, error: 'PARTS_MISSING' };
+    Array.prototype.push.apply(bytes, Utilities.base64Decode(it.next().getBlob().getDataAsString()));
+  }
+  let caller = null;
+  try { caller = pdrCallerForEmail_(t.e); } catch (err) { caller = null; }
+  if (!caller || !callerHasRole_(caller, GAME_HR_ROLES[t.r]) || GAME_HR_ROLE_OPS[GAME_HR_ROLES[t.r]].indexOf(t.k) === -1) return { success: false, error: 'not_authorized' };
+  try {
+    hiringUploadReport_(caller, Object.assign({}, t.f, { row: t.row, kind: t.k, file: { base64: Utilities.base64Encode(bytes) } }));
+  } catch (err) { return { success: false, error: 'REFUSED', say: gameHrSay_(err) }; }
+  CacheService.getScriptCache().remove('game_hr_scan_' + t.nonce);
+  dir.setTrashed(true);
+  gameHrLog_(caller, t.k + ' scan', t.id);
+  return { success: true, fileId: 'filed' };
+}
+
 function gameHrDispatch_(body) {
+  if (String((body && body.action) || '') === 'gameHrUploadPart') return gameHrUploadPart_(body); // the browser's parts: the signed ticket is the gate (no key)
   if (!gameKeyOk_(body)) return { success: false, error: 'not_authorized' };
   if (GAME_HR_ACTIONS.indexOf(String(body.action)) === -1) return { success: false, error: 'unknown_action' };
   let caller;
@@ -252,6 +327,13 @@ function gameHrDispatch_(body) {
         gameHrLog_(caller, String(p.op), a.applicantId);
         const fresh = gameHrList_(caller, schools).filter(function (x) { return x.applicantId === a.applicantId; })[0];
         return gameOk_(fresh ? gameHrDetail_(fresh, schools, Date.now()) : { gone: true });
+      }
+      case 'gameHrScanTicket': {
+        if (ops.indexOf(String(p.kind || '')) === -1) return gameNo_('not_authorized'); // the report steps are the Owner's and the Principal's
+        const a = gameHrList_(caller, schools).filter(function (x) { return x.applicantId === String(p.id || ''); })[0];
+        if (!a) return gameNo_('not_found');
+        try { return { success: true, data: gameHrScanTicket_(caller, String(body.role), a, p) }; }
+        catch (err) { return { success: true, data: { ok: false, code: 'refused', say: gameHrSay_(err) } }; }
       }
       case 'gameHrSalaryConfig': {
         gameHrAudit_(caller, 'salary config', ''); // the pay scale is salary data: the look is recorded first
