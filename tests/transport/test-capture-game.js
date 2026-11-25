@@ -101,15 +101,19 @@ const t1 = tk(ME, {});
 assert.strictEqual(t1.success, true);
 assert.match(t1.data.url, /^https:\/\/script\.google\.com\/macros\/s\/ROSTER\/exec\?ticket=[\w-]+\.[\w-]+&action=gameCapturePart$/);
 assert.ok(!decodeURIComponent(t1.data.url).includes('@') && !Buffer.from(new URL(t1.data.url).searchParams.get('ticket').split('.')[0], 'base64url').toString().includes('@'), 'no email, no school in the URL');
-assert.strictEqual(call('gameCaptureRun_', { email: ME, params: { bus: BUS, run: JSON.stringify({ runId: 'G1', kind: 'timelapse', reg: 'HP000000', startedAt: 1764144000000, frames: 2, capturedBy: 'someone@else.com' }) } }).data.ok, true);
-const rowG = tabs['Capture Runs'].find((r) => r[0] === 'G1');
-assert.deepStrictEqual([rowG[1], rowG[2], rowG[3], rowG[6], rowG[7]], ['HP659511', 'LMS4', 'timelapse', ME, 'Driver'], "the bus decided the reg; the app's reg and capturedBy are ignored");
+const crun = (email, o) => call('gameCaptureRun_', { email, params: Object.assign({ bus: BUS, runId: 'G1', runKind: 'timelapse', startedAt: '1764144000000', endedAt: '', frames: '2', gaps: '0', stops: '1', status: 'running', trial: '' }, o) }).data;
+assert.strictEqual(crun(ME, { reg: 'HP000000', capturedBy: 'someone@else.com' }).ok, true);   // flat string params; extras are ignored
+const rowG = tabs['Capture Runs'].find((r) => r[0] === 'HP659511-G1');
+assert.deepStrictEqual([rowG[0], rowG[1], rowG[2], rowG[3], rowG[6], rowG[7]], ['HP659511-G1', 'HP659511', 'LMS4', 'timelapse', ME, 'Driver'], "the run id is <REG>-<game id> (the Mac's push needs that); the bus decided the reg; the app's reg and capturedBy are ignored");
 const f1 = partOf(t1, {}), f2 = partOf(t1, { seq: 2 }), s1 = partOf(t1, { kind: 'stop', seq: 3 });
 assert.deepStrictEqual([f1.success, f2.success, s1.success], [true, true, true]);
-const dirG = runDirOf('G1');
+const dirG = runDirOf('HP659511-G1');
 assert.deepStrictEqual(dirG.files.map((f) => f.name).sort(), ['frame-00001.jpg', 'frame-00002.jpg', 'stop-00003.jpg'], 'the old Capture/<REG>/<run>/ layout, so the Mac and PhotoRun see it');
 assert.strictEqual(partOf(t1, {}).fileId, f1.fileId, 'idempotent on (runId, kind, seq)');
 assert.strictEqual(dirG.files.length, 3);
+assert.strictEqual(crun(ME, { endedAt: '2026-11-26T09:00:00Z', status: 'ended', frames: '2' }).ok, true);
+assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'HP659511-G1')[10], '[{"seq":3}]', "the stop list is read from the run's stop photos, one {seq} each, for the Mac");
+assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'HP659511-G1')[12], 'ended');
 assert.match(dirG.files[0].desc, /driver@test\.invalid/, 'the frame is credited to the sender');
 // the same checks as the old path: image only, 2 MB
 assert.match(partOf(t1, { seq: 9, base64: PDF }).error, /photo/);
@@ -126,18 +130,18 @@ assert.strictEqual(tk(STAFF, { runId: 'G1', bus: BUS2 }).data.code, 'not_in_flee
 // staff: a trial timelapse is allowed, and only a timelapse
 const tt = tk(STAFF, { runId: 'G2', trial: 'yes' });
 assert.strictEqual(tt.success, true);
-assert.strictEqual(call('gameCaptureRun_', { email: STAFF, params: { bus: BUS, run: JSON.stringify({ runId: 'G2', kind: 'timelapse', trial: true, startedAt: 1764144000000 }) } }).data.ok, true);
-assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'G2')[7], 'Coordinator');
+assert.strictEqual(crun(STAFF, { runId: 'G2', trial: 'yes' }).ok, true);
+assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'HP659511-G2')[7], 'Coordinator');
 assert.strictEqual(tk(STAFF, { runId: 'G3', runKind: 'inspection', trial: 'yes' }).data.code, 'trial_denied');
 // the run's bus and kind can't change; a discarded run takes nothing more
 assert.strictEqual(tk(ME, { runId: 'G1', runKind: 'inspection' }).data.code, 'kind_mismatch');
-tabs['Capture Runs'].find((r) => r[0] === 'G1')[12] = 'closed'; Object.keys(cache).forEach((k) => { if (/^caprow_/.test(k)) delete cache[k]; });
+tabs['Capture Runs'].find((r) => r[0] === 'HP659511-G1')[12] = 'closed'; Object.keys(cache).forEach((k) => { if (/^caprow_/.test(k)) delete cache[k]; });
 assert.strictEqual(tk(ME, {}).data.code, 'discarded');
 assert.match(partOf(t1, { seq: 11 }).error, /discarded/);
-// the manifest: 8 KB, JSON object, a known kind
-const cr = (run_) => call('gameCaptureRun_', { email: ME, params: { bus: BUS, run: run_ } }).data;
-assert.strictEqual(cr('not json').code, 'bad_input');
-assert.strictEqual(cr(JSON.stringify({ runId: 'G4', kind: 'count' })).code, 'bad_input');
-assert.strictEqual(cr('{"runId":"G4","kind":"timelapse","pad":"' + 'x'.repeat(9000) + '"}').code, 'bad_input');
+// the manifest: flat params, known words only
+assert.strictEqual(crun(ME, { runId: 'G4', runKind: 'count' }).code, 'bad_input');
+assert.strictEqual(crun(ME, { runId: 'G4', status: 'closed' }).code, 'bad_input', "'closed' is the server's alone");
+assert.strictEqual(crun(ME, { runId: 'x'.repeat(51) }).code, 'bad_input', 'the reg prefix keeps the id within 64');
+assert.match(crun(ME, { runId: 'G1' }).code, /discarded/, 'a discarded run takes no manifest');
 assert.strictEqual(run('CAP_GAME_AUTH_') === null, true, 'no game caller is left set after a request');
 console.log('capture game actions: all passed');

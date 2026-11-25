@@ -482,7 +482,6 @@ function captureDiscard_(body) {
 // Script property CAPTURE_DRIVE_URL (lms-game's capture-drive function; never in the repo). Logs: codes only.
 var CAP_GAME_KINDS_ = ['timelapse', 'inspection', 'profile']; // a count run takes no camera, so it never comes from the game
 var CAP_GAME_TICKET_MS_ = 6 * 60 * 60 * 1000;                  // = the script cache's longest entry
-var CAP_GAME_RUN_MAX_ = 8192;
 var CAP_UUID_ = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** lms-game's capture-drive: POST {bus, email} -> {ok, reg, campus, staff}. null = unreachable / not set up; {ok:false} = not theirs */
@@ -512,24 +511,27 @@ function capGameAuth_(b, bus) {
     ? { roles: ['Coordinator'], role: 'Coordinator', campusId: v.campusId, email: email, name: email }
     : { roles: ['Driver'], role: 'Driver', campusId: v.campusId, email: email, name: email } };
 }
+/** the Mac's push (coordinator-transport-gps.gs) refuses a run whose id doesn't start with its bus's reg + '-', and a driver never sees the reg:
+ *  the Roster prefixes the game's own run id (at most 50 characters) with it, so the folder, the manifest and the shelf all use <REG>-<id> */
+function capGameRunKey_(reg, runId) { return reg + '-' + runId; }
 function capGameRun_(auth, fn) { CAP_GAME_AUTH_ = auth; try { return fn(); } finally { CAP_GAME_AUTH_ = null; } }
 
 function gameCaptureTicket_(b) {
   const p = b.params && typeof b.params === 'object' ? b.params : {};
   const runId = String(p.runId || ''), runKind = String(p.runKind || '');
   if (!afvKeyOk_(b.key)) return { success: false, error: 'not_authorized' };
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId) || CAP_GAME_KINDS_.indexOf(runKind) === -1) return msgCapOut_('bad_input');
-  const a = capGameAuth_(b, p.bus);
+  if (!/^[A-Za-z0-9_-]{1,50}$/.test(runId) || CAP_GAME_KINDS_.indexOf(runKind) === -1) return msgCapOut_('bad_input');
+  const a = capGameAuth_(b, p.bus), key = a.error ? '' : capGameRunKey_(a.v.reg, runId);
   if (a.error) return msgCapOut_(a.error);
   const trial = p.trial === 'yes';
   if (trial && (!a.staff || runKind !== 'timelapse')) return msgCapOut_('trial_denied');   // only staff, only a route timelapse (captureRun_'s rule)
-  const row = capRunMeta_(runId);
+  const row = capRunMeta_(key);
   if (row && row.reg !== a.v.reg) return msgCapOut_('other_bus');
   if (row && row.kind !== runKind) return msgCapOut_('kind_mismatch');
   if (row && row.status === 'closed') return msgCapOut_('discarded');
   const exp = Date.now() + CAP_GAME_TICKET_MS_, nonce = Utilities.getUuid();
   CacheService.getScriptCache().put('capg_' + nonce, JSON.stringify({ e: a.caller.email, s: a.staff ? 1 : 0, b: p.bus }), 21600);   // the email stays here, never in the URL
-  const body = afvB64_(JSON.stringify({ t: 'cap', g: a.v.reg, u: runId, k: runKind, tr: trial ? 1 : 0, x: exp, r: nonce }));
+  const body = afvB64_(JSON.stringify({ t: 'cap', g: a.v.reg, u: key, k: runKind, tr: trial ? 1 : 0, x: exp, r: nonce }));
   const url = PropertiesService.getScriptProperties().getProperty('ROSTER_WEBAPP_URL') || ScriptApp.getService().getUrl();
   return { success: true, data: { url: url + '?ticket=' + body + '.' + afvSign_(body) + '&action=gameCapturePart', expiresAt: new Date(exp).toISOString() } };
 }
@@ -552,17 +554,27 @@ function gameCapturePart_(b) {
 }
 
 function gameCaptureRun_(b) {
+  // flat string params (the proxy caps each at 500 characters): bus, runId, runKind, startedAt, endedAt, frames, gaps, stops (counts; the stop
+  // list is read from the run's stop photos in Drive), status running|ended|error, trial 'yes'|''
   const p = b.params && typeof b.params === 'object' ? b.params : {};
   if (!afvKeyOk_(b.key)) return { success: false, error: 'not_authorized' };
-  const raw = String(p.run || '');
-  if (!raw || raw.length > CAP_GAME_RUN_MAX_) return msgCapOut_('bad_input');
-  let run = null;
-  try { run = JSON.parse(raw); } catch (e) { run = null; }
-  if (!run || typeof run !== 'object' || Array.isArray(run) || CAP_GAME_KINDS_.indexOf(run.kind) === -1) return msgCapOut_('bad_input');
+  const runId = String(p.runId || ''), runKind = String(p.runKind || ''), status = String(p.status || 'running');
+  if (!/^[A-Za-z0-9_-]{1,50}$/.test(runId) || CAP_GAME_KINDS_.indexOf(runKind) === -1 || ['running', 'ended', 'error'].indexOf(status) === -1) return msgCapOut_('bad_input');
   const a = capGameAuth_(b, p.bus);
   if (a.error) return msgCapOut_(a.error);
-  run.reg = a.v.reg;   // never the app's: the bus decides
-  if (a.caller.role === 'Driver') run.capturedBy = '';
-  const out = capGameRun_(a, function () { return captureRun_({ run: run }); });
+  const when = function (x) { x = String(x || ''); return /^\d{10,14}$/.test(x) ? Number(x) : /^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:?\d{2})?$/.test(x) ? x : ''; };
+  const count = function (x) { const n = Number(x); return n >= 0 && n <= 100000 && n === Math.floor(n) ? n : 0; };
+  const run = { runId: capGameRunKey_(a.v.reg, runId), reg: a.v.reg, kind: runKind, startedAt: when(p.startedAt), endedAt: when(p.endedAt), frames: count(p.frames),
+    status: status, trial: p.trial === 'yes', capturedBy: '' };
+  const out = capGameRun_(a, function () {
+    // the Mac places each stop's chapter in the route video from this list: one {seq} per stop photo the run has, read from the folder
+    const dir = runKind === 'timelapse' ? capRunFolder_(a.v.reg, run.runId) : null;
+    if (runKind === 'timelapse' && !dir) return { success: false, error: 'discarded' };
+    const stops = [];
+    if (dir) { const it = dir.getFiles(); while (it.hasNext()) { const m = /^stop-(\d{5})\.jpg$/.exec(it.next().getName()); if (m) stops.push({ seq: Number(m[1]) }); } }
+    run.stops = stops.sort(function (x, y) { return x.seq - y.seq; });
+    run.gaps = [];   // a count isn't a list of gaps: the game keeps its own count
+    return captureRun_({ run: run });
+  });
   return out.success ? { success: true, data: { ok: true } } : msgCapOut_(String(out.error || 'refused').slice(0, 40));
 }
