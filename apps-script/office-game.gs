@@ -117,6 +117,7 @@ function officeGame_(b) {
   }
   officeMemoStart_();
   try {
+    if (spec.ticket && b.role === 'accounts_verifier' && data.category !== 'document') return officeGameRefuse_('BAD_CATEGORY'); // the verifier uploads only the Tally documents
     if (spec.ticket) return { success: true, data: officeGameTicket_(caller, data) };
     const r = officeDispatch_(caller, spec.act, data);
     if (r.success === false) return officeGameRefuse_(officeGameCode_(r.code || r.error));

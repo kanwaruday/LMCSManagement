@@ -440,7 +440,9 @@ function officeTallyAnswers_() {
 function officeTallyGet_() { return { answers: officeTallyAnswers_(), keys: OFFICE_TALLY_KEYS }; }
 function officeTallySet_(ctx, data) {
   const key = String(data.key || ''), value = String(data.value == null ? '' : data.value).trim();
-  const ledger = /^ledger:(LMS[1-6]|HES):(petty|fee|other|bank)$/.test(key), head = /^head:([a-z0-9_]{1,40})$/.exec(key);
+  const lm = /^ledger:([A-Z0-9]{2,8}):(petty|fee|other|bank)$/.exec(key), head = /^head:([a-z0-9_]{1,40})$/.exec(key);
+  const ledger = !!lm && OFFICE_CAMPUSES.indexOf(lm[1]) !== -1; // any of this office's campuses (config), not a fixed list
+  if (lm && !ledger) throw new Error('BAD_FIELD');
   const kind = ledger || head ? 'ledger' : Object.prototype.hasOwnProperty.call(OFFICE_TALLY_KEYS, key) ? OFFICE_TALLY_KEYS[key] : null;
   if (!kind || (head && !officeCategory_(head[1]))) throw new Error('BAD_FIELD');
   if (Array.isArray(kind) ? kind.indexOf(value) === -1 : !value || value.length > (kind === 'ledger' ? 120 : 480)) throw officeCoded_('BAD_INPUT');

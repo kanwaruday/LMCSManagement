@@ -272,5 +272,6 @@ module.exports = function run(t) {
     assert.strictEqual(h.game('gameTallyGet', {}, { campus: 'LMS2', email: null }).data.code, 'FORBIDDEN_ROLE', 'a Fee Clerk reads nothing');
     const tk = h.game('gameFileTicket', { id: 'tally-ledgers-01', category: 'document', mime: 'application/pdf', name: 'ledgers.pdf' }, V).data;
     assert.match(tk.url, /ticket=.+&action=gameUploadPart$/, 'the verifier gets an upload ticket for a Tally document');
+    assert.strictEqual(h.game('gameFileTicket', { id: 'tally-bill-01', category: 'bill', mime: 'image/jpeg' }, V).data.code, 'BAD_CATEGORY', 'only document for the verifier');
   });
 };
