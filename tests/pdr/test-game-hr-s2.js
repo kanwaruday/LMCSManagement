@@ -85,9 +85,9 @@ assert.strictEqual(code(as('principal', 'principal', { op: 'interview', id: 'T-0
 
 // add an applicant: at one of the proxy's schools, only the add form's fields, a duplicate says so
 const n1 = calls.length;
-r = data(as('fee_clerk', 'clerk', { op: 'add', campus: 'lms1', name: 'New Person', phone: '9000000099', subjects: 'Maths', row: '5', cv: 'x' }));
+r = data(as('fee_clerk', 'clerk', { op: 'add', campus: 'lms1', name: 'New Person', phone: '9000000099', subjects: 'Maths', row: '5', cv: 'https://example.invalid/cv' }));
 assert.deepStrictEqual(r, { ok: true, id: 'T-0042' });
-assert.deepStrictEqual(calls.slice(n1), [['hiringAddApplicant_', 'Clerk One', { campusId: 'LMS1', name: 'New Person', phone: '9000000099', subjects: 'Maths' }]]);
+assert.deepStrictEqual(calls.slice(n1), [['hiringAddApplicant_', 'Clerk One', { campusId: 'LMS1', name: 'New Person', phone: '9000000099', subjects: 'Maths', cv: 'https://example.invalid/cv' }]]);
 assert.strictEqual(code(as('fee_clerk', 'clerk', { op: 'add', campus: 'LMS2', name: 'X' })), 'not_found', 'not one of the proxy’s schools');
 assert.deepStrictEqual(data(as('principal', 'principal', { op: 'add', campus: 'LMS1', name: 'Dup Name' })), { ok: false, code: 'duplicate', id: '' });
 // the Fee Clerk: propose, record a visit already held, cancel

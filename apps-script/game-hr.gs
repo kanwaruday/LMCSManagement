@@ -42,7 +42,7 @@ const GAME_HR_FORM_KEYS = {
   demo: ['demoDate', 'class', 'subject', 'scores', 'strengths', 'improve', 'studentFeedback', 'remarks', 'nextDemoAt'],
 };
 const GAME_HR_JSON_KEYS = ['capability', 'experience', 'scores'];
-const GAME_HR_ADD_KEYS = ['name', 'phone', 'age', 'gender', 'qualification', 'bed', 'subjects', 'source', 'notes'];
+const GAME_HR_ADD_KEYS = ['name', 'phone', 'age', 'gender', 'qualification', 'bed', 'subjects', 'source', 'notes', 'cv']; // cv: a link or text (hiring.gs keeps 500 characters)
 const GAME_HR_REVEAL_FIELDS = ['phone', 'offer'];
 
 const gameHrTags_ = function (branches) { return (String(branches || '').match(/LMS-\d/g) || []).map(function (t) { return 'LMS' + t.slice(4); }); };
