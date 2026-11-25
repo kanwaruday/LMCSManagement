@@ -446,11 +446,12 @@ function tchReadTracker_() { // the Chapter Tracker's AY tab and Overrides tab; 
 }
 
 /** the Roster read key (ROSTER_GAME_KEY, this project's Script properties): the Roster's data reads are no longer public (26 Nov). Server to server only. */
+function tchFeedKey_() { return '?action=feed&key=' + encodeURIComponent(PropertiesService.getScriptProperties().getProperty('CHAPTER_GAME_KEY') || ''); }
 function tchRosterKey_() { return '&key=' + encodeURIComponent(PropertiesService.getScriptProperties().getProperty('ROSTER_GAME_KEY') || ''); }
 
 // -> {feed, roster, timetable} or null if the feed or the roster could not be read (the timetable is optional: without it periodsByDay is null)
 function tchFetchInputs_() {
-  const urls = [TCH_FEED_URL, TCH_ROSTER_URL + '?action=employees' + tchRosterKey_(), TCH_ROSTER_URL + '?action=roster' + tchRosterKey_(), TCH_TIMETABLE_URL];
+  const urls = [TCH_FEED_URL + tchFeedKey_(), TCH_ROSTER_URL + '?action=employees' + tchRosterKey_(), TCH_ROSTER_URL + '?action=roster' + tchRosterKey_(), TCH_TIMETABLE_URL];
   const res = UrlFetchApp.fetchAll(urls.map(function (u) { return { url: u, muteHttpExceptions: true }; }));
   const parse = function (r) {
     if (!r || r.getResponseCode() !== 200) return null;
@@ -755,7 +756,7 @@ function tchMatchPull_(body) {
     (want[k] = want[k] || []).push(w);
     all.push(w);
   });
-  const res = UrlFetchApp.fetchAll([{ url: TCH_FEED_URL, muteHttpExceptions: true }, { url: TCH_ROSTER_URL + '?action=employees' + tchRosterKey_(), muteHttpExceptions: true }]);
+  const res = UrlFetchApp.fetchAll([{ url: TCH_FEED_URL + tchFeedKey_(), muteHttpExceptions: true }, { url: TCH_ROSTER_URL + '?action=employees' + tchRosterKey_(), muteHttpExceptions: true }]);
   const parse = function (r) { try { return r && r.getResponseCode() === 200 ? JSON.parse(r.getContentText()) : null; } catch (err) { return null; } };
   const feed = parse(res[0]), emp = parse(res[1]);
   if (!feed || !Array.isArray(feed.cwRecords) || !feed.cwRecords.length || !emp || !emp.success || !Array.isArray(emp.employees)) return { success: false, error: 'sources unreadable' };

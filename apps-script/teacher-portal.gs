@@ -259,7 +259,7 @@ function tpCwHwLoggedDaysByCode_(campusId, workingDaysSet, roster) {
   const byCode = {};
   let data;
   try {
-    const res = UrlFetchApp.fetch(TP_CWHW_PROXY_URL, { muteHttpExceptions: true });
+    const res = UrlFetchApp.fetch(TP_CWHW_PROXY_URL + '?action=feed&key=' + encodeURIComponent(PropertiesService.getScriptProperties().getProperty('CHAPTER_GAME_KEY') || ''), { muteHttpExceptions: true });
     if (res.getResponseCode() !== 200) return byCode;
     data = JSON.parse(res.getContentText());
   } catch (err) { return byCode; }

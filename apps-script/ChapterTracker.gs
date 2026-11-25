@@ -715,6 +715,7 @@ function chapterReadOverrides_(ay) {
  *  redirect, so doPost never actually fires from a cross-origin page. */
 function appendChapterOverride(e) {
   try {
+    if (!chapterWriteOk_(e)) return chapterRefuse_(); // 26 Nov SECURITY: a write needs CHAPTER_GAME_KEY or a signed-in Coordinator/Owner
     const data = JSON.parse(e.parameter.overrideData);
     if (!data.school || !data.cls || !data.subject || !data.chapterName || !data.actualDate) {
       throw new Error('Missing required field (school/cls/subject/chapterName/actualDate)');

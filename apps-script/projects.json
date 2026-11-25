@@ -94,8 +94,9 @@
   "chapter": {
     "name": "CWHWTracker (ChapterTracker)",
     "scriptId": "1t4uhZItgKlzdaGkx6G0ZtKKP-1No57GP20lhsbcqViWppSd3FT0rqWhk",
-    "deploymentId": null,
+    "deploymentId": "AKfycbyYk0uDnp-PHdUDdOh5-KfD2xK1ahYCQ_vt7SJigQMhSA3DSs5t5v_q4tnseoZKw3_L",
     "files": [
+      "chapter-main",
       "ChapterTracker"
     ]
   },

@@ -360,10 +360,10 @@ function loadCwHwData_() {
 }
 async function fetchCwHwWithRetry_() {
   try {
-    return await fetch(CWHW_PROXY_URL, { cache: 'no-cache' }).then(function (r) { return r.json(); });
+    return await fetch(CWHW_PROXY_URL + '?action=feed&idToken=' + encodeURIComponent(SESSION.idToken), { cache: 'no-cache' }).then(function (r) { return r.json(); });
   } catch (err) {
     await new Promise(function (resolve) { setTimeout(resolve, 1500); });
-    return await fetch(CWHW_PROXY_URL, { cache: 'no-cache' }).then(function (r) { return r.json(); });
+    return await fetch(CWHW_PROXY_URL + '?action=feed&idToken=' + encodeURIComponent(SESSION.idToken), { cache: 'no-cache' }).then(function (r) { return r.json(); });
   }
 }
 
