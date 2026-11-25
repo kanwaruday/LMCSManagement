@@ -223,6 +223,9 @@ function doPost(e) {
     if (body.action === 'driverfilllist') return staffJsonOut_(driverFillList_(body)); // driver-fill-confirm.gs: the Fee Clerk's check
     if (body.action === 'driverfilldecide') return staffJsonOut_(driverFillDecide_(body));
     if (body.action === 'capturefile') return staffJsonOut_(captureFile_(body)); // transport-capture.gs
+    if (body.action === 'gameCaptureTicket') return staffJsonOut_(gameCaptureTicket_(body)); // transport-capture.gs: lms-game's route capture (ROSTER_GAME_KEY)
+    if (body.action === 'gameCapturePart') return staffJsonOut_(gameCapturePart_(body)); // the phone's frame or stop against the run's ticket
+    if (body.action === 'gameCaptureRun') return staffJsonOut_(gameCaptureRun_(body)); // the run manifest
     if (body.action === 'capturefiles') return staffJsonOut_(captureFiles_(body)); // a batch of frames, one round trip
     if (body.action === 'capturerun') return staffJsonOut_(captureRun_(body));
     if (body.action === 'captureprocessed') return staffJsonOut_(captureProcessed_(body)); // the Coordinator backend, shared secret

@@ -467,6 +467,25 @@ function coordCaptureDecide_(caller, body) {
   return { success: true };
 }
 
+/** lms-game T3 (25 Nov): the shelf for the native /fleet/review screen, through lms-game's classic proxy (GAME_READ_KEY in the body, the
+ *  caller's JWT-verified email): the same rows, scope and rules as transportcapturereview / transportcapturedecide, which it calls.
+ *  gameTransportCaptureReview -> {success, data:{runs:[{runId, reg, campus, kind, pushedAt, capturedBy, videoFileId, stops}]}} (the shelf has
+ *  pushedAt, when the Mac put it there; no startedAt). gameTransportCaptureDecide {runId, decision: publish|discard} -> {success, data:{ok:true}}. */
+function coordGameCapture_(body) {
+  if (!coordGameKeyOk_(body)) return { success: false, error: 'not_authorized' };
+  let caller = null;
+  try { caller = coordCallerForEmail_(body.email); } catch (err) { caller = null; }
+  if (!caller) return { success: true, data: { ok: false, code: 'not_authorized' } };
+  const action = String(body.action || '');
+  if (action === 'gameTransportCaptureReview') {
+    const r = coordCaptureReview_(caller);
+    return r.success ? { success: true, data: { runs: r.runs } } : { success: true, data: { ok: false, code: 'not_authorized' } };
+  }
+  const p = body.params && typeof body.params === 'object' ? body.params : {};
+  const r = coordCaptureDecide_(caller, { runId: p.runId, decision: p.decision });
+  return r.success ? { success: true, data: { ok: true } } : { success: true, data: { ok: false, code: String(r.error || 'refused').slice(0, 60) } };
+}
+
 /** Asks the Roster to bin one run's Drive folder and close the run (capturediscard, transport-capture.gs): {} or {error}. */
 function gpsCaptureDiscard_(row) {
   const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();

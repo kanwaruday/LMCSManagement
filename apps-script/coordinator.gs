@@ -179,6 +179,7 @@ function doPost(e) {
     if (String(body.action || '').toLowerCase() === 'driverbus') return coordJson_(coordDriverBus_(body)); // a linked driver phone, deviceToken (coordinator-driverbus.gs)
     if (String(body.action || '').toLowerCase() === 'gameworld') return coordJson_(coordGameWorld_(body)); // lms-game's transport Edge Function, key in the body (coordinator-world.gs)
     if (String(body.action || '').toLowerCase() === 'gamecrew') return coordJson_(coordGameCrew_(body)); // lms-game's role_grants import: driver employee codes per bus
+    if (/^gameTransportCapture(Review|Decide)$/.test(String(body.action || ''))) return coordJson_(coordGameCapture_(body)); // lms-game T3: the capture shelf, key-gated (coordinator-transport-gps.gs)
     if (/^game(ApprovalAlloca|Recommend$|DecisionPreview$|TrackRecord$)/.test(String(body.action || ''))) return coordJson_(coordGameApprovals_(body)); // lms-game W4 Approvals room (coordinator-approvals.gs): key-gated, the person from the game's verified JWT
     if (String(body.action || '').toLowerCase() === 'gameissues') return coordJson_(coordGameIssues_(body)); // lms-game's classic proxy, Wave 1 (lane-e): a Principal's issues (coordinator-principal.gs)
     if (String(body.action || '').toLowerCase() === 'gameissueresolve') return coordJson_(coordGameIssueResolve_(body)); // lms-game's classic proxy, Wave 1 (lane-e): close one with what was done

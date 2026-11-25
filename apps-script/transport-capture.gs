@@ -84,7 +84,12 @@ function capFolder_(reg, runId) {
 }
 
 // A linked driver phone (driver-link.gs) sends body.deviceToken instead of an idToken: route timelapses of its own bus only.
+// lms-game (T3, 25 Nov): the game's capture actions resolve who is sending and which bus ON THE SERVER (capGameAuth_), set this for the
+// length of ONE request, and capAuth_ returns it, so capfile/caprun rules apply unchanged. A module variable, never a field of the
+// request body, so nothing on the wire can set it.
+var CAP_GAME_AUTH_ = null;
 function capAuth_(body) {
+  if (CAP_GAME_AUTH_) return CAP_GAME_AUTH_;
   if (!body.idToken && body.deviceToken) {
     const link = dlkLink_(body.deviceToken);
     if (!link) return { error: DLK_UNLINKED_ };
@@ -462,4 +467,102 @@ function captureDiscard_(body) {
     lock.releaseLock();
   }
   return { success: true };
+}
+
+// ── lms-game's route capture (T3, 25 Nov; transport-slices builds the screens, this is their Roster half) ─────────────────────────
+// Through lms-game's classic proxy (server to server, the ROSTER_GAME_KEY), like af-video.gs:
+//  gameCaptureTicket {bus, runId, runKind: timelapse|inspection|profile, trial?: 'yes'} -> {url, expiresAt}: ONE ticket per run (6 h), not per
+//    frame. The Roster never takes a registration from the app: lms-game's capture-drive (service role) answers for the game bus and the
+//    caller's email {ok, reg, campus, staff}; ok only for that bus's own driver or in-charge, or the Owner / a Transport coordinator at
+//    its school. A trial run only for staff (staff = true).
+//  gameCapturePart {ticket, kind, seq, lat, lng, takenAt, base64} -> {success, fileId}: ONE frame, stop or photo per call against the run's
+//    ticket (the 2 MB image cap, idempotent on (runId, kind, seq): capFileSave_, unchanged). The Drive layout is the old one, so the Mac's
+//    blur and PhotoRun see game runs as they are.
+//  gameCaptureRun {bus, run: <JSON, 8 KB at most>} -> {success}: the manifest upsert (captureRun_, unchanged); the bus comes from capture-drive.
+// Script property CAPTURE_DRIVE_URL (lms-game's capture-drive function; never in the repo). Logs: codes only.
+var CAP_GAME_KINDS_ = ['timelapse', 'inspection', 'profile']; // a count run takes no camera, so it never comes from the game
+var CAP_GAME_TICKET_MS_ = 6 * 60 * 60 * 1000;                  // = the script cache's longest entry
+var CAP_GAME_RUN_MAX_ = 8192;
+var CAP_UUID_ = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** lms-game's capture-drive: POST {bus, email} -> {ok, reg, campus, staff}. null = unreachable / not set up; {ok:false} = not theirs */
+function capGameBus_(bus, email) {
+  const p = PropertiesService.getScriptProperties(), url = String(p.getProperty('CAPTURE_DRIVE_URL') || ''), key = p.getProperty('ROSTER_GAME_KEY');
+  if (!/^https:\/\//.test(url) || !key || !CAP_UUID_.test(String(bus || '')) || !email) return null;
+  try {
+    const r = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ bus: bus, email: email }),
+      headers: { 'x-roster-key': key }, muteHttpExceptions: true });
+    const j = r.getResponseCode() === 200 ? JSON.parse(r.getContentText()) : null;
+    return j && typeof j === 'object' ? j : null;
+  } catch (e) { return null; }
+}
+/** who is sending and for which bus, from the server's own answer: {error} or the capAuth_ shape {caller, v} + {staff} */
+function capGameAuth_(b, bus) {
+  if (!afvKeyOk_(b.key)) return { error: 'not_authorized' };
+  const email = afvEmail_(b.email);
+  if (!email) return { error: 'who' };
+  const g = capGameBus_(bus, email);
+  if (g === null) return { error: 'not_configured' };
+  if (g.ok !== true) return { error: 'not_authorized' };
+  const reg = tupNormReg_(g.reg), v = reg && tupVehicle_(reg);
+  if (!v) return { error: 'not_in_fleet' };
+  if (g.campus && String(g.campus).trim().toUpperCase() !== String(v.campusId).toUpperCase()) return { error: 'bus_mismatch' };
+  // the shape captureRun_ and capFileCheck_ expect. A crew member sends as role Driver (a run stays that person's); staff as Coordinator
+  return { v: v, staff: g.staff === true, caller: g.staff === true
+    ? { roles: ['Coordinator'], role: 'Coordinator', campusId: v.campusId, email: email, name: email }
+    : { roles: ['Driver'], role: 'Driver', campusId: v.campusId, email: email, name: email } };
+}
+function capGameRun_(auth, fn) { CAP_GAME_AUTH_ = auth; try { return fn(); } finally { CAP_GAME_AUTH_ = null; } }
+
+function gameCaptureTicket_(b) {
+  const p = b.params && typeof b.params === 'object' ? b.params : {};
+  const runId = String(p.runId || ''), runKind = String(p.runKind || '');
+  if (!afvKeyOk_(b.key)) return { success: false, error: 'not_authorized' };
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId) || CAP_GAME_KINDS_.indexOf(runKind) === -1) return msgCapOut_('bad_input');
+  const a = capGameAuth_(b, p.bus);
+  if (a.error) return msgCapOut_(a.error);
+  const trial = p.trial === 'yes';
+  if (trial && (!a.staff || runKind !== 'timelapse')) return msgCapOut_('trial_denied');   // only staff, only a route timelapse (captureRun_'s rule)
+  const row = capRunMeta_(runId);
+  if (row && row.reg !== a.v.reg) return msgCapOut_('other_bus');
+  if (row && row.kind !== runKind) return msgCapOut_('kind_mismatch');
+  if (row && row.status === 'closed') return msgCapOut_('discarded');
+  const exp = Date.now() + CAP_GAME_TICKET_MS_, nonce = Utilities.getUuid();
+  CacheService.getScriptCache().put('capg_' + nonce, JSON.stringify({ e: a.caller.email, s: a.staff ? 1 : 0, b: p.bus }), 21600);   // the email stays here, never in the URL
+  const body = afvB64_(JSON.stringify({ t: 'cap', g: a.v.reg, u: runId, k: runKind, tr: trial ? 1 : 0, x: exp, r: nonce }));
+  const url = PropertiesService.getScriptProperties().getProperty('ROSTER_WEBAPP_URL') || ScriptApp.getService().getUrl();
+  return { success: true, data: { url: url + '?ticket=' + body + '.' + afvSign_(body) + '&action=gameCapturePart', expiresAt: new Date(exp).toISOString() } };
+}
+function msgCapOut_(code) { console.log('capture: ' + code); return { success: true, data: { ok: false, code: code } }; }
+
+function gameCapturePart_(b) {
+  const t = afvTicket_(b.ticket);
+  if (!t || t.t !== 'cap' || t.x < Date.now()) return { success: false, error: 'not_authorized' };
+  const who = JSON.parse(CacheService.getScriptCache().get('capg_' + t.r) || 'null');
+  if (!who) return { success: false, error: 'not_authorized' };
+  const v = tupVehicle_(t.g);
+  if (!v) return { success: false, error: 'not_in_fleet' };
+  const caller = who.s ? { roles: ['Coordinator'], role: 'Coordinator', campusId: v.campusId, email: who.e, name: who.e } : { roles: ['Driver'], role: 'Driver', campusId: v.campusId, email: who.e, name: who.e };
+  return capGameRun_({ caller: caller, v: v }, function () {
+    const ck = capFileCheck_({ reg: t.g, runId: t.u, runKind: t.k });   // the run exists for this bus and kind, and was not discarded
+    if (ck.error) return { success: false, error: ck.error };
+    const r = capFileSave_(ck, { kind: b.kind, seq: b.seq, base64: b.base64, lat: b.lat, lng: b.lng, takenAt: b.takenAt });
+    return r.error ? { success: false, error: r.error } : { success: true, fileId: r.fileId };
+  });
+}
+
+function gameCaptureRun_(b) {
+  const p = b.params && typeof b.params === 'object' ? b.params : {};
+  if (!afvKeyOk_(b.key)) return { success: false, error: 'not_authorized' };
+  const raw = String(p.run || '');
+  if (!raw || raw.length > CAP_GAME_RUN_MAX_) return msgCapOut_('bad_input');
+  let run = null;
+  try { run = JSON.parse(raw); } catch (e) { run = null; }
+  if (!run || typeof run !== 'object' || Array.isArray(run) || CAP_GAME_KINDS_.indexOf(run.kind) === -1) return msgCapOut_('bad_input');
+  const a = capGameAuth_(b, p.bus);
+  if (a.error) return msgCapOut_(a.error);
+  run.reg = a.v.reg;   // never the app's: the bus decides
+  if (a.caller.role === 'Driver') run.capturedBy = '';
+  const out = capGameRun_(a, function () { return captureRun_({ run: run }); });
+  return out.success ? { success: true, data: { ok: true } } : msgCapOut_(String(out.error || 'refused').slice(0, 40));
 }
