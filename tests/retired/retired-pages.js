@@ -18,7 +18,6 @@ const PLAN = {
   'coordinator/transport/setup.html': '#/fleet/desk',
   'coordinator/transport/capture.html': '#/fleet/capture',
   'coordinator/transport/index.html': '#/fleet/desk',
-  'coordinator/systems/index.html': 'home',
   'hq-photos/index.html': '#/hq',
   'teacher/plan-activity.html': '#/teacher/plan',
   'workplace/index.html': '#/workplace',

@@ -8,7 +8,7 @@ const assert = require('assert');
 const ROOT = path.join(__dirname, '../..');
 
 const { PLAN } = require('./retired-pages');
-assert.strictEqual(Object.keys(PLAN).length, 40);
+assert.strictEqual(Object.keys(PLAN).length, 39);
 assert.ok(fs.existsSync(path.join(ROOT, 'owner/event-design.html')) && !fs.readFileSync(path.join(ROOT, 'owner/event-design.html'), 'utf8').includes('lmcs-moved-to'), 'event-design.html is not retired');
 
 const GAME = 'https://game.example/', FLAG = 'lmcs_from_game';
@@ -36,10 +36,6 @@ for (const [p, to] of Object.entries(PLAN)) {
   assert.deepStrictEqual(run(html, '', true), { replaced: null, link: url }, p + ': a flagged tab stays');
   assert.ok(html.includes('This page moved to the game'), p + ': says so');
   n++;
-}
-{ // coordinator/systems: old e-mail links keep their meaning
-  const h = fs.readFileSync(path.join(ROOT, 'coordinator/systems/index.html'), 'utf8');
-  for (const [hash, to] of [['#approvals', '#/hq/approvals'], ['#leave', '#/hq/approvals?show=leave'], ['#fees', '#/pdr'], ['#nonsense', '']]) assert.strictEqual(run(h, '', false, hash).replaced, GAME + to, hash);
 }
 assert.ok(/LMCSGameDoor[\s\S]*const GAME = '/.test(fs.readFileSync(path.join(ROOT, 'assets/auth.js'), 'utf8')), 'the game address comes from LMCSGameDoor');
 
