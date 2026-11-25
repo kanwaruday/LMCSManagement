@@ -202,7 +202,12 @@ function hrfSelfSetup_() {
       p.setProperty('HR_DRIVE_LIVE_URL', url);
       console.log('hr-file: setup_url_derived');
     }
-    if (installHrFileTrigger()) console.log('hr-file: setup_trigger_installed');
-    p.setProperty('HRF_SETUP', '1');
+    // two first hits at the same moment must not each add a trigger: one takes the lock; the other skips and tries on its next call
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(5000)) { console.log('hr-file: setup_busy'); return; }
+    try {
+      if (installHrFileTrigger()) console.log('hr-file: setup_trigger_installed');   // re-checks the existing triggers inside the lock
+      p.setProperty('HRF_SETUP', '1');
+    } finally { lock.releaseLock(); }
   } catch (e) { console.error('hr-file: setup_failed'); }
 }

@@ -18,6 +18,7 @@ function setup({ rows = {}, rowCode = 200, papers = [], linkOnCreate = null, per
     console: { log: (m) => logs.push(m), error: (m) => logs.push(m) }, JSON, String, Array, Number, Math, Object, Date,
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => P[k] ?? null, setProperty: (k, v) => { P[k] = v; } }) },
     CacheService: { getScriptCache: () => ({ get: (k) => cache.get(k) ?? null, put: (k, v) => cache.set(k, v), remove: (k) => cache.delete(k) }) },
+    LockService: { held: false, getScriptLock() { const L = this; return { tryLock: () => { if (L.held) return false; L.held = true; return true; }, releaseLock: () => { L.held = false; } }; } },
     Session: { getEffectiveUser: () => ({ getEmail: () => 'owner@test.invalid' }) },
     ScriptApp: { getOAuthToken: () => 'oauth-token', getService: () => ({ getUrl: () => 'https://x' }), triggers: [],
       getProjectTriggers() { return this.triggers; }, deleteTrigger(t) { this.triggers = this.triggers.filter((x) => x !== t); },
@@ -220,6 +221,21 @@ T('self-setup: an existing trigger is left alone (no second one), and a failure 
   b.ctx.ScriptApp.getProjectTriggers = () => { throw new Error('no permission'); };
   b.ctx.hrfSelfSetup_();
   assert.ok(b.logs.includes('hr-file: setup_failed') && prop(b, 'HRF_SETUP') === null);
+});
+T('self-setup: a second hit while the lock is held skips (no trigger, no flag); the next call installs once, and the lock is released', () => {
+  const s = fresh({ PROOF_MIRROR_URL: 'https://abcdefgh.supabase.co/x' });
+  s.ctx.LockService.held = true;   // another first hit is inside the lock
+  s.ctx.hrfSelfSetup_();
+  assert.strictEqual(s.ctx.ScriptApp.triggers.length, 0);
+  assert.strictEqual(prop(s, 'HRF_SETUP'), null);
+  s.ctx.LockService.held = false;
+  s.ctx.hrfSelfSetup_(); s.ctx.hrfSelfSetup_();
+  assert.strictEqual(s.ctx.ScriptApp.triggers.length, 1);
+  assert.strictEqual(s.ctx.LockService.held, false, 'released');
+  const b = fresh({ PROOF_MIRROR_URL: 'https://abcdefgh.supabase.co/x' });
+  b.ctx.ScriptApp.getProjectTriggers = () => { throw new Error('x'); };
+  b.ctx.hrfSelfSetup_();
+  assert.strictEqual(b.ctx.LockService.held, false, 'released even when the install throws');
 });
 
 console.log(results.join('\n'));
