@@ -1,5 +1,6 @@
 // node tests/game/test-event-js.js -- the event card (assets/game/event.js) helpers in a vm, the Kingdom's Game Day lines, and the page hooks.
 const assert = require('assert'), fs = require('fs'), path = require('path'), vm = require('vm');
+const { RETIRED } = require('../retired/retired-pages'); // the pages retired in batch (a): their stubs are checked by tests/retired
 const root = path.join(__dirname, '..', '..'), read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const ctx = { console };
 vm.createContext(ctx);
@@ -31,7 +32,7 @@ assert.ok(/ev\.finished === true/.test(src), "the server's finished decides the 
 assert.ok(!/20000/.test(src) && /LOOK_AGAIN_MS = (\d+)/.test(src) && +src.match(/LOOK_AGAIN_MS = (\d+)/)[1] >= 60000 && /visibilityState/.test(src), 'one look again, a minute on, only in view');
 
 // pages: one script line each (with the roles of that home), and a next-step slot
-[['principal/index.html', 'Principal'], ['coordinator/index.html', 'Coordinator'], ['office/index.html', 'FeeClerk'], ['teacher/index.html', 'Teacher,Staff']].forEach(([p, roles]) => {
+[['principal/index.html', 'Principal'], ['coordinator/index.html', 'Coordinator'], ['office/index.html', 'FeeClerk'], ['teacher/index.html', 'Teacher,Staff']].filter(([p]) => !RETIRED.has(p)).forEach(([p, roles]) => {
   const html = read(p);
   assert.strictEqual((html.match(/assets\/game\/event\.js/g) || []).length, 1, p + ': one event.js line');
   assert.ok(new RegExp('event\\.js\\?v=[0-9a-f]{8}" data-roles="' + roles + '"').test(html), p + ': stamped, data-roles ' + roles);

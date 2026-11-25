@@ -33,6 +33,6 @@ function checksTab(hash, owner) {
   assert.ok(/location\.hash === '#loadout'\) setTimeout\(function \(\) \{ box\.scrollIntoView/.test(read('owner/transport/index.html')), 'owner/transport#loadout scrolls to the safety loadout');
   const drv = read('driver/driver.js');
   assert.ok(/if \(h === 'route' && !S\.sending\) \{ history\.replaceState\(null, '', location\.pathname \+ location\.search\); route\(\); \$\('viewRoute'\)\.click\(\); return; \}/.test(drv), 'driver#route: home with My route open; never during a send');
-  assert.ok(/<section class="block" id="bus-checks">/.test(read('office/buses.html')) && /<section class="block" id="today">/.test(read('office/buses.html')), 'office/buses.html: #bus-checks and #today are the sections\' own ids');
+  // office/buses.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its section-id check went with it
   console.log('door hashes: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

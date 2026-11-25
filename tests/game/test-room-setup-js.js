@@ -28,14 +28,14 @@ assert.deepStrictEqual(J(R.payload([{ id: 'r1', name: 'A', type: 'lab', staff: '
   [{ id: 'r1', name: 'A', type: 'lab', staff: 'x@e.org' }, { name: 'B', type: 'other', staff: '' }], 'only id, name, type, staff go back; no id for a new room');
 
 // the source: text nodes only, the save posts, 44px targets, a live region, a confirm before removing
-const src = read('assets/game/room-setup.js'), css = read('assets/game/room-setup.css'), page = read('principal/rooms.html');
-assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(src + page), 'no parsed HTML');
+const src = read('assets/game/room-setup.js'), css = read('assets/game/room-setup.css');
+// principal/rooms.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its page checks went with it
+assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(src), 'no parsed HTML');
 assert.ok(/action: 'roomssave'/.test(src) && /method: 'POST'/.test(src), 'the save posts');
 assert.ok(/action=roomsget/.test(src), 'the read is a GET');
 assert.ok(/aria-live/.test(src) && /window\.confirm\(/.test(src), 'live region and a confirm before Remove');
 assert.ok(/min-height:44px/.test(css), '44px targets');
-assert.ok(/a-room-unlock/.test(src) && /a-quest-complete/.test(src) && /v2-animations\.css/.test(page), 'v2 animation classes wired');
-assert.ok(/<script src="\.\.\/assets\/game\/room-setup\.js(\?v=[0-9a-f]+)?"><\/script>/.test(page), 'the page loads room-setup.js (stamped or not)');
+assert.ok(/a-room-unlock/.test(src) && /a-quest-complete/.test(src), 'v2 animation classes wired');
 assert.ok(/Add all ' \+ fromErp\.length/.test(src), 'one tap adds every ERP classroom');
 assert.ok(/a-room-tap-pop/.test(src) && /S\.fresh = null; S\.pop = -1/.test(src) && /is-paused/.test(src), 'tap-pop on assign, once-only animations, idle paused when hidden');
 console.log('room-setup.js: all checks passed');

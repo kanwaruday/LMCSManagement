@@ -155,15 +155,13 @@ test('page side: sessionStorage only, GETs carry asCampus, no write is sent whil
   G.setViewAs({ campus: 'LMS3', name: 'LMS 3' });
   pctx.sessionStorage.getItem = () => { throw new Error('blocked'); }; assert.strictEqual(G.viewAs(), null, 'blocked storage: not viewing');
   const read = (p) => fs.readFileSync(__dirname + '/../../' + p, 'utf8');
-  const game = read('assets/game/game.js'), kingdom = read('assets/game/kingdom.js'), page = read('principal/index.html'), ev = read('assets/game/event.js');
+  const game = read('assets/game/game.js'), kingdom = read('assets/game/kingdom.js'), ev = read('assets/game/event.js');
+  // principal/index.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its Home Base, view bar and drop checks went with it
   assert.ok(/if \(viewAs\(\)\) return Promise\.resolve\(VIEW_READ_ONLY\)/.test(game), 'postTo sends nothing while viewing');
   assert.ok(/'action=gametoday&idToken=' \+ encodeURIComponent\(session\.idToken \|\| ''\) \+ viewParam\(\)/.test(game), 'gametoday GET carries asCampus');
   assert.ok(/disabled: !!viewAs\(\)/.test(game), 'decision buttons disabled while viewing');
   assert.ok(/if \(viewing\(\)\) return Promise\.reject/.test(ev) && /LMCSGame\.viewParam\(\)/.test(ev) && /disabled: viewing\(\) \? 'disabled' : null/.test(ev), 'event card: GET carries it, no tick sent, button disabled');
-  assert.ok(/action=gamekingdom&idToken=' \+ encodeURIComponent\(session\.idToken \|\| ''\) \+ LMCSGame\.viewParam\(\)/.test(page), 'Home Base GET carries it');
-  assert.ok(/Viewing ' \+ VIEW\.name \+ ' as the Owner · Game view only/.test(page) && /id="view-leave"/.test(page), 'the thin bar with Leave');
-  assert.ok(/!LMCS\.canViewOwnerPortal\(session\)\) \{ LMCSGame\.setViewAs\(null\)/.test(page), 'a non-Owner session drops it');
-  assert.ok(!/asCampus/.test(page.replace(/LMCSGame\.viewParam\(\)/g, '')) && !/[?&]asCampus=/.test(kingdom), 'never put in a page URL');
+  assert.ok(!/[?&]asCampus=/.test(kingdom), 'never put in a page URL');
   assert.ok(/LMCSGame\.setViewAs\(\{ campus: b\.id, name: b\.name \}\); location\.assign\(S\.root \+ 'principal\/index\.html'\)/.test(kingdom), 'kingdom: stores the choice, opens the principal page');
   assert.ok(/HOLD_MS = 600/.test(kingdom) && /'contextmenu'/.test(kingdom) && /'Enter as Principal'/.test(kingdom) && /api\.hooks\.base = function/.test(kingdom), 'hold, long-press and the keyboard way in');
   assert.strictEqual(posted, 0);

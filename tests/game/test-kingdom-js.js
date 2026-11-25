@@ -95,13 +95,8 @@ assert.ok(/min-height:44px/.test(read('assets/game/kingdom.css')), '44px targets
 assert.ok(/location\.hostname === 'localhost'/.test(src), '_render only on localhost');
 
 // page: same backend as the dock, loaded scripts, linked from the owner home, stamped, guided, exempt from data-source links
-const page = read('owner/kingdom.html'), dock = read('assets/game/buddy-dock.js');
-assert.strictEqual(/const GAME_BACKEND_URL = '([^']*)'/.exec(page)[1], /var BACKEND = '([^']*)'/.exec(dock)[1], 'GAME_BACKEND_URL equals the dock BACKEND');
-for (const f of ['auth.js', 'game/game.js', 'game/kingdom.js']) assert.ok(page.includes('../assets/' + f), 'loads ' + f);
-assert.ok(page.includes('../assets/game/kingdom.css'), 'loads kingdom.css');
-assert.ok(/LMCS\.canViewOwnerPortal/.test(page) && /Your school's view comes soon\./.test(page), 'same gate as the owner home; Principals get the soon line');
-assert.ok(!/innerHTML/.test(page), 'page: no innerHTML');
-assert.ok(/url: 'kingdom\.html'/.test(read('owner/index.html')), 'owner/index.html links to kingdom.html');
+// owner/kingdom.html and owner/index.html are retired (batch (a), 25 Nov; tests/retired checks their stubs): their page checks went with them
+const dock = read('assets/game/buddy-dock.js');
 assert.ok(read('tools/stamp-assets.mjs').includes("'owner/kingdom.html'"), 'page is stamped');
 assert.ok(read('tests/datasrc/test-datasrc.js').includes("'owner/kingdom.html'"), 'page is in the data-source exemptions');
 assert.ok(read('assets/game/guide.js').includes("'owner/kingdom.html'"), 'guide covers the page');

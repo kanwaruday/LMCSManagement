@@ -1,6 +1,7 @@
 // The game bar (assets/game/rail.js): counts from a Today payload, spoken labels, the badge cap; game.js fires the event
 // only for the whole day; base.css carries the kit classes the gallery shows.
 const assert = require('assert'), fs = require('fs'), path = require('path');
+const { RETIRED } = require('../retired/retired-pages'); // the pages retired in batch (a): their stubs are checked by tests/retired
 const root = path.join(__dirname, '..', '..');
 const R = require(path.join(root, 'assets/game/rail.js'));
 assert.deepStrictEqual(R.counts({ missions: [{}, { done: true }, { gone: true }, {}], windows: [{}, { decided: true }], quests: [{ complete: true }, {}] }), { missions: 3, quests: 1 });
@@ -28,7 +29,7 @@ for (const c of ['gb-shell', 'gb-stage', 'gb-panels', 'gb-panel', 'gb-next-slot'
 assert.ok(!/@keyframes|transition\s*:|animation\s*:/.test(css), 'base.css has no motion');
 // the skeleton: Owner home and the Principal page put the bar, stage and panels in the shell; element headings don't outrank component ones.
 // The Owner's Map (owner/kingdom.html) left the shell on 7 Nov: it is one full screen with a floating HUD (tests/game/test-kingdom-map.js).
-for (const p of ['owner/index.html', 'principal/index.html']) {
+for (const p of ['owner/index.html', 'principal/index.html'].filter((p) => !RETIRED.has(p))) {
   const h = fs.readFileSync(path.join(root, p), 'utf8');
   assert.ok(/class="gb-shell"/.test(h) && /class="gb-rail"/.test(h) && /class="gb-stage"/.test(h) && /class="gb-panels"/.test(h), p + ' uses the skeleton');
 }
@@ -42,15 +43,12 @@ for (const k of ['missions', 'quests', 'rallies', 'events', 'buddy', 'done', 'du
 assert.strictEqual(E.get('nope'), '', 'an unknown key has no emoji');
 assert.strictEqual(E.tag('quests'), null, 'tag() needs a document');
 assert.ok(Object.isFrozen(E.map), 'the map is read-only');
-for (const p of ['owner/index.html', 'principal/index.html']) {
+for (const p of ['owner/index.html', 'principal/index.html'].filter((p) => !RETIRED.has(p))) {
   const h = fs.readFileSync(path.join(root, p), 'utf8');
   assert.ok(h.indexOf('game/emoji.js') !== -1 && h.indexOf('game/emoji.js') < h.indexOf('game/rail.js'), p + ' loads emoji.js before rail.js');
 }
 // the Home Base + World (Uday, 28 Oct): the Principal page has the switch, the building and the world; the kit has the classes
-const pp = fs.readFileSync(path.join(root, 'principal/index.html'), 'utf8');
-assert.ok(/class="gb-switch"/.test(pp) && /id="rooms"/.test(pp) && /id="world"[^>]*hidden/.test(pp), 'principal: switch, rooms, and the world hidden by default');
-assert.ok(/action=gamekingdom/.test(pp) && !/method: 'POST'/.test(pp.slice(pp.indexOf('function loadBase'), pp.indexOf('function showView'))), 'principal: the Home Base only reads the Kingdom');
+// principal/index.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its switch/rooms/world checks went with it
 for (const c of ['gb-switch', 'gb-base', 'gb-base-in', 'gb-rooms', 'gb-room', 'gb-room-b']) assert.ok(css.includes('.' + c), 'base.css has .' + c);
-assert.ok(pp.indexOf('game/school-building.js') !== -1 && pp.indexOf('game/emoji.js') < pp.indexOf('game/school-building.js') && pp.indexOf('game/school-models.js') > pp.indexOf('game/school-building.js'), 'principal: emoji map, then the building, then the campus models');
 for (const c of ['sb-box', 'sb-room', 'sb-host', 'sb-said']) assert.ok(css.includes('.' + c), 'base.css has .' + c);
 console.log('test-rail: ok');

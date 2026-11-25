@@ -128,11 +128,7 @@ if (require.main !== module) { module.exports = () => {}; return; }
   // Buddy: the tour beats and the backend URL the homes use
   assert.deepStrictEqual(S.DAYBOOK_TOUR_BEATS.map((b) => b.target), ['#sd-board', '.sd-ring', undefined]);
   assert.strictEqual(S.DAYBOOK_TOUR_BEATS[2].text, 'Inside a school, amber fields come from our records. Check each one against your books, then tap Confirm, or correct it and save.');
-  const { GAME_BACKEND_URL } = await import('../../office/js/config.js');
-  const home = /const GAME_BACKEND_URL = '([^']*)'/.exec(fs.readFileSync(__dirname + '/../../owner/index.html', 'utf8'))[1];
-  assert.strictEqual(GAME_BACKEND_URL, home, 'same game backend as the homes');
-  const page = fs.readFileSync(__dirname + '/../../office/starting-data.html', 'utf8');
-  assert.ok(/assets\/game\/game\.css/.test(page) && /assets\/game\/game\.js/.test(page) && /id="game-root"/.test(page)); ok('Buddy wiring');
+  ok('Buddy tour beats'); // owner/index.html and office/starting-data.html are retired (batch (a), 25 Nov; tests/retired checks their stubs): the backend-URL and page-wiring checks went with them
   // the page's payload reaches the real backend: a FinanceHead of LMS1,LMS2 saves LMS5's cash (no campus sent, no refusal)
   const { boot } = require('./harness');
   const hb = boot({ tokens: { 'fh-token': 'fh@example.org' }, allowlist: [['Email', 'Name', 'Campuses', 'Roles'], ['fh@example.org', 'FH', 'LMS1,LMS2', 'FinanceHead']] });

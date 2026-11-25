@@ -1,66 +1,33 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>LMCS — Your school's rooms</title>
-<meta name="theme-color" content="#CE0000">
-<link rel="preconnect" href="https://script.google.com">
-<link rel="stylesheet" href="../assets/style.css?v=0049023a">
-<link rel="stylesheet" href="../assets/game/game.css?v=37f754ac">
-<link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb">
-<link rel="stylesheet" href="../assets/game/v2-animations.css?v=8f1f10a7">
-<link rel="stylesheet" href="../assets/game/room-setup.css?v=c0fecb8c">
-<style>
-  body { min-height: 100vh; }
-  #auth-root { position: fixed; inset: 0; z-index: 99999; background: #fff; display: flex; align-items: center; justify-content: center; }
-  #auth-root .auth-gate { max-width: 380px; margin: 0 auto; padding: 32px 28px; border: 1px solid #ddd; border-top: 3px solid #CE0000; border-radius: 6px; text-align: center; }
-  #auth-root .auth-gate p { color: #555; font-size: 13px; line-height: 1.6; margin: 0 0 20px; }
-  #auth-root #lmcs-g-signin { display: flex; justify-content: center; }
-  #auth-root .auth-denied { margin-top: 16px; background: #fde8e8; border: 1px solid #CE0000; color: #a70000; border-radius: 8px; padding: 12px 14px; font-size: 12px; line-height: 1.6; text-align: left; }
-</style>
-</head>
-<body class="gb">
-<div id="auth-root"><div id="gate-slot"></div></div>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<meta name="lmcs-moved-to" content="home" />
+<title>This page moved to the game</title>
+<script>window.LMCS_NO_DOCK = true;</script>
 <script src="../assets/auth.js?v=ebda6786"></script>
-<script src="../assets/game/room-setup.js?v=2bf208e9"></script>
-
-<header class="gb-head"><div><div><h1>🏫 Your school's rooms</h1><p id="rs-sub">Name every room, then put your staff in them</p></div><a id="rs-back" href="index.html"><span aria-hidden="true">&lsaquo;</span> Back</a></div></header>
-<main class="gb-page" id="rs-root" style="display:none"></main>
-
+</head>
+<body>
+<main style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem">
+<p>This page moved to the game.</p>
+<p><a id="lmcs-moved" href="../index.html">Open it in the game</a></p>
+</main>
 <script>
+// A retired old-portal page (batch (a), 25 Nov): a bookmark or an old link goes on to its screen in the game. A tab a game door
+// opened (?from=game, ?only=, or the tab's flag from LMCSGameDoor) stays here with the link, so nobody bounces between the two.
 (function () {
-  var GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as office/js/config.js
-  var root = document.getElementById('rs-root'), back = document.getElementById('rs-back');
-  var campus = (new URLSearchParams(location.search).get('campus') || '').toUpperCase();
-  if (!/^LMS[1-6]$/.test(campus)) campus = '';
-  // came from the Owner's Kingdom: the way back is the Kingdom (same site only)
-  try { var r = new URL(document.referrer); if (r.origin === location.origin && /\/owner\/kingdom\.html$/.test(r.pathname)) back.href = '../owner/kingdom.html'; } catch (e) { /* no referrer */ }
-
-  function showApp(session) {
-    if (!LMCS.canViewPrincipalPortal(session)) { LMCS.showNotForRole('#auth-root', session, '../'); return; } // Fee Clerks and below
-    document.getElementById('auth-root').style.display = 'none';
-    root.style.display = '';
-    var wide = /Owner|Coordinator/.test(String(session.role || ''));
-    if (wide && !campus) return pickSchool();
-    LMCSRooms.mount(root, { session: session, backendUrl: GAME_BACKEND_URL, campus: campus, back: back.href,
-      onLoad: function (res) { document.getElementById('rs-sub').textContent = res.campusName + ' · name every room, then put your staff in them'; } });
-  }
-  // the Owner or a Coordinator: choose the school first (a Principal always gets their own)
-  function pickSchool() {
-    var h = document.createElement('h2'); h.className = 'gb-h2'; h.textContent = 'Which school?';
-    var grid = document.createElement('div'); grid.className = 'rs-schools';
-    ['LMS1', 'LMS2', 'LMS3', 'LMS4', 'LMS5', 'LMS6'].forEach(function (c) {
-      var a = document.createElement('a'); a.className = 'gb-btn'; a.href = '?campus=' + c;
-      a.textContent = (window.LMCS && LMCS.CAMPUS_NAMES && LMCS.CAMPUS_NAMES[c]) || c.replace(/^LMS(\d)$/, 'LMS $1');
-      grid.appendChild(a);
-    });
-    root.appendChild(h); root.appendChild(grid);
-  }
-  // Same gate as the other principal pages: a cached session shows the page at once, else the sign-in gate.
-  var cached = LMCS.getSession();
-  if (cached) showApp(cached);
-  else LMCS.requireSession('#gate-slot').then(showApp);
+  var D = window.LMCSGameDoor, to = document.querySelector('meta[name="lmcs-moved-to"]').getAttribute('content');
+  if (!D) return;
+  var url = D.GAME + (to === 'home' ? '' : to), stay = true;
+  try {
+    var q = new URLSearchParams(location.search);
+    if (q.get('from') === 'game' || q.has('only')) sessionStorage.setItem(D.FLAG, '1');
+    stay = sessionStorage.getItem(D.FLAG) === '1';
+  } catch (e) { stay = true; }
+  document.getElementById('lmcs-moved').href = url;
+  if (!stay) location.replace(url);
 })();
 </script>
 </body>

@@ -1,182 +1,34 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LMCS Portal — Map</title>
-  <link rel="preconnect" href="https://script.google.com">
-  <link rel="preconnect" href="https://accounts.google.com">
-  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
-  <link rel="stylesheet" href="../assets/game/game.css?v=37f754ac" />
-  <link rel="stylesheet" href="../assets/game/kingdom.css?v=66458bfc" />
-  <link rel="stylesheet" href="../assets/game/scout-report.css?v=9301c367" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
-  <link rel="stylesheet" href="../assets/game/v2-animations.css?v=8f1f10a7" />
-  <style>
-    /* The Map is the whole screen: the real map is the ground, everything else floats on it (HUD). kingdom.css .kgm is fixed, inset 0. */
-    html, body.fm-page { height:100%; overflow:hidden; }
-    .fm-page #auth-root { position:relative; z-index:2; }
-    .fm[hidden] { display:none; }
-    .fm .kgm { z-index:0; }
-    .fm .kgm-note:empty { display:none; }
-    .fm-hud { position:fixed; z-index:500; } /* over the map, under the sheets (dialogs are in the top layer) */
-    .fm-top { top:calc(10px + env(safe-area-inset-top)); left:calc(10px + env(safe-area-inset-left)); right:calc(76px + env(safe-area-inset-right)); pointer-events:none; }
-    .fm-top .gb { background:none; min-height:0; }
-    .fm-top .gb-head { display:inline-block; pointer-events:auto; border-radius:14px; box-shadow:0 4px 14px rgba(0,0,0,.25); max-width:100%; }
-    .fm-top .gb-head > div { padding:8px 12px; gap:10px; }
-    .fm-top h1 { font-size:18px; margin:0; }
-    .fm-top #header-status { display:none; }
-    .fm-next { top:calc(82px + env(safe-area-inset-top)); left:calc(10px + env(safe-area-inset-left)); width:340px; max-height:calc(100vh - 170px); overflow:auto; border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,.28); }
-    .fm-next.kg, .fm-msgs.kg { padding:0; min-height:0; }
-    .fm-next:empty { display:none; }
-    .fm-next .kg-next { margin:0; }
-    .fm-msgs { top:calc(82px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%); width:min(420px, calc(100vw - 32px)); }
-    .fm-msgs .kg-cele, .fm-msgs .kg-msg, .fm-msgs .kg-quiet { margin:0 0 8px; box-shadow:0 6px 20px rgba(0,0,0,.28); }
-    .fm-msgs .kg-quiet { padding:8px 12px; border-radius:10px; background:#fff; }
-    .fm-edge { top:calc(10px + env(safe-area-inset-top)); right:calc(10px + env(safe-area-inset-right)); display:flex; flex-direction:column; gap:8px; }
-    .fm-eb { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; width:60px; min-height:60px; padding:6px 2px; border:2px solid #7a5200; border-radius:14px; background:#fbefd3; color:#1b2430; font:700 11.5px/1.15 system-ui,sans-serif; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,.25); }
-    .fm-eb .gb-emoji { font-size:22px; }
-    .fm-eb:focus-visible { outline:3px solid #1d4fa3; outline-offset:2px; }
-    .fm-eb[aria-expanded="true"] { background:#7a5200; color:#fff; }
-    .fm-n { position:absolute; top:-6px; right:-6px; min-width:20px; height:20px; padding:0 5px; box-sizing:border-box; border-radius:10px; background:#a10000; color:#fff; font-size:12px; line-height:20px; }
-    .fm-n:empty { display:none; }
-    .fm-drawer { top:0; right:0; bottom:0; z-index:600; width:min(380px, 100vw); overflow:auto; background:var(--paper, #fbf7ef); box-shadow:-8px 0 24px rgba(0,0,0,.3); padding:0 12px 24px; box-sizing:border-box; }
-    .fm-drawer[hidden] { display:none; }
-    .fm-dh { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; margin:0 -12px 10px; padding:calc(8px + env(safe-area-inset-top)) 8px 8px 14px; background:var(--slate, #3f4a58); color:#fff; }
-    .fm-dh h2 { margin:0; font-size:17px; color:#fff; }
-    .fm-x { min-width:44px; min-height:44px; border:0; border-radius:22px; background:none; color:#fff; font-size:26px; cursor:pointer; }
-    .fm-drawer .gb-panel { width:100%; margin-bottom:8px; }
-    .fm-sheet-h { display:none; }
-    @media (max-width: 759px) {
-      .fm-top { right:calc(74px + env(safe-area-inset-right)); }
-      .fm-top .gb-head > div { padding:6px 10px; }
-      /* phones: Buddy's next step is a bottom sheet; its handle folds it down to one line */
-      .fm-next { top:auto; left:0; right:0; bottom:0; width:auto; max-height:46vh; border-radius:18px 18px 0 0; padding-bottom:env(safe-area-inset-bottom); background:var(--paper, #fbf7ef); }
-      .fm-next .kg-next { border-radius:0; border-width:0; padding:4px 68px 12px 14px; } /* the right gutter: Buddy's button (buddy-dock.css, bottom-right) sits there */
-      .fm-next .kg-next .kg-buddy { width:44px; height:44px; }
-      .fm-sheet-h { display:flex; justify-content:center; align-items:center; width:100%; min-height:44px; border:0; background:none; cursor:pointer; padding:0; }
-      /* Leaflet's bottom corners (zoom, the OpenStreetMap credit the tile policy needs) sit above the sheet: --fm-sheet is its height */
-      .fm .leaflet-bottom { bottom:var(--fm-sheet, 0px); }
-      .fm-sheet-h::before { content:""; width:44px; height:5px; border-radius:3px; background:#b9ae9c; }
-      .fm-next.is-min .kg-nextt, .fm-next.is-min .kg-qbar, .fm-next.is-min .kg-qmeta, .fm-next.is-min .kg-buddy { display:none; }
-      .fm-drawer { top:auto; left:0; width:auto; max-height:82vh; border-radius:18px 18px 0 0; box-shadow:0 -8px 24px rgba(0,0,0,.3); }
-      .fm-dh { border-radius:18px 18px 0 0; padding-top:8px; }
-      .fm-eb { width:56px; min-height:56px; }
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<meta name="lmcs-moved-to" content="#/mission" />
+<title>This page moved to the game</title>
+<script>window.LMCS_NO_DOCK = true;</script>
+<script src="../assets/auth.js?v=ebda6786"></script>
 </head>
-<body class="gb-app fm-page">
-
-  <section class="hero" id="auth-root" style="padding-top:24px;">
-    <div id="gate-slot"></div>
-  </section>
-  <!-- The Map (Uday, 7 Nov: "Let the Map view take up the whole screen and everything is placed on it"): the real map is the ground,
-       LMCS HQ, the Townhall and LMS 1-6 stand on it as buildings; the next step, the edge buttons and the drawer float over it. -->
-  <div class="fm" id="app-root" hidden>
-    <div id="kg-realmap"></div>
-    <div class="fm-hud fm-top"><div class="gb"><header class="gb-head"><div><div><h1>Map</h1><p id="header-status">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" aria-current="page" data-emoji="realMap">Map</a></nav></div></header></div></div>
-    <section class="fm-hud fm-next kg" id="fm-next" aria-label="Your next step"></section>
-    <div class="fm-hud fm-msgs kg" id="kingdom-root"></div>
-    <nav class="fm-hud fm-edge" aria-label="Map tools">
-      <button type="button" class="fm-eb" id="fm-quests"><span data-emoji="quests"></span>Quests</button>
-      <button type="button" class="fm-eb" id="fm-requests" aria-expanded="false" aria-controls="panels"><span data-emoji="requests"></span>Requests<span class="fm-n" id="fm-reqn"></span></button>
-      <button type="button" class="fm-eb" id="fm-more" aria-expanded="false" aria-controls="panels"><span data-emoji="base"></span>Kingdom</button>
-    </nav>
-    <aside class="fm-hud fm-drawer" id="panels" aria-labelledby="fm-dh" hidden>
-      <div class="fm-dh"><h2 id="fm-dh" tabindex="-1">Kingdom</h2><button type="button" class="fm-x" id="fm-close" aria-label="Close">×</button></div>
-      <div class="gb" id="kg-panels"></div>
-      <div class="gb"><details class="gb-panel" data-panel="tools"><summary data-emoji="tools">All tools</summary><div class="gb-panel-b"><a class="gb-go" href="index.html"><span>Owner home<small>Today, Approvals, Payroll, Salary, Transport</small></span></a></div></details></div>
-    </aside>
-  </div>
-
-  <script src="../assets/auth.js?v=ebda6786"></script>
-  <script src="../assets/game/game.js?v=d0493723"></script>
-  <script src="../assets/game/kingdom.js?v=a3241677"></script>
-  <script src="../assets/game/scout-report.js?v=19158c0b"></script>
-  <script src="../assets/game/places.js?v=bc0e1cb0"></script>
-  <script src="../assets/game/kingdom-map.js?v=3661e264"></script>
-  <script src="../assets/game/emoji.js?v=9abef414"></script>
-  <script>
-    const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html
-
-    function showKingdom(session) {
-      document.getElementById('auth-root').style.display = 'none';
-      document.getElementById('app-root').hidden = false;
-      const host = document.getElementById('kg-realmap'), drawer = document.getElementById('panels'), K = LMCSKingdom;
-      const phone = function () { return !matchMedia('(min-width: 760px)').matches; };
-      // the HUD covers the top and the edges (and the bottom sheet on phones): the first fit keeps the buildings clear of it
-      const pad = function () { return phone() ? [[16, 80], [76, 210]] : [[380, 90], [96, 40]]; };
-      let bases = [], th = null;
-      const draw = function () {
-        LMCSKingdomMap.mount(host, { bases: bases, root: '../', pad: pad(), onPick: function (id, el) { K.openBase(id, el); },
-          townhall: th ? { open: th.rooms.filter(function (r) { return r.state === 'open'; }).length, onPick: function (el) { K.openTownhall(el); } } : null });
-      };
-      draw();
-      // the drawer (desktop: the right edge; phones: a bottom sheet): every panel the Kingdom builds, and All tools
-      let opener = null;
-      const toggles = [document.getElementById('fm-requests'), document.getElementById('fm-more')];
-      const closeDrawer = function () {
-        if (drawer.hidden) return;
-        drawer.hidden = true; toggles.forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
-        if (opener) opener.focus();
-      };
-      const openDrawer = function (btn, panel) {
-        if (!drawer.hidden && opener === btn) return closeDrawer();
-        opener = btn; drawer.hidden = false;
-        toggles.forEach(function (b) { b.setAttribute('aria-expanded', String(b === btn)); });
-        const p = panel && drawer.querySelector('[data-panel="' + panel + '"]');
-        if (p) { p.open = true; p.scrollIntoView({ block: 'start' }); } else document.getElementById('fm-dh').focus();
-        if (p) p.querySelector('summary').focus();
-      };
-      document.getElementById('fm-requests').onclick = function (e) { openDrawer(e.currentTarget, 'kg-traypanel'); };
-      document.getElementById('fm-more').onclick = function (e) { openDrawer(e.currentTarget, null); };
-      document.getElementById('fm-close').onclick = closeDrawer;
-      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) closeDrawer(); });
-      document.getElementById('fm-quests').onclick = function (e) { K.openQuests(e.currentTarget); };
-      // phones: the next-step sheet folds to one line from its handle
-      const next = document.getElementById('fm-next');
-      const sheet = function () {
-        if (next.querySelector('.fm-sheet-h')) return;
-        const hd = document.createElement('button'); hd.type = 'button'; hd.className = 'fm-sheet-h';
-        const set = function (min) { next.classList.toggle('is-min', min); hd.setAttribute('aria-expanded', String(!min)); hd.setAttribute('aria-label', min ? 'Show your next step' : 'Fold your next step'); };
-        hd.onclick = function () { set(!next.classList.contains('is-min')); lift(); };
-        set(next.classList.contains('is-min')); next.insertBefore(hd, next.firstChild);
-      };
-      // the sheet's height, for the map's bottom controls (phones only; on desktop the card floats top-left)
-      const lift = function () { document.documentElement.style.setProperty('--fm-sheet', phone() && next.offsetHeight ? next.offsetHeight + 'px' : '0px'); };
-      if (window.ResizeObserver) new ResizeObserver(lift).observe(next);
-      window.addEventListener('resize', lift);
-      const after = K.hooks.after;
-      K.hooks.after = function (d) {
-        if (after) after(d);
-        const a = K.nextAction(d), nextId = a.base ? a.base.id : '';
-        bases = ((d.kingdom && d.kingdom.campuses) || []).map(function (b) {
-          const p = K.progressOf([b]);
-          return { id: b.id, level: b.level, pct: p.total ? Math.round(100 * p.done / p.total) : 0, next: b.id === nextId };
-        });
-        document.getElementById('fm-reqn').textContent = (d.cards || []).length || '';
-        document.getElementById('fm-requests').hidden = d.role !== 'Owner';
-        sheet(); lift(); draw();
-      };
-      K.hooks.townhall = function (data) { th = data; draw(); };
-      K.mount(document.getElementById('kingdom-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', next: next, panels: document.getElementById('kg-panels'), noValley: true });
-    }
-    function gate(session) {
-      if (LMCS.canViewOwnerPortal(session)) return showKingdom(session);
-      const slot = document.getElementById('gate-slot');
-      const p = document.createElement('p');
-      p.appendChild(document.createTextNode(LMCS.hasRole(session, 'Principal') ? "Your school's view comes soon. " : 'The Map is for the Owner. '));
-      const a = document.createElement('a');
-      a.href = '../index.html';
-      a.textContent = 'Back to the portals';
-      p.appendChild(a);
-      slot.textContent = '';
-      slot.appendChild(p);
-    }
-    const cachedSession = LMCS.getSession();
-    if (cachedSession) gate(cachedSession);
-    else LMCS.requireSession('#gate-slot').then(gate);
-  </script>
-
+<body>
+<main style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem">
+<p>This page moved to the game.</p>
+<p><a id="lmcs-moved" href="../index.html">Open it in the game</a></p>
+</main>
+<script>
+// A retired old-portal page (batch (a), 25 Nov): a bookmark or an old link goes on to its screen in the game. A tab a game door
+// opened (?from=game, ?only=, or the tab's flag from LMCSGameDoor) stays here with the link, so nobody bounces between the two.
+(function () {
+  var D = window.LMCSGameDoor, to = document.querySelector('meta[name="lmcs-moved-to"]').getAttribute('content');
+  if (!D) return;
+  var url = D.GAME + (to === 'home' ? '' : to), stay = true;
+  try {
+    var q = new URLSearchParams(location.search);
+    if (q.get('from') === 'game' || q.has('only')) sessionStorage.setItem(D.FLAG, '1');
+    stay = sessionStorage.getItem(D.FLAG) === '1';
+  } catch (e) { stay = true; }
+  document.getElementById('lmcs-moved').href = url;
+  if (!stay) location.replace(url);
+})();
+</script>
 </body>
 </html>

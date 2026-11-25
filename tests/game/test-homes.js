@@ -1,5 +1,6 @@
 // node tests/game/test-homes.js -- the role homes mount the game layer (css link, #game-root, script after auth.js, mount call in the sign-in callback)
 const fs = require('fs'), assert = require('assert');
+const { RETIRED } = require('../retired/retired-pages'); // the pages retired in batch (a): their stubs are checked by tests/retired
 const HOMES = { 'principal/index.html': 'showApp', 'coordinator/index.html': 'showApp', 'owner/index.html': 'showApp', 'teacher/index.html': 'init', 'staff-home/index.html': 'showApp' };
 const body = (html, fn) => { // text of `function fn(...) { ... }` by brace matching
   const i = html.indexOf('function ' + fn + '('); assert(i >= 0, 'no function ' + fn);
@@ -10,7 +11,7 @@ const body = (html, fn) => { // text of `function fn(...) { ... }` by brace matc
 // GAME_BACKEND_URL: '' (game off) or the game backend's Apps Script /exec URL; the 4 homes and the plan page must agree
 const backendUrl = (html, page) => { const m = /const GAME_BACKEND_URL = '(|https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec)';/.exec(html); assert(m, page + ': GAME_BACKEND_URL constant'); return m[1]; };
 const urls = {};
-for (const [page, fn] of Object.entries(HOMES)) {
+for (const [page, fn] of Object.entries(HOMES).filter(([page]) => !RETIRED.has(page))) {
   const html = fs.readFileSync(__dirname + '/../../' + page, 'utf8');
   assert(/<link rel="stylesheet" href="\.\.\/assets\/game\/game\.css(\?v=[0-9a-f]+)?"/.test(html), page + ': game.css link');
   assert(/<section id="game-root" aria-label="Today with Buddy" hidden>/.test(html), page + ': #game-root, hidden until the mount renders (N5)');

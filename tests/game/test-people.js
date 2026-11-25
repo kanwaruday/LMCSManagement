@@ -235,17 +235,7 @@ test('POST dispatch; a GET is refused as unknown', () => {
 });
 test('pages: HQ Home tiles and switch; People room confirms before every write', () => {
   const read = (p) => fs.readFileSync(__dirname + '/../../' + p, 'utf8');
-  const home = read('owner/index.html'), pp = read('owner/people.html'), kg = read('owner/kingdom.html');
-  for (const t of ["e: 'requests', name: 'Approvals'", "e: 'dayBook', name: 'Money today'", "e: 'heads', name: 'People'", "e: 'settings', name: 'Game settings'"]) assert.ok(home.includes(t), t);
-  assert.ok(/LMCSEmoji\.tag\(t\.e\)/.test(home) && !/[\u{1F4E5}\u{1F4B0}\u{1F465}\u2699]/u.test(home), 'tile emoji come from emoji.js keys, none typed by hand');
-  assert.ok(/url: '#hq-setup'/.test(home) && /'Set up the game: ' \+ done \+ ' of ' \+ steps\.length \+ ' done'/.test(home), 'Game settings: x of 6 done, opens the Set up list on Home');
-  assert.ok(home.includes('id="modules"'), 'the tools shelf stays');
-  for (const [page, cur] of [[home, 'index.html'], [kg, 'kingdom.html']]) assert.ok(page.includes('<nav class="gb-hsw" aria-label="Owner views">') && page.includes('href="' + cur + '" aria-current="page"'), 'header switch, ' + cur + ' current');
-  assert.ok(/value: '', selected: true \}, \['Choose a school'\]/.test(pp) && /DATA\.campuses\.indexOf\(campus\.value\) === -1\) \{ err\.textContent = 'Choose a school\.'/.test(pp), 'an unknown campus starts on Choose a school; Next refuses until one is picked');
-  assert.ok(/LMCS\.canViewOwnerPortal\(session\)/.test(pp) && /action=peoplelist/.test(pp) && /action: action \|\| 'peoplecoordinator'/.test(pp), 'People: Owner gate, read, write');
-  assert.strictEqual((pp.match(/method: 'POST'/g) || []).length, 1, 'one write path');
-  assert.ok(/go\.onclick = function \(\) \{\s*if \(BUSY\) return;/.test(pp) && /\['Confirm'\]/.test(pp), 'the write runs only from Confirm');
-  assert.ok(!/innerHTML/.test(pp), 'People: text nodes only');
+  // owner/index.html, owner/people.html and owner/kingdom.html are retired (batch (a), 25 Nov; tests/retired checks their stubs): their page checks went with them
   assert.ok(read('tools/stamp-assets.mjs').includes("'owner/people.html'") && read('assets/game/guide.js').includes("'owner/people.html'") && read('tests/datasrc/test-datasrc.js').includes("'owner/people.html'"), 'stamped, guided, exempt');
   assert.ok(/baseOfGo\(location\.hash\)/.test(read('assets/game/kingdom.js')), 'the Kingdom opens #base-HES from HQ Home');
 });
@@ -300,9 +290,7 @@ test('principal: POST dispatch only; the page posts it behind Confirm', () => {
   go();
   const g = fs.readFileSync(dir + 'game.gs', 'utf8');
   assert.ok(/if \(action === 'peopleprincipal'\) return gameJson_\(peoplePrincipal_\(caller, body\)\);/.test(g) && !('peopleprincipal' in ctx.GAME_MODULE_ACTIONS));
-  const pp = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
-  assert.ok(/\{ email: p\.email, campus: campus\.value \}, 'peopleprincipal'\)/.test(pp) && /id="pp-list"/.test(pp));
-  assert.ok(/const schools = DATA\.campuses\.filter\(function \(c\) \{ return c !== 'ALL'; \}\)/.test(pp) && /schools\.map\(/.test(pp), 'the Principal select offers one school only, no All schools');
+  // owner/people.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its page checks went with it
 });
 // the proof that a People edit reaches sign-in within ~10 min: sign-in (auth.js) reads allowlist_list from principal-allowlist.gs, which
 // reads this same sheet's Campus column through a 600 s cache. Same rows, cache older than 10 min -> the new campus.
@@ -369,10 +357,10 @@ test('office: Accounts and mixed rows never ALL (refused, audited, nothing writt
   assert.ok(/roles\.every\(function \(r\) \{ return r === 'FeeClerk'; \}\)/.test(au) && /roles\.every\(function \(r\) \{ return r === 'FeeClerk'; \}\)/.test(fs.readFileSync(dir + 'game-people.gs', 'utf8')), 'same rule as onlyFeeClerk');
 });
 test('office: POST dispatch only; the page posts it behind Confirm and offers All schools to a plain Fee Clerk only', () => {
-  const g = fs.readFileSync(dir + 'game.gs', 'utf8'), page = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
+  const g = fs.readFileSync(dir + 'game.gs', 'utf8');
+  // owner/people.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its page checks went with it
   assert.ok(/action === 'peopleoffice'\) return gameJson_\(peopleOffice_\(caller, body\)\)/.test(g));
   assert.ok(!/peopleoffice/.test(g.slice(0, g.indexOf('function doPost'))), 'never a GET');
-  assert.ok(/'peopleoffice'\)/.test(page) && /confirmStep\(/.test(page) && /p\.mayAll \? DATA\.campuses : /.test(page));
 });
 
 // a Principal's supporting charge (Uday, 7 Nov): the Owner sets other schools; LMS1-6 only, never ALL, never their own school
@@ -417,10 +405,10 @@ test('support: never ALL or a non-school, never their own school, never a networ
   assert.strictEqual(JSON.stringify(A), before, 'nothing written');
 });
 test('support: POST dispatch only; the page offers other schools only, behind Confirm', () => {
-  const g = fs.readFileSync(dir + 'game.gs', 'utf8'), page = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
+  const g = fs.readFileSync(dir + 'game.gs', 'utf8');
+  // owner/people.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its page checks went with it
   assert.ok(/action === 'peoplesupport'\) return gameJson_\(peopleSupport_\(caller, body\)\)/.test(g));
   assert.ok(!/peoplesupport/.test(g.slice(0, g.indexOf('function doPost'))), 'never a GET');
-  assert.ok(/c !== 'ALL' && c !== p\.campus/.test(page) && /'peoplesupport'\)/.test(page) && /if \(pr\.canSupport\) ed\.push/.test(page));
 });
 
 test('support in the game backend: a read at a supported school; outside the Supporting cell the home school; a write there refused', () => {
@@ -534,13 +522,10 @@ test('owners: never your own Owner row, never the last Owner; a row that changed
   assert.strictEqual(ownerW(ADMIN, { email: 'owner@example.org', remove: true }).code, 'PEOPLE_DUPLICATE');
 });
 test('owners: POST dispatch only, never a GET; the page shows Owner writes to the admin only', () => {
-  const g = fs.readFileSync(dir + 'game.gs', 'utf8'), page = fs.readFileSync(__dirname + '/../../owner/people.html', 'utf8');
+  const g = fs.readFileSync(dir + 'game.gs', 'utf8');
+  // owner/people.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its page checks went with it
   assert.ok(/action === 'peopleowner'\) return gameJson_\(peopleOwner_\(caller, body\)\)/.test(g) && !/peopleowner/.test(g.slice(0, g.indexOf('function doPost'))));
   assert.ok(!('peopleowner' in ctx.GAME_MODULE_ACTIONS));
-  assert.ok(/'peopleowner'\)/.test(page) && /DATA\.canEditOwners/.test(page));
-  assert.ok(/\['all', 'All'\], \['owner', 'Owner'\], \['coord', 'Coordinator'\], \['principal', 'Principal'\], \['office', 'Fee Clerk'\]/.test(page), 'filter chips');
-  assert.ok(/class: 'pp-ib', 'aria-label': 'Change ' \+ who/.test(page) && /class: 'pp-ib', 'aria-label': 'Remove ' \+ who/.test(page) && /\.pp-ib \{[^}]*width:44px; height:44px/.test(page), 'icon buttons: labelled, 44 px');
-  assert.ok(/within about a minute/.test(page) && !/15 minutes|10 minutes/.test(page), 'timing notes say about a minute');
 });
 
 let fail = 0;

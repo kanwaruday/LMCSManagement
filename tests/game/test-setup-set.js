@@ -158,8 +158,8 @@ assert.strictEqual(ids(hqd, { coordinators: [{}], principals: [{ campus: 'LMS4' 
 assert.strictEqual(K.peopleStep({ coordinators: [{}], principals: [{ campus: 'LMS1, LMS2' }] }).done, false, 'a Principal without one school keeps People open');
 assert.strictEqual(K.peopleStep({ coordinators: [{}] }).go, 'owner/people.html');
 assert.strictEqual(K.hqSteps({ role: 'Principal', kingdom: { campuses: [{ id: 'LMS1', buildings: [] }] } }).length, 0, 'nobody but the Owner gets HQ steps');
-const ksrc = fs.readFileSync(__dirname + '/../../assets/game/kingdom.js', 'utf8'), home = fs.readFileSync(__dirname + '/../../owner/index.html', 'utf8');
+const ksrc = fs.readFileSync(__dirname + '/../../assets/game/kingdom.js', 'utf8');
+// owner/index.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its Home markup checks went with it
 assert.ok(/goLink\('owner\/index\.html#hq-setup', 'Set it up on Home'/.test(ksrc) && /goLink\('owner\/index\.html#hq-setup', 'Set up the game on your Home'/.test(ksrc), 'the Map card and the HQ base send the Owner to Home');
-assert.ok(/id="hq-setup"/.test(home) && home.indexOf('id="hq-setup"') < home.indexOf('id="hq-tiles"') && /LMCSKingdom\.mountHome\(/.test(home) && /kingdom\.css/.test(home), 'Home: the Set up list first, mounted from kingdom.js');
-assert.ok(/LMCSKingdom\.homeSteps\(k, people\)/.test(home) && /S\.onData\(d, p\)/.test(ksrc), 'the Game settings tile counts the same steps as the list');
+assert.ok(/S\.onData\(d, p\)/.test(ksrc), 'the Game settings tile counts the same steps as the list');
 console.log('test-setup-set: all passed');

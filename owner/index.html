@@ -1,156 +1,34 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LMCS Portal — Owner</title>
-  <link rel="preconnect" href="https://script.google.com">
-  <link rel="preconnect" href="https://accounts.google.com">
-  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
-  <link rel="stylesheet" href="../assets/game/game.css?v=37f754ac" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
-  <link rel="stylesheet" href="../assets/game/kingdom.css?v=66458bfc" />
-  <style>@media (max-width: 959px) { .gb-shell { grid-template-areas:"next" "stage" "panels"; } } /* phones: Set up first, the tools shelf after */</style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<meta name="lmcs-moved-to" content="#/mission" />
+<title>This page moved to the game</title>
+<script>window.LMCS_NO_DOCK = true;</script>
+<script src="../assets/auth.js?v=ebda6786"></script>
 </head>
-<body class="gb gb-app">
-
-  <!-- The screen skeleton (assets/game/base.css). HQ Home: Set up first (every setup step, the next on top: kingdom.js mountHome),
-       then four tiles (Approvals, Money today, People, Game settings), then Today
-       (game.js, which carries its own next step), and the All tools shelf in the panels. The header switches Home ⇄ Map. -->
-  <header class="gb-head"><div><div id="welcome-strip"><h1>HQ Home</h1><p id="hub-hello">LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" aria-current="page" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="realMap">Map</a></nav></div></header>
-  <div class="gb-shell">
-    <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
-    <main class="gb-stage">
-      <!-- Gate renders inside #gate-slot; whole section hides once signed in -->
-      <section class="hero" id="auth-root" style="padding-top:24px;">
-        <h2>Sign in to Owner home</h2>
-        <div id="gate-slot"></div>
-      </section>
-      <div id="app-root" style="display:none">
-        <section class="gb-section" id="hq-setup" aria-labelledby="hq-setup-h"></section>
-        <ul class="gb-grid hq-tiles" id="hq-tiles" aria-label="HQ Home"></ul>
-        <section id="game-root" aria-label="Today with Buddy" hidden></section>
-      </div>
-    </main>
-    <aside class="gb-panels" id="panels" aria-label="More" hidden>
-      <details class="gb-panel" id="modules"><summary data-emoji="tools">Owner tools</summary><div class="gb-panel-b"><ul class="gb-list" id="modules-grid"></ul></div></details>
-      <details class="gb-panel"><summary data-emoji="appointments">Appointments</summary><div class="gb-panel-b" id="appt-box"></div></details>
-      <details class="gb-panel"><summary data-emoji="account">Account</summary><div class="gb-panel-b"><a href="#" class="gb-btn" id="signout-link">Sign out</a></div></details>
-    </aside>
-  </div>
-
-  <footer class="site">
-    <div class="wrap">
-      LMCS Portal — internal management system for La Montessori Schools.
-    </div>
-  </footer>
-
-  <script src="../assets/auth.js?v=ebda6786"></script>
-  <script src="../assets/game/game.js?v=d0493723"></script>
-  <script src="../assets/game/kingdom.js?v=a3241677"></script>
-  <script src="../assets/appointments.js?v=5dfa5b13"></script>
-  <script src="../assets/game/emoji.js?v=9abef414"></script>
-  <script src="../assets/game/rail.js?v=716e2ce0"></script>
-  <script>
-    const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // Task 11 sets this at deploy; empty = the game panel renders nothing
-    const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJfioz6wlgRGLjvO_GvbffhOYBb-hHybFtjGTk0ps-GzXz0FrQ9GmYdfg/exec';
-    const MODULES = [
-      { name: 'Map', e: 'realMap', url: 'kingdom.html', desc: 'HQ and your schools on the real map. Tap a school to see it, and hand out who sets up what.' },
-      { name: 'People', e: 'heads', url: 'people.html', desc: 'Coordinators: add one, or change their school and functions.' },
-      // Approvals points at the Coordinator systems page for now; Owner portal part A replaces it.
-      { name: 'Approvals', e: 'requests', url: '../coordinator/systems/index.html#approvals', desc: 'Role requests and other items waiting for your decision.' },
-      { name: 'Payroll', e: 'payroll', url: '../payroll/index.html', desc: 'Monthly payroll.' },
-      { name: 'Salary Dashboard', e: 'salary', url: '../salary/index.html', desc: 'Offer-letter salary calculator and salary data.' },
-      { name: 'Transport', e: 'bus', url: 'transport/index.html', desc: 'GPS leakage, trackers, who is late on follow-ups, and proposals for your decision.' },
-    ];
-
-    function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
-    function renderModules() {
-      const ul = document.getElementById('modules-grid');
-      ul.textContent = '';
-      MODULES.forEach(function (m) {
-        const a = el('a', 'gb-go'), span = el('span', '', m.name), li = el('li');
-        if (window.LMCSEmoji && LMCSEmoji.get(m.e)) span.insertBefore(LMCSEmoji.tag(m.e), span.firstChild);
-        a.href = m.url;
-        span.appendChild(el('small', '', m.desc));
-        a.appendChild(span); li.appendChild(a); ul.appendChild(li);
-      });
-    }
-
-    // HQ Home's four tiles. Counts come only from what an existing read already returns: gamekingdom's `cards` (approved requests
-    // waiting for a follow-up) and the HQ "Set up the game" steps (setupSteps_); Money today is a link only. k = null while loading.
-    function hqTiles(k, people) {
-      const all = k ? LMCSKingdom.homeSteps(k, people) : [], steps = all.length ? all : null; // the same steps as the Set up list
-      const cards = k && Array.isArray(k.cards) ? k.cards.length : null, done = steps ? steps.filter(function (s) { return s.done; }).length : 0;
-      return [
-        { e: 'requests', name: 'Approvals', url: '../coordinator/systems/index.html#approvals', count: cards || null,
-          small: cards ? cards + (cards === 1 ? ' approved request waits' : ' approved requests wait') + ' for a follow-up' : k ? 'Requests waiting for your decision. Nothing approved is waiting for a follow-up.' : 'Requests waiting for your decision' },
-        { e: 'dayBook', name: 'Money today', url: '../office/daybook.html', small: "The Day Book: today's cash and entries" },
-        { e: 'heads', name: 'People', url: 'people.html', small: 'Coordinators: their school and what they look after' },
-        { e: 'settings', name: 'Game settings', url: '#hq-setup', count: steps && done < steps.length ? steps.length - done : null,
-          small: steps ? 'Set up the game: ' + done + ' of ' + steps.length + ' done' : 'Set up the game' },
-      ];
-    }
-    function renderTiles(k, people) {
-      const ul = document.getElementById('hq-tiles');
-      ul.textContent = '';
-      hqTiles(k, people).forEach(function (t) {
-        const a = el('a', 'gb-go'), span = el('span'), li = el('li'), ic = window.LMCSEmoji && LMCSEmoji.tag(t.e);
-        if (ic) span.appendChild(ic);
-        span.appendChild(document.createTextNode(t.name));
-        if (t.count) { const c = el('span', 'gb-count', String(t.count)); c.setAttribute('aria-hidden', 'true'); span.appendChild(document.createTextNode(' ')); span.appendChild(c); }
-        span.appendChild(el('small', '', t.small));
-        a.href = t.url; a.appendChild(span); li.appendChild(a); ul.appendChild(li);
-      });
-    }
-    // one gamekingdom read feeds both the Set up list (kingdom.js) and the tiles; the tiles already show as links before it lands
-    function loadTiles(session) {
-      renderTiles(null);
-      LMCSKingdom.mountHome(document.getElementById('hq-setup'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../', onData: renderTiles });
-    }
-
-    function hello(name) {
-      const h = new Date().getHours(), first = String(name || '').trim().split(/\s+/)[0];
-      return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + (first ? ', ' + first + ' ji' : '');
-    }
-
-    function showApp(session) {
-      document.getElementById('auth-root').style.display = 'none';
-      document.getElementById('app-root').style.display = '';
-
-      document.getElementById('hub-hello').textContent = hello(session.name) + ' · LMCS HQ and LMS 1–6';
-      document.getElementById('panels').hidden = false;
-      if (window.matchMedia && matchMedia('(min-width: 960px)').matches) document.getElementById('modules').open = true; // phones: panels start folded so Today stays in view
-
-      document.getElementById('signout-link').addEventListener('click', function (e) {
-        e.preventDefault();
-        LMCS.signOut();
-      });
-
-      renderModules();
-      loadTiles(session);
-      LMCSRail.mount(document.getElementById('game-rail'), { hub: 'index.html', root: '../' });
-      LMCSAppts.mount(document.getElementById('appt-box'), { backendUrl: PDR_BACKEND_URL, session: session });
-      if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../' }); } catch (e) { console.warn('game layer', e); } }
-    }
-
-    // Fast path: a cached, valid session shows the app immediately instead
-    // of waiting on a live allowlist re-check (that fetch alone can take
-    // 20s+ — see the perf audit) — same pattern every module page already
-    // uses for its own gate. Falls back to requireSession() (which re-
-    // validates the cached session against the allowlist) if there's no
-    // cached session to show yet.
-    const cachedSession = LMCS.getSession();
-    function gate(session) {
-      if (LMCS.canViewOwnerPortal(session)) return showApp(session);
-      document.getElementById('gate-slot').innerHTML = '<p>The Owner portal is for the Owner only. <a href="../index.html">Back to the portals</a></p>';
-    }
-    if (cachedSession) {
-      gate(cachedSession);
-    } else {
-      LMCS.requireSession('#gate-slot').then(gate);
-    }
-  </script>
-
+<body>
+<main style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem">
+<p>This page moved to the game.</p>
+<p><a id="lmcs-moved" href="../index.html">Open it in the game</a></p>
+</main>
+<script>
+// A retired old-portal page (batch (a), 25 Nov): a bookmark or an old link goes on to its screen in the game. A tab a game door
+// opened (?from=game, ?only=, or the tab's flag from LMCSGameDoor) stays here with the link, so nobody bounces between the two.
+(function () {
+  var D = window.LMCSGameDoor, to = document.querySelector('meta[name="lmcs-moved-to"]').getAttribute('content');
+  if (!D) return;
+  var url = D.GAME + (to === 'home' ? '' : to), stay = true;
+  try {
+    var q = new URLSearchParams(location.search);
+    if (q.get('from') === 'game' || q.has('only')) sessionStorage.setItem(D.FLAG, '1');
+    stay = sessionStorage.getItem(D.FLAG) === '1';
+  } catch (e) { stay = true; }
+  document.getElementById('lmcs-moved').href = url;
+  if (!stay) location.replace(url);
+})();
+</script>
 </body>
 </html>

@@ -96,7 +96,6 @@ assert(JSON.parse(fs.readFileSync(dir + 'projects.json', 'utf8')).game.files.inc
 const gjs = fs.readFileSync(__dirname + '/../../assets/game/game.js', 'utf8'), hud = fs.readFileSync(__dirname + '/../../assets/game/home-hud.js', 'utf8');
 assert(/parEls, townhallPanel\(\), days/.test(gjs) && /if \(opts\.only \|\| !Array\.isArray\(rooms\) \|\| document\.body\.classList\.contains\('hh'\)\) return null;/.test(gjs), 'game.js Townhall panel, skipped on module pages and the HUD home');
 assert(/slots\(\); el\.townhall\.hidden = !t\.townhall;/.test(hud) && /play\(b, 'room-unlock'\)/.test(hud), 'the HUD draws the slots and the Townhall button after each Today');
-assert(/<link rel="stylesheet" href="\.\.\/assets\/game\/v2-animations\.css(\?v=[0-9a-f]+)?" \/>/.test(fs.readFileSync(__dirname + '/../../principal/index.html', 'utf8')), 'the Principal home loads v2-animations.css (room-unlock plays)');
 assert(!defaults.townhall.rooms.filter((r) => r.id === 'requests')[0].roles.includes('Owner'), 'no Requests door for the Owner (no one to ask)');
 assert(/home = at \? layer : row;/.test(hud) && /el\.slots = h\('div', \{ class: 'hh-slots'/.test(hud), 'a slot with no `at` docks above the quest line, never on the rooms (G2 nit)');
 // gametownhall (the Owner's Kingdom map has no Today): doors from recorded steps, the valley spot from config; registered as a GET action
@@ -128,5 +127,4 @@ assert.strictEqual(D.homeStep({ home: { slots: [{ id: 'a', state: 'locked' }] } 
 assert.strictEqual(D.homeStep({}), null);
 assert(/Build next/.test(dock), 'the dock names the next door');
 assert(/kg-cele a-level-up/.test(kjs) && /a-unlock-sparkle/.test(kjs), 'level-up card animates');
-assert(/<link rel="stylesheet" href="\.\.\/assets\/game\/v2-animations\.css(\?v=[0-9a-f]+)?" \/>/.test(fs.readFileSync(__dirname + '/../../owner/kingdom.html', 'utf8')), 'the Kingdom loads v2-animations.css');
 console.log('test-home-engine: ok');

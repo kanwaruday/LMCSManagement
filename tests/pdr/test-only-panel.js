@@ -9,7 +9,5 @@ for (const t of ['home', 'principal', 'dashboard', 'approvals']) assert.ok(pdr.i
 assert.ok(/if \(ONLY_TAB\) \{ switchTab\(ONLY_TAB\); document\.body\.classList\.add\('pdr-only'\);/.test(pdr), 'applied after restore');
 assert.ok(/body\.pdr-only \.tabs, body\.pdr-only \.hdr-right \{ display: none; \}/.test(pdr), 'hides the tab bar and the link home');
 
-const ss = fs.readFileSync(path.join(__dirname, '../../principal/support-sessions.html'), 'utf8');
-assert.ok(/SS_ROLES\.some\(\(r\) => r\.key === fromUrl\) && new URLSearchParams\(location\.search\)\.get\('only'\) === '1'/.test(ss), 'locks only a known role with only=1');
-for (const k of ['teacher', 'itComputer', 'pti', 'feeClerkPRO', 'nonTeaching', 'driverCumPeon']) assert.ok(ss.includes("key: '" + k + "'"), k);
+// principal/support-sessions.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its only=1 lock checks went with it
 console.log('ok only-panel');

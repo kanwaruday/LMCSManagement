@@ -27,14 +27,6 @@ const hiring = line(read('hiring/index.html'), /let VIEW = \(function \(\) \{[^\
 for (const v of ['today', 'appts', 'role', 'actions', 'pool']) assert.strictEqual(run(hiring, '#' + v, 'VIEW'), v, v);
 assert.strictEqual(run(hiring, '#x', 'VIEW'), 'today');
 
-// owner/people: #owner #coord #principal #office
-const people = read('owner/people.html');
-const pp = line(people, /const FILTERS = \[[^\n]+\];/) + line(people, /let FILTER = [^\n]+;/);
-for (const f of ['owner', 'coord', 'principal', 'office']) assert.strictEqual(run(pp, '#' + f, 'FILTER'), f, f);
-assert.strictEqual(run(pp, '#x', 'FILTER'), 'all');
-
-// coordinator/hq.html: #track scrolls to My track record; #d= still reopens a request
-const hq = read('coordinator/hq.html');
-assert.ok(hq.includes("location.hash === '#track' && $('track')") && hq.includes('id="track"'), '#track');
-assert.ok(hq.includes("/^#d=(.+)$/.exec(location.hash"), '#d= kept');
+// owner/people.html and coordinator/hq.html are retired (batch (a), 25 Nov; tests/retired checks their stubs): their deep-link checks went
+// with them.
 console.log('deep links: ok');

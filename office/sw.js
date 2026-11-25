@@ -1,33 +1,16 @@
-// App-shell cache only, for working offline. Network-first for the files below (revalidated, so a release
-// shows at once; the cached copy is used only when the network fails); everything else (including every
-// script.google.com / googleusercontent.com request and file.view response) goes straight to the network.
-// Bumping CACHE is no longer needed for updates; bump it only to drop old cached copies.
-const CACHE = 'lmcs-office-v23';
-const SHELL = [
-  './', 'index.html', 'daybook.html', 'report.html', 'deposits.html', 'close.html', 'accounts.html', 'hiring.html', 'starting-data.html', 'office.css', 'manifest.webmanifest',
-  'js/shell.js', 'js/today.js', 'js/dom.js', 'js/daybook.js', 'js/report.js', 'js/deposits.js', 'js/close.js', 'js/accounts.js', 'js/handover.js', 'js/hiring.js', 'js/starting-data.js', 'js/attention.js', 'js/codes.js', 'js/image.js', 'js/api.js', 'js/outbox.js', 'js/idb-store.js', 'js/format.js', 'js/config.js', 'js/deep-link.js',
-  '../assets/style.css', '../assets/auth.js', '../assets/img/lms-logo.png',
-];
-const shellUrls = new Set(SHELL.map((p) => new URL(p, self.location).href));
-
-// The cache key for a request the shell may serve, or null (cross-origin, non-GET, not a shell file).
-function shellHref(req) {
-  const url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== self.location.origin) return null;
-  const href = url.origin + url.pathname; // ignore ?query on shell files
-  return shellUrls.has(href) ? href : null;
-}
-
-self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
-});
+// The old office's offline worker, retired (batch (a), 25 Nov): the Day Book, deposits, close, report, accounts, starting data and
+// buses pages moved to the game, so phones must stop serving their cached copies. This version takes over at once, deletes every
+// cache, unregisters itself and reloads the pages it controlled (so they load the new redirect stubs from the network). A page
+// that still registers it (office/js/shell.js on the pages that stay) just installs and unregisters it again; it reloads pages
+// only when it actually cleared a cache, so nothing loops.
+self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
-});
-self.addEventListener('fetch', (e) => {
-  const href = shellHref(e.request);
-  if (!href) return;
-  e.respondWith(fetch(e.request, { cache: 'no-cache' })
-    .then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(href, copy)); } return res; })
-    .catch(() => caches.open(CACHE).then((c) => c.match(href)).then((hit) => hit || Response.error())));
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+    await self.registration.unregister();
+    if (!keys.length) return;
+    const pages = await self.clients.matchAll({ type: 'window' });
+    await Promise.all(pages.map((c) => c.navigate(c.url).catch(() => {})));
+  })());
 });

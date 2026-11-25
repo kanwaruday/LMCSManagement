@@ -97,8 +97,7 @@ const css = read('assets/game/home-hud.css');
 assert.ok(/\.hh-x \{[^}]*width:44px; height:44px/.test(css), 'the sheet ✕ is 44px');
 assert.ok(/\.sh-refused \.gb-btn \{[^}]*min-height:44px/.test(page) && /\.gb-viewbar a \{[^}]*min-height:44px/.test(page), 'page taps are 44px');
 assert.ok(!/animation:|transition:/.test(page), 'no motion of its own (the HUD keeps its motion behind reduced-motion)');
-// the chooser lists it; the route map keeps its Try again for every other refusal
-assert.ok(/href="staff-home\/index\.html"/.test(read('index.html')), 'the portal chooser has the staff home');
+// the route map keeps its Try again for every other refusal (the chooser, index.html, is retired in batch (a))
 assert.ok(/if \(e\.refused && opts\.refused\) \{ say\(el, opts\.refused\); return; \}/.test(read('coordinator/route-map.js')), 'route map: refused line only when the page asks for it');
 // auth.js keeps the department from staffsignin on the session
 const auth = read('assets/auth.js');

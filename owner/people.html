@@ -1,320 +1,34 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LMCS Portal — People</title>
-  <link rel="preconnect" href="https://script.google.com">
-  <link rel="preconnect" href="https://accounts.google.com">
-  <link rel="stylesheet" href="../assets/style.css?v=0049023a" />
-  <link rel="stylesheet" href="../assets/game/game.css?v=37f754ac" />
-  <link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb" />
-  <style>
-    /* the People room only: the confirm sheet and the function checkboxes. Everything else is base.css (gb-). */
-    .pp-dlg { border:0; border-radius:16px; padding:16px; width:min(520px, calc(100vw - 32px)); max-height:calc(100vh - 32px); background:var(--gb-paper); color:var(--gb-ink); }
-    .pp-dlg::backdrop { background:rgba(14,20,30,.55); }
-    .pp-dlg h2 { margin:0 0 8px; }
-    .pp-fns { border:0; margin:0 0 14px; padding:0; }
-    .pp-fns legend { font-weight:700; margin:0 0 4px; padding:0; }
-    .pp-fns label { display:flex; align-items:center; gap:10px; min-height:44px; }
-    .pp-fns input { width:22px; height:22px; }
-    .pp-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
-    /* one compact row per person: name · role chips · school, then function chips; small icon buttons on the right */
-    .pp-top { display:flex; align-items:center; gap:8px; margin:8px 0; }
-    .pp-chips { display:flex; gap:6px; overflow-x:auto; flex:1; min-width:0; scrollbar-width:none; }
-    .pp-chips button { flex:none; min-height:44px; padding:0 12px; border:1.5px solid var(--gb-line); border-radius:999px; background:var(--gb-paper); color:var(--gb-ink); font:700 14px/1 var(--gb-font); cursor:pointer; }
-    .pp-chips button[aria-pressed="true"] { background:var(--gb-ink); border-color:var(--gb-ink); color:#fff; }
-    .pp-row { display:flex; align-items:center; gap:4px; padding:6px 4px 6px 12px; }
-    .pp-who { flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; }
-    .pp-who b { overflow-wrap:anywhere; }
-    .pp-who .gb-muted { font-size:13px; }
-    .pp-fn { font-size:12px; font-weight:600; padding:0 8px; background:var(--gb-gold-soft); }
-    .pp-ib { flex:none; width:44px; height:44px; padding:0; border:0; border-radius:10px; background:transparent; font-size:18px; cursor:pointer; }
-    .pp-ib:hover, .pp-ib:focus-visible { background:var(--gb-gold-soft); }
-    .pp-menu { display:flex; flex-direction:column; gap:8px; margin-bottom:8px; }
-    .pp-menu .gb-btn { justify-content:flex-start; }
-    @media (max-width:640px) { .pp-dlg { width:100vw; max-width:100vw; margin:auto 0 0; border-radius:16px 16px 0 0; } }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<meta name="lmcs-moved-to" content="#/mission" />
+<title>This page moved to the game</title>
+<script>window.LMCS_NO_DOCK = true;</script>
+<script src="../assets/auth.js?v=ebda6786"></script>
 </head>
-<body class="gb gb-app">
-
-  <!-- 👑 The People room (Owner only): everyone on the allowlist with an Owner, Coordinator, Principal, Fee Clerk or Accounts role, from the game
-       backend (peoplelist), one compact row each. Add / change / remove a Coordinator (peoplecoordinator); change a Principal's school and
-       supporting charge (peopleprincipal, peoplesupport) or a Fee Clerk's or Accounts person's (peopleoffice); grant or take away Owner
-       (peopleowner, the admin account only: the server checks PEOPLE_OWNER_ADMINS). Every write is a POST behind a confirm, and the server
-       checks the Owner again on every call. The allowlist sheet stays the one store. -->
-  <header class="gb-head"><div><div><h1>People</h1><p>Who runs LMCS HQ and LMS 1–6</p></div><nav class="gb-hsw" aria-label="Owner views"><a href="index.html" data-emoji="homeBase">Home</a><a href="kingdom.html" data-emoji="realMap">Map</a></nav></div></header>
-  <div class="gb-shell">
-    <main class="gb-stage">
-      <section class="hero" id="auth-root" style="padding-top:24px;"><div id="gate-slot"></div></section>
-      <div id="app-root" style="display:none">
-        <p id="pp-status" class="gb-muted" role="status"></p>
-        <section class="gb-section" aria-label="People">
-          <div class="pp-top"><div class="pp-chips" id="pp-chips" role="group" aria-label="Show"></div>
-            <button type="button" class="gb-btn gb-btn-primary" id="pp-add" hidden>+ Add</button></div>
-          <ul class="gb-list" id="pp-list"></ul>
-          <p class="gb-muted" id="pp-note">Changes reach the portal within about a minute. Someone who also holds another role is changed in the allowlist sheet. A Principal gets one school; only a plain Fee Clerk can cover all schools.</p>
-        </section>
-      </div>
-    </main>
-  </div>
-
-  <script src="../assets/auth.js?v=ebda6786"></script>
-  <script src="../assets/game/game.js?v=d0493723"></script>
-  <script src="../assets/game/emoji.js?v=9abef414"></script>
-  <script>
-    const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // same value as owner/index.html
-    const h = function (tag, attrs, kids) { return LMCSGame.ui.h(tag, attrs, kids); };
-    let SESSION = null, DATA = null, BUSY = false;
-    const status = function (t) { document.getElementById('pp-status').textContent = t; };
-    function place(c) { return c === 'ALL' ? 'All schools' : String(c || '').replace(/^LMS(\d)$/, 'LMS $1') || 'No school set'; }
-    function fnText(f) { return (f || []).length ? f.join(', ') : 'No functions'; }
-
-    // everyone once, merged by email from the four lists; each list's own record keeps its own rules (editable, mayAll, canSupport)
-    const FILTERS = [['all', 'All'], ['owner', 'Owner'], ['coord', 'Coordinator'], ['principal', 'Principal'], ['office', 'Fee Clerk']];
-    // Deep links (game doors, 12 Nov): #owner, #coord, #principal, #office open that chip; any other hash = All.
-    let FILTER = FILTERS.some(function (f) { return '#' + f[0] === location.hash; }) ? location.hash.slice(1) : 'all';
-    function roleText(roles) { return roles.map(function (r) { return r === 'FeeClerk' ? 'Fee Clerk' : r; }).join(', '); }
-    function everyone() {
-      const by = {}, out = [];
-      [['owner', DATA.owners], ['coord', DATA.coordinators], ['principal', DATA.principals], ['office', DATA.office]].forEach(function (l) {
-        (l[1] || []).forEach(function (r) {
-          let p = by[r.email];
-          if (!p) { p = by[r.email] = { email: r.email, name: r.name, campus: r.campus, roles: null }; out.push(p); }
-          p[l[0]] = r;
-          if (r.roles) p.roles = r.roles;
-        });
-      });
-      out.forEach(function (p) { if (!p.roles) p.roles = ['Coordinator']; });
-      return out.sort(function (x, y) { return (x.name || x.email).localeCompare(y.name || y.email); });
-    }
-    // what this caller may do to one person: [label, run(opener)]; edits and removes kept apart for the two icon buttons
-    function actsOf(p) {
-      const ed = [], rm = [], c = p.coord, pr = p.principal, of = p.office;
-      if (DATA.canEdit && c && c.editable) {
-        ed.push(['Coordinator: school and functions', function (o) { edit(c, o); }]);
-        rm.push(['Remove as Coordinator', function (o) { remove(c, o); }]);
-      }
-      if (DATA.canEdit && pr && pr.editable) {
-        ed.push(['Principal: school', function (o) { editPrincipal(pr, o); }]);
-        if (pr.canSupport) ed.push(['Supporting schools', function (o) { editSupport(pr, o); }]);
-      }
-      if (DATA.canEdit && of && of.editable) ed.push([roleText(of.roles.filter(function (r) { return r === 'FeeClerk' || r === 'Accounts'; })) + ': school', function (o) { editOffice(of, o); }]);
-      if (DATA.canEditOwners && p.owner && p.email !== String(SESSION.email || '').toLowerCase()) rm.push(['Take away Owner', function (o) { removeOwner(p, o); }]);
-      return { ed: ed, rm: rm };
-    }
-    // one action runs at once; several open a small menu sheet first
-    function pick(title, acts, opener) {
-      if (acts.length === 1) return acts[0][1](opener);
-      const s = sheet(title, [], opener);
-      s.dlg.appendChild(h('div', { class: 'pp-menu' }, acts.map(function (a) {
-        return h('button', { type: 'button', class: 'gb-btn', onclick: function () { s.close(); a[1](opener); } }, [a[0]]);
-      }).concat([h('button', { type: 'button', class: 'gb-btn gb-btn-quiet', onclick: s.close }, ['Cancel'])])));
-      s.dlg.querySelector('button').focus();
-    }
-    function render() {
-      const all = everyone(), shown = all.filter(function (p) { return FILTER === 'all' || p[FILTER]; });
-      const chips = document.getElementById('pp-chips');
-      chips.textContent = '';
-      FILTERS.forEach(function (f) {
-        const n = f[0] === 'all' ? all.length : all.filter(function (p) { return p[f[0]]; }).length;
-        chips.appendChild(h('button', { type: 'button', 'aria-pressed': FILTER === f[0] ? 'true' : 'false', onclick: function () { FILTER = f[0]; render(); } }, [f[1] + ' ' + n]));
-      });
-      document.getElementById('pp-add').hidden = !(DATA.canEdit || DATA.canEditOwners);
-      const ul = document.getElementById('pp-list');
-      ul.textContent = '';
-      if (!shown.length) ul.appendChild(h('li', { class: 'gb-card' }, ['Nobody here yet.']));
-      shown.forEach(function (p) {
-        const who = p.name || p.email, a = actsOf(p), fns = (p.coord && p.coord.functions) || [];
-        const sheetOnly = DATA.canEdit && !a.ed.length && !a.rm.length && !p.owner;
-        ul.appendChild(h('li', { class: 'gb-card pp-row' }, [
-          h('div', { class: 'pp-who' }, [h('b', { title: p.email }, [who]),
-            p.roles.map(function (r) { return h('span', { class: 'gb-pill' + (r === 'Owner' ? ' gb-pill-warn' : '') }, [roleText([r])]); }),
-            h('span', { class: 'gb-muted' }, [place(p.campus)]),
-            fns.map(function (f) { return h('span', { class: 'gb-pill pp-fn' }, [f]); }),
-            p.principal && (p.principal.supporting || []).length ? h('span', { class: 'gb-muted' }, ['+ supports ' + p.principal.supporting.map(place).join(', ')]) : null,
-            sheetOnly ? h('span', { class: 'gb-muted' }, ['· change in the allowlist sheet']) : null]),
-          a.ed.length ? h('button', { type: 'button', class: 'pp-ib', 'aria-label': 'Change ' + who, title: 'Change', onclick: function (e) { pick('Change ' + who, a.ed, e.currentTarget); } }, ['✏️']) : null,
-          a.rm.length ? h('button', { type: 'button', class: 'pp-ib', 'aria-label': 'Remove ' + who, title: 'Remove', onclick: function (e) { pick('Remove ' + who, a.rm, e.currentTarget); } }, ['🗑️']) : null]));
-      });
-    }
-    // + Add: a Coordinator (as before), or an Owner for the admin account only (the server refuses everyone else)
-    function add(opener) {
-      const acts = [];
-      if (DATA.canEdit) acts.push(['A Coordinator', function (o) { edit(null, o); }]);
-      if (DATA.canEditOwners) acts.push(['An Owner', function (o) { addOwner(o); }]);
-      if (acts.length) pick('Add', acts, opener);
-    }
-    // an Owner: someone already listed, or someone new (name + email)
-    function addOwner(opener) {
-      const s = sheet('Add an Owner', [], opener);
-      const others = everyone().filter(function (p) { return !p.owner; });
-      const who = h('select', { id: 'pp-owho', class: 'gb-input' }, [h('option', { value: '' }, ['Someone new'])].concat(
-        others.map(function (p) { return h('option', { value: p.email }, [(p.name || p.email) + ' (' + roleText(p.roles) + ')']); })));
-      const name = h('input', { id: 'pp-oname', class: 'gb-input', type: 'text', maxlength: '80', autocomplete: 'off' });
-      const email = h('input', { id: 'pp-oemail', class: 'gb-input', type: 'email', maxlength: '254', autocomplete: 'off' });
-      const fresh = h('div', {}, [h('div', { class: 'gb-field' }, [h('label', { for: 'pp-oname' }, ['Name']), name]), h('div', { class: 'gb-field' }, [h('label', { for: 'pp-oemail' }, ['Email']), email])]);
-      who.onchange = function () { fresh.hidden = !!who.value; };
-      const err = h('p', { class: 'gb-field-err', role: 'alert' }, []);
-      const next = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Next']);
-      s.dlg.appendChild(h('div', {}, [h('div', { class: 'gb-field' }, [h('label', { for: 'pp-owho' }, ['Person']), who]), fresh,
-        h('p', { class: 'gb-muted' }, ['An Owner can see and change everything in every portal. Their other roles stay.']), err,
-        h('div', { class: 'pp-acts' }, [next, h('button', { type: 'button', class: 'gb-btn', onclick: s.close }, ['Cancel'])])]));
-      who.focus();
-      next.onclick = function () {
-        const old = others.filter(function (p) { return p.email === who.value; })[0];
-        const em = old ? old.email : email.value.trim().toLowerCase(), nm = old ? (old.name || old.email) : name.value.trim();
-        if (!old && !nm) { err.textContent = 'Add their name.'; name.focus(); return; }
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { err.textContent = 'That email does not look right.'; email.focus(); return; }
-        confirmStep(s, 'Make ' + nm + ' (' + em + ') an Owner? They can see and change everything in every portal.', { email: em, name: old ? undefined : nm }, 'peopleowner');
-      };
-    }
-    function removeOwner(p, opener) {
-      const s = sheet('Take away Owner', [], opener), only = p.roles.length === 1;
-      confirmStep(s, 'Take the Owner role away from ' + (p.name || p.email) + '? ' + (only ? 'Owner is their only role, so their allowlist row goes.' : 'Their other roles stay.'), { email: p.email, remove: true }, 'peopleowner');
-    }
-    function editOffice(p, opener) {
-      const s = sheet('Change ' + (p.name || p.email) + "'s school", [], opener);
-      const schools = p.mayAll ? DATA.campuses : DATA.campuses.filter(function (c) { return c !== 'ALL'; });
-      const known = schools.indexOf(p.campus) !== -1;
-      const campus = h('select', { id: 'pp-ocampus', class: 'gb-input' }, [known ? null : h('option', { value: '', selected: true }, ['Choose a school'])].concat(
-        schools.map(function (c) { return h('option', { value: c, selected: known && p.campus === c ? true : null }, [place(c)]); })));
-      const err = h('p', { class: 'gb-field-err', role: 'alert' }, []);
-      const next = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Next']);
-      s.dlg.appendChild(h('div', {}, [h('div', { class: 'gb-field' }, [h('label', { for: 'pp-ocampus' }, ['School']), campus]),
-        p.mayAll ? null : h('p', { class: 'gb-muted' }, ['One school: only a plain Fee Clerk can cover all schools.']), err,
-        h('div', { class: 'pp-acts' }, [next, h('button', { type: 'button', class: 'gb-btn', onclick: s.close }, ['Cancel'])])]));
-      campus.focus();
-      next.onclick = function () {
-        if (schools.indexOf(campus.value) === -1) { err.textContent = 'Choose a school.'; campus.focus(); return; }
-        confirmStep(s, 'Move ' + (p.name || p.email) + ' (' + roleText(p.roles) + ') to ' + place(campus.value) + '? Their roles stay the same.', { email: p.email, campus: campus.value }, 'peopleoffice');
-      };
-    }
-    function load() {
-      status('Loading…');
-      return fetch(GAME_BACKEND_URL + '?action=peoplelist&idToken=' + encodeURIComponent(SESSION.idToken || ''), { cache: 'no-store' })
-        .then(function (r) { return r.json(); }).then(function (d) {
-          if (!d || !d.success) throw new Error((d && d.error) || '');
-          DATA = d; status(''); render();
-        }).catch(function (e) { status((e && e.message) || "Couldn't load the People room. Check the connection, then try again."); });
-    }
-
-    // one sheet at a time: fill in, Next shows the plain sentence, Confirm posts. Esc / Cancel close it (not while sending).
-    function sheet(title, body, opener) {
-      const dlg = h('dialog', { class: 'pp-dlg', 'aria-labelledby': 'pp-dh' }, [h('h2', { class: 'gb-h2', id: 'pp-dh' }, [title])].concat(body));
-      const close = function () { if (BUSY) return; release(opener && opener.isConnected ? opener : null); dlg.close(); dlg.remove(); };
-      dlg.addEventListener('cancel', function (e) { e.preventDefault(); close(); });
-      document.body.appendChild(dlg); dlg.showModal();
-      const release = LMCSGame.ui.trap(dlg, close);
-      return { dlg: dlg, close: close };
-    }
-    function confirmStep(s, text, body, action) {
-      const err = h('p', { class: 'gb-field-err', role: 'alert' }, []);
-      const go = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Confirm']);
-      const back = h('button', { type: 'button', class: 'gb-btn', onclick: s.close }, ['Cancel']);
-      const box = h('div', {}, [h('p', {}, [text]), err, h('div', { class: 'pp-acts' }, [go, back])]);
-      [].slice.call(s.dlg.children, 1).forEach(function (n) { n.remove(); });
-      s.dlg.appendChild(box); go.focus();
-      go.onclick = function () {
-        if (BUSY) return;
-        BUSY = true; go.disabled = back.disabled = true; go.textContent = 'Sending…';
-        fetch(GAME_BACKEND_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: action || 'peoplecoordinator', idToken: SESSION.idToken }, body)) })
-          .then(function (r) { return r.json(); }).then(function (d) {
-            if (!d || !d.success) { const e = new Error((d && d.error) || ''); e.server = true; throw e; }
-            BUSY = false; s.close();
-            const said = body.remove ? 'Removed.' : d.unchanged ? 'Nothing to change.' : 'Saved. It reaches their portal within about a minute.';
-            return load().then(function () { if (DATA) status(said); }); // after the reload, which clears the line
-          }).catch(function (e) {
-            BUSY = false; go.disabled = back.disabled = false; go.textContent = 'Confirm';
-            err.textContent = e && e.server && e.message ? e.message : "That didn't go through. Nothing was changed. Please try again.";
-          });
-      };
-    }
-    // p = null: add a new Coordinator
-    function edit(p, opener) {
-      const s = sheet(p ? 'Change ' + (p.name || p.email) : 'Add a Coordinator', [], opener);
-      const field = function (id, label, input) { return h('div', { class: 'gb-field' }, [h('label', { for: id }, [label]), input]); };
-      const name = h('input', { id: 'pp-name', class: 'gb-input', type: 'text', maxlength: '80', autocomplete: 'off' });
-      const email = h('input', { id: 'pp-email', class: 'gb-input', type: 'email', maxlength: '254', autocomplete: 'off' });
-      // a campus the room doesn't offer (blank, or a list like "LMS1, LMS2" typed in the sheet): start on "Choose a school"
-      const known = !!p && DATA.campuses.indexOf(p.campus) !== -1;
-      const campus = h('select', { id: 'pp-campus', class: 'gb-input' }, [known ? null : h('option', { value: '', selected: true }, ['Choose a school'])].concat(
-        DATA.campuses.map(function (c) { return h('option', { value: c, selected: known && p.campus === c ? true : null }, [place(c)]); })));
-      const fns = h('fieldset', { class: 'pp-fns' }, [h('legend', {}, ['Looks after'])].concat(DATA.functions.map(function (f, i) {
-        return h('label', { for: 'pp-f' + i }, [h('input', { type: 'checkbox', id: 'pp-f' + i, value: f, checked: p && p.functions.indexOf(f) !== -1 ? true : null }), f]);
-      })));
-      const err = h('p', { class: 'gb-field-err', role: 'alert' }, []);
-      const next = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Next']);
-      s.dlg.appendChild(h('div', {}, [p ? null : field('pp-name', 'Name', name), p ? null : field('pp-email', 'Email', email),
-        field('pp-campus', 'School', campus), DATA.hasFunctions ? fns : h('p', { class: 'gb-muted' }, ['The allowlist has no Functions column yet, so only the school can be set.']),
-        err, h('div', { class: 'pp-acts' }, [next, h('button', { type: 'button', class: 'gb-btn', onclick: s.close }, ['Cancel'])])]));
-      (p ? campus : name).focus();
-      next.onclick = function () {
-        const picked = [].filter.call(fns.querySelectorAll('input:checked'), function () { return true; }).map(function (x) { return x.value; });
-        const who = p ? p.email : email.value.trim().toLowerCase(), nm = p ? p.name : name.value.trim();
-        if (!p && !nm) { err.textContent = 'Add their name.'; name.focus(); return; }
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(who)) { err.textContent = 'That email does not look right.'; email.focus(); return; }
-        if (DATA.campuses.indexOf(campus.value) === -1) { err.textContent = 'Choose a school.'; campus.focus(); return; }
-        const text = (p ? 'Change ' + (nm || who) + ' to ' : 'Add ' + nm + ' (' + who + ') as a Coordinator for ') + place(campus.value) + ', looking after ' + (picked.length ? picked.join(', ') : 'no functions') + '?';
-        confirmStep(s, text, { email: who, name: p ? undefined : nm, campus: campus.value, functions: picked });
-      };
-    }
-    // a Principal: the school only (the same select as a Coordinator's, starting on "Choose a school" when the sheet holds something else)
-    function editPrincipal(p, opener) {
-      const s = sheet('Change ' + (p.name || p.email) + "'s school", [], opener);
-      const schools = DATA.campuses.filter(function (c) { return c !== 'ALL'; }); // one school: a network-wide Principal is a sheet edit
-      const known = schools.indexOf(p.campus) !== -1;
-      const campus = h('select', { id: 'pp-pcampus', class: 'gb-input' }, [known ? null : h('option', { value: '', selected: true }, ['Choose a school'])].concat(
-        schools.map(function (c) { return h('option', { value: c, selected: known && p.campus === c ? true : null }, [place(c)]); })));
-      const err = h('p', { class: 'gb-field-err', role: 'alert' }, []);
-      const next = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Next']);
-      s.dlg.appendChild(h('div', {}, [h('div', { class: 'gb-field' }, [h('label', { for: 'pp-pcampus' }, ['School']), campus]), err,
-        h('div', { class: 'pp-acts' }, [next, h('button', { type: 'button', class: 'gb-btn', onclick: s.close }, ['Cancel'])])]));
-      campus.focus();
-      next.onclick = function () {
-        if (schools.indexOf(campus.value) === -1) { err.textContent = 'Choose a school.'; campus.focus(); return; }
-        confirmStep(s, 'Make ' + (p.name || p.email) + ' the Principal for ' + place(campus.value) + '? Their roles stay the same.', { email: p.email, campus: campus.value }, 'peopleprincipal');
-      };
-    }
-    // a supporting charge: other schools this Principal can read and advise at; approvals there stay with that school's Principal
-    function editSupport(p, opener) {
-      const s = sheet((p.name || p.email) + ' also supports', [], opener);
-      const others = DATA.campuses.filter(function (c) { return c !== 'ALL' && c !== p.campus; }); // one school at a time, never all, never their own
-      const box = h('fieldset', { class: 'pp-fns' }, [h('legend', {}, ['Schools they support'])].concat(others.map(function (c, i) {
-        return h('label', { for: 'pp-s' + i }, [h('input', { type: 'checkbox', id: 'pp-s' + i, value: c, checked: (p.supporting || []).indexOf(c) !== -1 ? true : null }), place(c)]);
-      })));
-      const next = h('button', { type: 'button', class: 'gb-btn gb-btn-primary' }, ['Next']);
-      s.dlg.appendChild(h('div', {}, [h('p', { class: 'gb-muted' }, ['They can open these schools to read everything and comment. Approvals stay with each school\'s own Principal.']), box,
-        h('div', { class: 'pp-acts' }, [next, h('button', { type: 'button', class: 'gb-btn', onclick: s.close }, ['Cancel'])])]));
-      box.querySelector('input').focus();
-      next.onclick = function () {
-        const picked = [].map.call(box.querySelectorAll('input:checked'), function (i) { return i.value; });
-        const text = picked.length ? 'Let ' + (p.name || p.email) + ' support ' + picked.map(place).join(', ') + '? They can read and advise there; approvals stay with each school\'s Principal.'
-          : 'Remove ' + (p.name || p.email) + "'s supporting charge? They keep their own school.";
-        confirmStep(s, text, { email: p.email, schools: picked }, 'peoplesupport');
-      };
-    }
-    function remove(p, opener) {
-      const s = sheet('Remove ' + (p.name || p.email), [], opener);
-      confirmStep(s, 'Remove ' + (p.name || p.email) + ' as a Coordinator? Their allowlist row goes, so they lose Coordinator access within about a minute.', { email: p.email, remove: true });
-    }
-
-    function show(session) {
-      SESSION = session;
-      document.getElementById('auth-root').style.display = 'none';
-      document.getElementById('app-root').style.display = '';
-      document.getElementById('pp-add').addEventListener('click', function (e) { add(e.currentTarget); });
-      load();
-    }
-    function gate(session) {
-      if (LMCS.canViewOwnerPortal(session)) return show(session);
-      const p = h('p', {}, ['The People room is for the Owner. ', h('a', { href: '../index.html' }, ['Back to the portals'])]);
-      const slot = document.getElementById('gate-slot'); slot.textContent = ''; slot.appendChild(p);
-    }
-    const cachedSession = LMCS.getSession();
-    if (cachedSession) gate(cachedSession);
-    else LMCS.requireSession('#gate-slot').then(gate);
-  </script>
-
+<body>
+<main style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem">
+<p>This page moved to the game.</p>
+<p><a id="lmcs-moved" href="../index.html">Open it in the game</a></p>
+</main>
+<script>
+// A retired old-portal page (batch (a), 25 Nov): a bookmark or an old link goes on to its screen in the game. A tab a game door
+// opened (?from=game, ?only=, or the tab's flag from LMCSGameDoor) stays here with the link, so nobody bounces between the two.
+(function () {
+  var D = window.LMCSGameDoor, to = document.querySelector('meta[name="lmcs-moved-to"]').getAttribute('content');
+  if (!D) return;
+  var url = D.GAME + (to === 'home' ? '' : to), stay = true;
+  try {
+    var q = new URLSearchParams(location.search);
+    if (q.get('from') === 'game' || q.has('only')) sessionStorage.setItem(D.FLAG, '1');
+    stay = sessionStorage.getItem(D.FLAG) === '1';
+  } catch (e) { stay = true; }
+  document.getElementById('lmcs-moved').href = url;
+  if (!stay) location.replace(url);
+})();
+</script>
 </body>
 </html>

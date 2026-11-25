@@ -59,32 +59,5 @@ if (require.main !== module) { module.exports = () => {}; return; }
   assert.strictEqual(dueLabel('2026-10-21'), '21/10/2026');
   console.log('  ok  - due times read DD/MM/YYYY HH:MM');
 
-  // Service worker: load sw.js with a fake self and probe the fetch filter.
-  const vm = require('vm'), fs = require('fs');
-  const sandbox = { URL, self: { location: new URL('https://x.github.io/LMCSManagement/office/sw.js'), addEventListener() {} }, caches: {} };
-  vm.runInNewContext(fs.readFileSync(__dirname + '/../../office/sw.js', 'utf8') + ';this.shellHref=shellHref;', sandbox);
-  const h = (url, method = 'GET') => sandbox.shellHref({ url, method });
-  assert.ok(h('https://x.github.io/LMCSManagement/office/index.html?v=1'));
-  assert.ok(h('https://x.github.io/LMCSManagement/assets/style.css'));
-  assert.strictEqual(h('https://script.google.com/macros/s/abc/exec?action=today.get'), null);
-  assert.strictEqual(h('https://lh3.googleusercontent.com/file'), null);
-  assert.strictEqual(h('https://x.github.io/LMCSManagement/office/other.json'), null);
-  assert.strictEqual(h('https://x.github.io/LMCSManagement/office/index.html', 'POST'), null);
-  console.log('  ok  - service worker caches only same-origin shell files');
-
-  // Network-first: a release is served at once when online; the cached copy only when the network fails.
-  const handlers = {}, swStore = new Map([['https://x.github.io/LMCSManagement/office/index.html', 'OLD']]);
-  let online = true;
-  const net = { url: 'https://x.github.io/LMCSManagement/office/index.html', method: 'GET' };
-  const sb2 = { URL, Response: { error: () => 'ERR' }, self: { location: new URL('https://x.github.io/LMCSManagement/office/sw.js'), addEventListener: (k, f) => { handlers[k] = f; } },
-    fetch: async () => { if (!online) throw new Error('offline'); return { ok: true, body: 'NEW', clone() { return 'NEW'; } }; },
-    caches: { open: async () => ({ put: async (k, v) => swStore.set(k, v), match: async (k) => swStore.get(k) }) } };
-  vm.runInNewContext(fs.readFileSync(__dirname + '/../../office/sw.js', 'utf8'), sb2);
-  const serve = async () => { let p; handlers.fetch({ request: net, respondWith: (x) => { p = x; } }); return p; };
-  assert.strictEqual((await serve()).body, 'NEW', 'online: the network copy, not the stale cache');
-  await new Promise((r) => setTimeout(r, 0));
-  assert.strictEqual(swStore.get(net.url), 'NEW', 'cache refreshed for offline use');
-  online = false;
-  assert.strictEqual(await serve(), 'NEW', 'offline: the cached copy');
-  console.log('  ok  - service worker is network-first with an offline fallback');
+  // office/sw.js is now the self-unregistering worker (batch (a), 25 Nov): tests/retired checks it; the old cache-filter and network-first checks went with the old worker
 })().catch((e) => { console.log('  FAIL -', e.message); process.exit(1); });

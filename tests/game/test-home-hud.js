@@ -52,18 +52,13 @@ assert.strictEqual(H.setupLeft({ buildings: [{ tiers: [{ state: 'done' }, { stat
 assert.strictEqual(H.setupLeft(null), 0);
 
 // the page: no list is visible on load (Today, rooms, appointments, sign out wait in the stash; #rooms and #panels are hidden)
-const page = read('principal/index.html'), css = read('assets/game/home-hud.css');
-assert.ok(/<div id="hh-stash" hidden>[\s\S]*id="game-root"[\s\S]*id="appt-box"[\s\S]*id="signout-link"[\s\S]*<\/div>\s*<div class="hh-scene"/.test(page), 'Today, appointments and sign out sit in the hidden stash');
-assert.ok(/<aside class="gb-panels" id="panels" aria-label="More" hidden><\/aside>/.test(page), '#panels hidden and empty');
+// principal/index.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its markup checks went with it
+const css = read('assets/game/home-hud.css');
 assert.ok(/body\.hh #base-h, body\.hh #rooms \{ display:none; \}/.test(css), '#rooms hidden by the HUD');
-const at = (f) => page.indexOf('<script src="../assets/game/' + f);
-assert.ok(at('home-hud.js') > at('game.js') && at('home-hud.js') > at('school-models.js') && at('home-hud.js') < at('rail.js'), 'home-hud.js after game.js and the models');
-assert.ok(/id="view-home"[^>]*><span data-emoji="school"><\/span>Town<\/button>/.test(page) && />World<\/button>/.test(page), 'the switch reads Town / World');
 // rules: tap size, reduced motion, no raw emoji in markup, the sheet is a labelled modal dialog
 assert.ok(/\.hh-b \{[^}]*width:44px; height:44px/.test(css), 'bubbles are 44px');
 assert.ok(/@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*hh-bob/.test(css) && (css.match(/animation:|transition:/g) || []).length === (css.slice(css.indexOf('prefers-reduced-motion')).match(/animation:|transition:/g) || []).length, 'all motion sits inside the no-preference query');
 assert.ok(/role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'hh-sheet-h'/.test(js) && /s\.onKey/.test(js) && /'aria-label': S\.L\.close/.test(js) && H.LABELS.close === 'Close' && /role: 'status', 'aria-live': 'polite'/.test(js), 'one sheet: dialog, focus trap, close, live region');
-assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(page.slice(page.indexOf('<body'), page.indexOf('<script src')).replace(/<!--[\s\S]*?-->/g, '')), 'no raw emoji in the markup');
 // the tours point at visible HUD controls, not the stash; other pages keep their targets
 const guide = read('assets/game/guide.js'), gp = guide.slice(guide.indexOf("'principal/index.html'"), guide.indexOf("'coordinator/index.html'"));
 assert.ok(gp.includes("target: '#hh-strip'") && gp.includes("target: '#school-3d'") && !gp.includes('#game-root') && !gp.includes("'#modules'"), 'guide tour: quest strip and building');
@@ -71,7 +66,6 @@ assert.ok(/LMCSGame\.setTourTargets\(\{ today: '#hh-strip', go: null, bar: '#hh-
 const game = read('assets/game/game.js');
 assert.ok(/function tt\(k, d\) \{ return k in tourTargets \? tourTargets\[k\] : d; \}/.test(game) && /target: tt\('today', todayEl\)/.test(game) && /var tourTargets = \{\};/.test(game), 'game.js: defaults unchanged when no targets are set');
 // drawSchool finds the campus from campusId when session.campus is absent
-assert.ok(/const campus = session\.campus \|\| String\(session\.campusId/.test(page) && /LMCSBuildingModels\[campus\]/.test(page) && /campus: campus, sample: true/.test(page), 'drawSchool: session.campus || session.campusId, for the model and the sample alike');
 // review fixes: the edge follows the drawer in the DOM (so `.is-open ~ .hh-edge` matches), the drawer has an X and closes on an outside tap
 assert.ok(/\[tl, top, el\.events, el\.drawer, el\.edge, bottom\]/.test(js) && /\.hh-drawer\.is-open ~ \.hh-edge/.test(css), 'edge is built after the drawer');
 assert.ok(/'aria-label': L\.closeTasks \}, '\\u00d7'/.test(js) && H.LABELS.closeTasks === 'Close tasks' && /pointerdown', function \(e\) \{ if \(el\.drawer\.classList\.contains\('is-open'\)/.test(js) && /if \(S\.drawer\) S\.drawer\(false\)/.test(js), 'drawer: X, outside tap, closes when a sheet opens');
@@ -86,7 +80,6 @@ assert.ok(/document\.addEventListener\('keydown', function \(e\) \{[^\n]*\n\s*if
 assert.ok(/h\('div', \{ class: 'hh-drawer-head' \}, \[h\('h2', \{\}, L\.tasks\), el\.drawerX\]\)/.test(js) && H.LABELS.tasks === 'Tasks' && /\.hh-drawer-head \{ position:sticky; top:0/.test(css) && /\.hh-x \{ width:44px; height:44px/.test(css), 'drawer header: Tasks title and a 44px X, sticky');
 assert.ok(/focus\)? \(on \? el\.drawerX : el\.edge\)\.focus\(\)|\(on \? el\.drawerX : el\.edge\)\.focus\(\)/.test(js), 'opening moves focus to the X');
 assert.ok(LMCSEmoji.get('tasks') && /emoji\('tasks'\), h\('span', \{ class: 'hh-edge-t' \}, L\.tasks\)/.test(js) && /u25c2 Close/.test(js) && /textContent = on \? L\.closeTab : L\.tasks/.test(js) && /\.hh-edge \{[^}]*min-width:56px; min-height:72px/.test(css), 'the edge tab: Tasks + emoji, reads Close when open, 56x72');
-assert.ok(!/Tap a room/.test(page) && /id="school-said"/.test(page), 'the hint line is gone (only an empty spoken status remains)');
 assert.ok(/getElementById\('lmcs-datasrc'\)/.test(js) && /body\.hh #lmcs-datasrc \{ display:none; \}/.test(css), 'the data-source row moves into the profile sheet');
 assert.ok(/\.hh-bottom \{ position:fixed; left:8px; right:68px; bottom:calc\(8px \+ var\(--bd-lift/.test(css), 'bottom controls clear the rail and the Buddy button');
 console.log('test-home-hud: ok');

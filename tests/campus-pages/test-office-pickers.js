@@ -1,6 +1,7 @@
 // Task 5 of the campus-picker plan: Office header (pickCampus), Accounts summary overlay, Principals' Daily Reporting
 // single-select, Owner transport overlay. Made-up data. Run: node tests/campus-pages/test-office-pickers.js
 const assert = require('assert'), fs = require('fs'), vm = require('vm'), path = require('path');
+const { RETIRED } = require('../retired/retired-pages'); // the pages retired in batch (a): their stubs are checked by tests/retired
 const { loadPage, chip, pressed, S } = require('./page-env');
 const { fakeEl, NAMES } = require('../coordinator/campus-env');
 const root = path.join(__dirname, '../..');
@@ -38,7 +39,7 @@ const pickerCtx = (extra) => { const c = vm.createContext(Object.assign({ consol
     assert.deepStrictEqual(pressed(el), ['LMS4'], 'exactly one');
     const sh = fs.readFileSync(path.join(root, 'office/js/shell.js'), 'utf8');
     assert.ok(/session\.campusId === 'ALL'\) \{[^}]*LMCSCampus\.mount/.test(sh) && /multi: false, hes: true, key: OFFICE_PICK_KEY/.test(sh), 'mounted for ALL only');
-    fs.readdirSync(path.join(root, 'office')).filter((f) => f.endsWith('.html')).forEach((f) => {
+    fs.readdirSync(path.join(root, 'office')).filter((f) => f.endsWith('.html') && !RETIRED.has('office/' + f)).forEach((f) => {
       const h = fs.readFileSync(path.join(root, 'office', f), 'utf8');
       assert.ok(/<div id="campus-pick" hidden>/.test(h) && /campus-picker\.js/.test(h) && /campus-picker\.css/.test(h), f);
     });

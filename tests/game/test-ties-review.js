@@ -76,10 +76,6 @@ global.fetch = (url) => { asked = url; return Promise.resolve({ json: () => ({ s
   assert.ok(!/what=(students|attendance|marks)|\.(students?|photo|face)\b/.test(code), 'never asks for or reads a student field');
   assert.deepStrictEqual((code.match(/\br\.(\w+)/g) || []).map((x) => x.slice(2)).filter((k, i, a) => k !== 'json' && a.indexOf(k) === i).sort(),
     ['class', 'classCorrected', 'fix', 'section', 'seededSection', 'state', 'subject', 'teacher'], 'only staff and class fields of a row');
-  // the page: loaded, on the Setup ground, rebuilt fresh in the HUD sheet, and no approve handler passed yet
-  const page = fs.readFileSync(path.join(root, 'principal/index.html'), 'utf8');
-  assert.ok(page.includes('assets/game/ties-review.js') && /function setupBody\(base\)[\s\S]*?LMCSTiesReview\.node\(TIES\)/.test(page) && /loadTies\(session\);/.test(page));
-  assert.ok(/function setupFresh_\(b\)[\s\S]*?LMCSTiesReview\.node\(TIES\)/.test(page) && /key === 'setup'[^\n]*setupFresh_\(b\)/.test(page), 'the sheet builds the list fresh, not a clone');
-  assert.ok(!/onApprove/.test(page), 'Approve correction is not wired until Uday answers');
+  // principal/index.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its load/sheet/no-approve checks went with it
   console.log('test-ties-review: ok');
 })().catch((e) => { console.error(e); process.exit(1); });

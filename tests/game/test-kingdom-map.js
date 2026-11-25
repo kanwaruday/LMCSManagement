@@ -1,5 +1,6 @@
 // Kingdom real map: the places config, no other coordinates in assets/, and the map module's pins and attribution.
 const assert = require('assert'), fs = require('fs'), path = require('path'), vm = require('vm');
+const { RETIRED } = require('../retired/retired-pages'); // the pages retired in batch (a): their stubs are checked by tests/retired
 const root = path.join(__dirname, '..', '..'), read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const ctx = { window: {}, console };
 vm.createContext(ctx);
@@ -40,9 +41,7 @@ assert.ok(!/innerHTML/.test(src), 'no HTML from strings');
 assert.ok(src.split('\n').some((l) => /L\.map\(.*\)\.setView\(/.test(l.split('//')[0])), 'the map starts on CENTER: setView is code, not inside a comment');
 assert.ok(!/aria-modal/.test(src) && /role', 'region'/.test(src), 'the map is in the page, not a dialog: the base sheet it opens traps focus itself');
 assert.ok(!/KULLU/.test(src) && !/\[\s*31\./.test(src), 'no coordinates in the module');
-const page = read('owner/kingdom.html');
-assert.ok(page.includes('places.js') && page.includes('kingdom-map.js') && /LMCSKingdomMap\.mount/.test(page) && /K\.openBase\(id, el\)/.test(page), 'the Map view mounts the map; a place opens its base sheet');
-assert.ok(!/leaflet[\w.@/-]*\.(js|css)/i.test(page) && !/cdnjs[^"']*leaflet/i.test(page), 'Leaflet loads only when the map is opened (the page only styles its controls)');
+// owner/kingdom.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its mount and lazy-Leaflet checks went with it
 // close pins join one group so labels never stack; far ones stay apart
 const gs = (a) => M.cluster(a, 120, 52).map((g) => g.map((p) => p.id).join('+')).join();
 assert.strictEqual(gs([{ id: 'HES', x: 100, y: 100 }, { id: 'LMS1', x: 110, y: 90 }, { id: 'LMS3', x: 300, y: 40 }, { id: 'LMS4', x: 100, y: 300 }]), 'HES+LMS1,LMS3,LMS4');
@@ -51,11 +50,10 @@ assert.strictEqual(gs([{ id: 'A', x: 0, y: 0 }, { id: 'B', x: 100, y: 0 }, { id:
 assert.strictEqual(M.tag({ id: 'LMS4', name: 'LMS 4 Ner Chowk' }, true) + '|' + M.tag({ id: 'HES', name: 'LMCS HQ' }, true), '4|HQ');
 assert.strictEqual(M.short({ id: 'HES', name: 'LMCS HQ' }) + '|' + M.short({ id: 'LMS4', name: 'LMS 4 Ner Chowk' }), 'HQ|LMS 4');
 // two Owner views only: Home | Map, on every Owner page; no Kingdom button left
-['owner/index.html', 'owner/kingdom.html', 'owner/people.html', 'owner/event-design.html'].forEach((f) => {
+['owner/index.html', 'owner/kingdom.html', 'owner/people.html', 'owner/event-design.html'].filter((f) => !RETIRED.has(f)).forEach((f) => {
   const nav = (read(f).match(/<nav class="gb-hsw" aria-label="Owner views">([\s\S]*?)<\/nav>/) || [])[1] || '';
   assert.strictEqual(nav.replace(/<[^>]+>/g, '|').split('|').filter(Boolean).join(' | '), 'Home | Map', f + ': Home | Map');
 });
-assert.ok(page.indexOf('id="kg-realmap"') < page.indexOf('id="kingdom-root"'), 'the real map comes first');
 // connection lines come from places.js `links`, once per pair, only between pinned places
 const ln = (o) => M.links(o, M.drawable(o)).map((l) => l.join('-')).join();
 assert.strictEqual(ln(P), 'HES-LMS1,HES-LMS2,HES-LMS3,HES-LMS4,HES-LMS5,HES-LMS6', 'HQ links to every campus');
@@ -63,10 +61,6 @@ const pt = (links, lat) => ({ name: 'x', lat: lat === undefined ? 31.9 : lat, ln
 assert.strictEqual(ln({ A: pt(['B', 'C', 'Z', 'A']), B: pt(['A', 'C']), C: pt(), D: pt(['A'], null) }), 'A-B,A-C,B-C', 'several links per place; both ways drawn once; unknown, unpinned and self links skipped');
 assert.strictEqual(ln({ A: pt('B'), B: pt() }), '', 'links must be a list');
 // the full-screen Map (Uday, 7 Nov): one screen, the map is the ground; no illustrated Kingdom block, no right column, no block below
-assert.ok(/noValley: true/.test(page), 'the page asks the Kingdom not to draw its illustrated valley');
-assert.ok(/<body class="gb-app fm-page">/.test(page) && !/class="gb-shell"/.test(page) && !/gb-stage/.test(page), 'no grid shell: everything floats on the map');
-['fm-next', 'fm-edge', 'fm-drawer', 'fm-quests', 'fm-requests', 'fm-more'].forEach((c) => assert.ok(page.includes(c), 'HUD piece: ' + c));
-assert.ok(/K\.openQuests\(/.test(page) && /K\.openTownhall\(/.test(page) && /K\.hooks\.townhall = /.test(page), 'quests and the Townhall open from the map');
 // building art: one path per place in places.js, repo art only, and every placeholder exists and is marked
 Object.keys(P).filter((k) => k !== 'CENTER').forEach((k) => {
   assert.ok(/^assets\/game\/[\w/.-]+\.(webp|png|svg)$/.test(P[k].art), k + ' has one art path');
@@ -82,7 +76,5 @@ assert.ok(!/assets\/game\/art\/lms\d/.test(read('assets/game/places.js')), 'not 
 assert.ok(/placeholder/.test(P.HES.art) && /placeholder/.test(P.HES.townhallArt), 'HQ and the Townhall stay marked placeholders until their art lands');
 assert.ok(/\^assets\\\/game\\\//.test(src) && /\.src = \(V\.opts\.root/.test(src), 'the map only loads art from the repo');
 // phones: the next-step sheet never covers Leaflet's bottom corners (zoom; the OpenStreetMap credit the tile policy needs)
-assert.ok(/\.fm \.leaflet-bottom \{ bottom:var\(--fm-sheet, 0px\); \}/.test(page) && /new ResizeObserver\(lift\)\.observe\(next\)/.test(page) && /setProperty\('--fm-sheet'/.test(page), 'the bottom controls ride above the sheet');
-assert.ok(/\.fm-sheet-h \{[^}]*min-height:44px/.test(page), 'the fold handle is a 44 px target');
 assert.ok(/src\.indexOf\('\.\.'\) === -1/.test(src), 'no .. in an art path');
 console.log('kingdom map: ok');

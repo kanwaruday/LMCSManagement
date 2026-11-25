@@ -1,6 +1,7 @@
 // node tests/game/test-dock.js -- the floating Buddy (assets/game/buddy-dock.js): pure helpers in a vm without a DOM,
 // then source checks: no HTML from strings, one backend URL, auth.js loads the dock once, the guide page's conventions.
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
+const { RETIRED } = require('../retired/retired-pages'); // the pages retired in batch (a): their stubs are checked by tests/retired
 const root = path.join(__dirname, '../..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 const J = (x) => JSON.parse(JSON.stringify(x));
@@ -57,10 +58,7 @@ assert.strictEqual(D.setupStep({ quests: [{ questId: 'setup:game', steps: [step(
 // no HTML from strings in the dock or the guide page's script
 const banned = /innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser/;
 assert.ok(!banned.test(src), 'buddy-dock.js must not build HTML from strings');
-const guideHtml = read('guide/index.html');
-const guideJs = (guideHtml.match(/<script>([\s\S]*?)<\/script>/g) || []).join('\n');
-assert.ok(guideJs.length > 200, 'guide/index.html has its own inline script');
-assert.ok(!banned.test(guideJs), "guide/index.html's script must not build HTML from strings");
+// guide/index.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its own-script and loads-guide.js checks went with it
 
 // the dock's backend URL is every page's GAME_BACKEND_URL
 const dockUrl = /var BACKEND = '(https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec)';/.exec(src);
@@ -121,8 +119,6 @@ assert.ok(/if \(docked \|\| window\.LMCS_NO_DOCK/.test(auth), 'loadDock_ runs on
 // the guide page follows the page conventions: in the stamp list, exempt from data-source links, loads auth.js and guide.js
 assert.ok(read('tools/stamp-assets.mjs').includes("'guide/index.html'"), 'guide page is stamped');
 assert.ok(read('tests/datasrc/test-datasrc.js').includes("'guide/index.html'"), 'guide page is in the data-source exemptions');
-assert.ok(/<script src="\.\.\/assets\/game\/guide\.js(\?v=[0-9a-f]+)?"/.test(guideHtml), 'guide page loads guide.js');
-assert.ok(/<script src="\.\.\/assets\/auth\.js(\?v=[0-9a-f]+)?"/.test(guideHtml), 'guide page loads auth.js (the dock shows there too)');
 // the guide's content: every page entry exists, every tour target is an #id that is in its page (static HTML, or the office
 // pages' own scripts), every portal page is covered, every setup step has an article, no honorifics
 const G = ctx.LMCSGuide;
@@ -134,7 +130,7 @@ for (const [p, g] of Object.entries(G.pages)) {
   assert.ok(!beats.length || (beats.length >= 2 && beats.length <= 5), p + ': 2-5 tour beats');
   for (const b of beats) {
     assert.ok(/^#[\w-]+$/.test(b.target) && b.text, p + ': tour beat is an #id with text');
-    assert.ok(html(p).includes('id="' + b.target.slice(1) + '"'), p + ': tour target ' + b.target);
+    if (!RETIRED.has(p)) assert.ok(html(p).includes('id="' + b.target.slice(1) + '"'), p + ': tour target ' + b.target);
   }
 }
 const portalPages = require('child_process').execSync('git ls-files "*.html"', { cwd: root }).toString().trim().split('\n').filter((p) => !/^(docs|tests)\//.test(p));
