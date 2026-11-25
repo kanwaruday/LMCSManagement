@@ -64,7 +64,8 @@
     "files": [
       "payroll",
       "payroll-calc",
-      "gratuity-liability"
+      "gratuity-liability",
+      "game-pay"
     ]
   },
   "coordinator": {

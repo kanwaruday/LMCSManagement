@@ -153,6 +153,7 @@ function doGet(e) {
 // Writes come as POST -- a month of inputs is too long for a URL.
 function doPost(e) {
   const body = JSON.parse((e.postData && e.postData.contents) || '{}');
+  if (/^gamePay[A-Z]/.test(String((body && body.action) || ''))) return payJson_(gamePayDispatch_(body)); // lms-game W7 (game-pay.gs, N3): key-gated, Owner only, the person from the game's verified JWT
   if (body && body.actAs !== undefined && body.actAs !== null && body.actAs !== '') return ContentService.createTextOutput(JSON.stringify(PAY_SUPPORT_READ_ONLY)).setMimeType(ContentService.MimeType.JSON);
   return payHandle_(body.action, body.idToken, body.data || {});
 }
