@@ -69,11 +69,11 @@ assert.strictEqual(calls.length, 0, 'nothing reached hiring.gs');
 // the Principal: the old page's steps, each its own function, on the applicant's row
 const pr = (params) => { const n = calls.length; const d = data(as('principal', 'principal', params)); assert.strictEqual(d.ok !== false, true, JSON.stringify([params, d])); return calls.slice(n); };
 assert.deepStrictEqual(pr({ op: 'shortlist', id: 'T-0002' }), [['hiringShortlist_', 'Principal One', { row: 11, on: true }]]);
-assert.deepStrictEqual(pr({ op: 'interview', id: 'T-0002', recommendation: 'demo', form: JSON.stringify({ confidence: 4, english: 3, capability: { English: 4 },
-  expectedSalary: '20000', row: 99, idToken: 'x', email: 'evil@x' }) }),
-  [['hiringSubmitInterview_', 'Principal One', { row: 11, recommendation: 'demo', rejectReason: '', rejectNote: '', confidence: 4, english: 3, capability: { English: 4 }, expectedSalary: '20000' }]],
+assert.deepStrictEqual(pr({ op: 'interview', id: 'T-0002', recommendation: 'proceed', confidence: '4', english: '3', capability: JSON.stringify({ English: { 5: 4 } }),
+  expectedSalary: '20000', row: '99', idToken: 'x', email: 'evil@x' }),
+  [['hiringSubmitInterview_', 'Principal One', { row: 11, recommendation: 'proceed', rejectReason: '', rejectNote: '', confidence: '4', english: '3', capability: { English: { 5: 4 } }, expectedSalary: '20000' }]],
   'only the form’s own fields pass; the row is the applicant’s');
-assert.deepStrictEqual(pr({ op: 'demo', id: 'T-0002', recommendation: 'reject', rejectReason: 'Demo not up to the mark', form: JSON.stringify({ scores: { pedagogy: 3 }, class: '5' }) }),
+assert.deepStrictEqual(pr({ op: 'demo', id: 'T-0002', recommendation: 'reject', rejectReason: 'Demo not up to the mark', scores: JSON.stringify({ pedagogy: 3 }), class: '5' }),
   [['hiringSubmitDemo_', 'Principal One', { row: 11, recommendation: 'reject', rejectReason: 'Demo not up to the mark', rejectNote: '', class: '5', scores: { pedagogy: 3 } }]]);
 assert.deepStrictEqual(pr({ op: 'calretry', id: 'T-0002', appt: 'AP-1' }), [['apptCalendarRetry_', 'Principal One', { id: 'AP-1' }]]);
 assert.deepStrictEqual(pr({ op: 'dupsettle', id: 'T-0001', other: 'T-0002', same: '1' }), [['hiringDupSettle_', 'Principal One', { row: 10, otherRow: 11, same: true }]]);
@@ -81,7 +81,7 @@ let r = data(as('principal', 'principal', { op: 'dupsettle', id: 'T-0001', other
 assert.strictEqual(r.code, 'refused', 'the other candidate must be in this caller’s own list (T-0003 applied to LMS2)');
 r = data(as('principal', 'principal', { op: 'calretry', id: 'T-0001', appt: 'AP-1' }));
 assert.strictEqual(r.code, 'refused', 'an appointment of another applicant');
-assert.strictEqual(code(as('principal', 'principal', { op: 'interview', id: 'T-0002', form: '{nope' })), 'refused');
+assert.strictEqual(code(as('principal', 'principal', { op: 'interview', id: 'T-0002', capability: '{nope' })), 'refused');
 
 // add an applicant: at one of the proxy's schools, only the add form's fields, a duplicate says so
 const n1 = calls.length;

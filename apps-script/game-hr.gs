@@ -37,6 +37,7 @@ const GAME_HR_FORM_KEYS = {
     'strengths', 'weaknesses', 'expectedSalary', 'familySupport', 'spouseOccupation', 'remarks'],
   demo: ['demoDate', 'class', 'subject', 'scores', 'strengths', 'improve', 'studentFeedback', 'remarks', 'nextDemoAt'],
 };
+const GAME_HR_JSON_KEYS = ['capability', 'experience', 'scores'];
 const GAME_HR_ADD_KEYS = ['name', 'phone', 'age', 'gender', 'qualification', 'bed', 'subjects', 'source', 'notes'];
 const GAME_HR_REVEAL_FIELDS = ['phone', 'offer'];
 
@@ -116,8 +117,12 @@ function gameHrDo_(caller, a, p) {
   if (op === 'confirmreject') return hiringConfirmReject_(caller, { row: row, confirm: p.confirm === '1' });
   if (op === 'revive') return hiringRevive_(caller, { row: row, note: String(p.note || '') });
   if (op === 'interview' || op === 'demo') {
-    const form = gameHrForm_(p.form), b = { row: row, recommendation: String(p.recommendation || ''), rejectReason: String(p.rejectReason || ''), rejectNote: String(p.rejectNote || '') };
-    GAME_HR_FORM_KEYS[op].forEach(function (k) { if (form[k] !== undefined) b[k] = form[k]; });
+    // the report form arrives as flat params (the proxy caps each at 500 characters); the score maps come as small JSON strings
+    const b = { row: row, recommendation: String(p.recommendation || ''), rejectReason: String(p.rejectReason || ''), rejectNote: String(p.rejectNote || '') };
+    GAME_HR_FORM_KEYS[op].forEach(function (k) {
+      if (p[k] === undefined) return;
+      b[k] = GAME_HR_JSON_KEYS.indexOf(k) !== -1 ? gameHrJson_(p[k]) : String(p[k]);
+    });
     return (op === 'interview' ? hiringSubmitInterview_ : hiringSubmitDemo_)(caller, b);
   }
   if (op === 'dupsettle') {
@@ -139,8 +144,8 @@ function gameHrDo_(caller, a, p) {
   throw new Error('Unknown step');
 }
 
-/** the report form, sent as one JSON string: an object, or nothing */
-function gameHrForm_(raw) {
+/** a score map (capability, experience, scores) sent as a JSON string: an object, or nothing */
+function gameHrJson_(raw) {
   let f = {};
   try { f = JSON.parse(String(raw || '{}')); } catch (err) { throw new Error('The form didn’t come through. Try again.'); }
   return f && typeof f === 'object' && !Array.isArray(f) ? f : {};
