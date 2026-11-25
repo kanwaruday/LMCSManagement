@@ -17,6 +17,7 @@ const gas = {
   console, UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify({ success: true, employees: ROSTER }) }) },
   TP_EMPLOYEE_ROSTER_URL: 'https://roster.test/exec',
   CacheService: {}, SpreadsheetApp: {}, ContentService: {}, MailApp: {},
+  PropertiesService: { getScriptProperties: () => ({ getProperty: () => 'k'.repeat(40) }) },   // the Roster read key (26 Nov)
 };
 vm.createContext(gas);
 try { vm.runInContext(fs.readFileSync(path.join(root, 'apps-script/main.gs'), 'utf8'), gas); }

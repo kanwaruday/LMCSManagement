@@ -242,16 +242,18 @@ assert.deepStrictEqual([rowOf('RB1')[6], rowOf('RB1')[CB], rowOf('RB1')[12]], ['
 assert.deepStrictEqual(run('captureDriveCheck_()'), { success: true, drive: 'ok', capture: 'found', write: 'ok' });
 const capDir = transport.kids.find((k) => k.name === 'Capture');
 assert.ok(capDir && capDir.kids.some((k) => /^_drivecheck-/.test(k.name) && k.trashed), 'the test folder is made in Capture/ and binned');
-// a read-only grant: reading works, createFolder fails -> write carries the exact error
+// a read-only grant: reading works, createFolder fails -> write says 'no_permission' (a code, never Drive's own text)
 const realCreate = capDir.createFolder;
 capDir.createFolder = () => { throw new Error('You do not have permission to call DriveApp.Folder.createFolder. Required permissions: https://www.googleapis.com/auth/drive'); };
 const ro = run('captureDriveCheck_()');
-assert.ok(ro.drive === 'ok' && ro.capture === 'found' && /Folder\.createFolder/.test(ro.write), 'a read-only grant shows up as a write error');
+assert.ok(ro.drive === 'ok' && ro.capture === 'found' && ro.write === 'no_permission', 'a read-only grant shows up as a write code');
 capDir.createFolder = realCreate;
 const realDrive = ctx.DriveApp;
 ctx.DriveApp = { getFolderById: () => { throw new Error('You do not have permission to call DriveApp.getFolderById. Required permissions: https://www.googleapis.com/auth/drive'); } };
 const dc = run('captureDriveCheck_()');
-assert.ok(dc.success && /do not have permission/.test(dc.drive) && dc.capture === 'n/a' && dc.write === 'n/a', 'the exact Drive error comes back');
+assert.ok(dc.success && dc.drive === 'no_permission' && dc.capture === 'n/a' && dc.write === 'n/a', 'a code comes back, not the error text');
+ctx.DriveApp = { getFolderById: () => { throw new Error('boom folder-1AbC secret text'); } };
+assert.strictEqual(run('captureDriveCheck_()').drive, 'error');
 ctx.DriveApp = realDrive;
 // Trial runs (2 Nov): Owner/Coordinator only, a 'Trial' column found by header name, never flips; capturediscard bins the folder
 const TR = () => tabs['Capture Runs'][0].indexOf('Trial');

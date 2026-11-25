@@ -831,7 +831,7 @@ function toggleExistingEmployeeSearch_() {
   if (!document.getElementById('fExisting').checked || rosterLoaded_) return;
   rosterLoaded_ = true;
   showLoading_('Loading staff roster…');
-  fetch(EMPLOYEE_ROSTER_URL + '?action=employees&_=' + Date.now(), { cache: 'no-store' })
+  fetch(EMPLOYEE_ROSTER_URL + '?action=employees&idToken=' + encodeURIComponent(SESSION.idToken) + '&_=' + Date.now(), { cache: 'no-store' })
     .then(function (r) { return r.json(); })
     .then(function (json) {
       hideLoading_();

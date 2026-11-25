@@ -1,7 +1,7 @@
 // node tests/game/test-teacher-index.js -- Teacher index (game-teacher.gs): name resolution, TeacherState, labels, refresh, employee fallback
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const dir = __dirname + '/../../apps-script/';
-const ctx = { console };
+const ctx = { console, PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'ROSTER_GAME_KEY' ? 'k'.repeat(40) : 'sheet-id') }) } };
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
 // game-teacher.gs may run BEFORE game.gs (guard lines): load it first, on purpose

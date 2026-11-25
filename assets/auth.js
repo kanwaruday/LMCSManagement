@@ -209,10 +209,13 @@ window.LMCS = (function () {
     } catch (_) { /* storage unavailable or corrupt -- behave as if there is no copy */ }
     return null;
   }
-  function fetchAllowlistOnce_() {
+  // 26 Nov (security): the access list is no longer public. A signed-in person gets only their own entry, asked with their Google ID token
+  // (the key never reaches a browser). Before sign-in there is no token, so the prefetch is only a ping that wakes the server.
+  function fetchAllowlistOnce_(idToken) {
+    if (!idToken) return Promise.reject(new Error('no token'));
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = ctl ? setTimeout(function () { ctl.abort(); }, 30000) : null;
-    return fetch(ALLOWLIST_API_URL + '?action=allowlist_list', { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+    return fetch(ALLOWLIST_API_URL + '?action=allowlist_list&idToken=' + encodeURIComponent(idToken), { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
       .then((res) => res.json())
       .then((data) => {
         if (!data.success || !Array.isArray(data.entries)) throw new Error('bad response');
@@ -242,13 +245,13 @@ window.LMCS = (function () {
     if (window.__lmcsClearFetchCache) window.__lmcsClearFetchCache(); // as a fresh sign-in: cached reads are keyed by email, not campus
   }
   let allowlistPromise = null;
-  function loadAllowlist() {
+  function loadAllowlist(idToken) {
     if (allowlistPromise) return allowlistPromise;
     allowlistPromise = (async function () {
       let lastErr;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const map = await fetchAllowlistOnce_();
+          const map = await fetchAllowlistOnce_(idToken || (getSession() || {}).idToken);
           try { localStorage.setItem(ALLOWLIST_CACHE_KEY, JSON.stringify({ t: Date.now(), map: map })); } catch (_) { /* best-effort */ }
           refreshSession_(map);
           return map;
@@ -471,7 +474,7 @@ window.LMCS = (function () {
 
         // Prefetch while the visitor is still choosing their Google account, so the list is usually
         // already here (or at least in flight) by the time they finish.
-        loadAllowlist().catch(function () { /* retried for real inside onGoogleSignIn */ });
+        fetch(ALLOWLIST_API_URL + '?op=ping', { cache: 'no-store' }).catch(function () { /* only wakes the server; the real check is inside onGoogleSignIn */ });
 
         function enterWith_(match, email, response) {
           const now = Date.now();
@@ -524,7 +527,7 @@ window.LMCS = (function () {
           const cachedMatch = cached && cached[email];
           if (cachedMatch && payload.email_verified) {
             enterWith_(cachedMatch, email, response);
-            loadAllowlist().then(function (live) {
+            loadAllowlist(response.credential).then(function (live) {
               if (!live[email]) { localStorage.removeItem(SESSION_KEY); window.location.reload(); } // removed since the copy was taken
             }).catch(function () { /* live check unavailable -- keep the session, the backend still enforces */ });
             return;
@@ -533,7 +536,7 @@ window.LMCS = (function () {
           const stopChecking = showChecking_(statusEl);
           let allowlist;
           try {
-            allowlist = await loadAllowlist();
+            allowlist = await loadAllowlist(response.credential);
           } catch (err) {
             // Never silently deny (or grant) access on data we know is incomplete -- see loadAllowlist().
             stopChecking();
@@ -832,7 +835,7 @@ window.LMCS = (function () {
   }
   function warmTargets(s) {
     const L = window.LMCS, out = [];
-    const add = function (label, base, query) { out.push({ label: label, url: base + '?action=' + query, tokenised: base !== ROSTER_URL }); };
+    const add = function (label, base, query) { out.push({ label: label, url: base + '?action=' + query, tokenised: true }); };
     if (L.canViewCoordinatorPortal(s)) { // Coordinator/Owner: their own portal's reads first
       add('Follow-ups', COORD_URL, 'coordinatortasks');
       add('Transport', COORD_URL, 'coordinatortransport');

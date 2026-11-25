@@ -53,11 +53,11 @@ const tick = (ms = 60) => new Promise((r) => setTimeout(r, ms));
   assert.strictEqual(session.campusId, 'ALL');
   assert.strictEqual(session.role, 'Owner');
   assert.ok(p.store.lmcs_allowlist_v1, 'last good list was saved');
-  assert.strictEqual(p.calls.allowlist, 2, 'one failed attempt + one successful retry (prefetch shared with sign-in)');
+  assert.strictEqual(p.calls.allowlist, 2, 'one failed attempt + one successful retry (the prefetch is only a ping now: no token before sign-in)');
 
-  // 2. every attempt fails (the prefetch's three, then sign-in's own three) -> honest message + Try again,
+  // 2. every attempt fails (sign-in's three) -> honest message + Try again,
   //    never "not on the access list"; clicking Try again signs in once the backend answers
-  p = makePage({ script: ['html', 'html', 'html', 'html', 'html', 'html', LIST] });
+  p = makePage({ script: ['html', 'html', 'html', LIST] });
   session = null;
   p.LMCS.requireSession('#gate').then((s) => { session = s; });
   await tick(100);

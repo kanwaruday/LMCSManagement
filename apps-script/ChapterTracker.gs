@@ -176,7 +176,7 @@ function chapterHasCWA(tagStr, subject) {
 function chapterFetchRosterCanon() {
   const map = {};
   try {
-    const res = UrlFetchApp.fetch(ROSTER_PROXY_URL + '?action=roster', { muteHttpExceptions: true });
+    const res = UrlFetchApp.fetch(ROSTER_PROXY_URL + '?action=roster' + '&key=' + encodeURIComponent(PropertiesService.getScriptProperties().getProperty('ROSTER_GAME_KEY') || ''), { muteHttpExceptions: true });
     if (res.getResponseCode() !== 200) throw new Error('HTTP ' + res.getResponseCode());
     const json = JSON.parse(res.getContentText());
     if (!json.success || !Array.isArray(json.rows)) throw new Error(json.error || 'bad response shape');

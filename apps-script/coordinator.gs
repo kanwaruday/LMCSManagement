@@ -759,7 +759,7 @@ function coordAcademics_(caller, win) {
   let all = coordCacheGetBig_('coord_academics');
   if (!all) {
     const feed = coordFetchJson_(COORD_CWHW_URL);
-    const roster = coordFetchJson_(COORD_ROSTER_URL + '?action=employees');
+    const roster = coordFetchJson_(COORD_ROSTER_URL + '?action=employees' + '&key=' + encodeURIComponent(PropertiesService.getScriptProperties().getProperty('ROSTER_GAME_KEY') || ''));
     if (!feed || !Array.isArray(feed.cwRecords) || !roster.success || !Array.isArray(roster.employees)) throw new Error('CW/HW or roster source returned something unexpected');
     all = coordAcademicsAggregate_(feed, roster.employees, new Date());
     all.generated = feed.generated;

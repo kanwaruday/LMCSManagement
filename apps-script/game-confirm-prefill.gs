@@ -58,7 +58,7 @@ function cqRosterRows_(code, cacheOnly) {
   const built = cqCacheJson_(cache, 'cq_acad_built');
   if (Array.isArray(built) && built.indexOf(code) === -1) return [];
   if (cacheOnly) return null;
-  const j = cqFetchJson_(TCH_ROSTER_URL + '?action=roster');
+  const j = cqFetchJson_(TCH_ROSTER_URL + '?action=roster' + '&key=' + encodeURIComponent(PropertiesService.getScriptProperties().getProperty('ROSTER_GAME_KEY') || ''));
   if (!j || !Array.isArray(j.rows)) return null;
   const by = {};
   j.rows.forEach(function (r) {

@@ -188,18 +188,75 @@ const ALLOWLIST_ACTIONS_ = ['allowlist_list', 'allowlist_add', 'allowlist_edit',
 
 // a supporting Principal's switch (supporting-charge.gs, auth.js actAs): these reads still answer; every other action is a write and is refused
 const ROSTER_SUPPORT_READS_ = ['roster', 'employees', 'designations', 'drivecheck', 'allowlist_list', 'nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus', 'verificationqueue', 'salaryfullrecord', 'docrules'];
+// 26 Nov SECURITY (an unauthenticated GET returned the staff roster): the read actions are no longer public. A data read needs
+// ROSTER_GAME_KEY (?key=, constant-time; server to server only, never in browser JS) or a verified Google ID token of someone on the
+// Allowlist (?idToken=, what the browser pages hold). There is no default action. Open, booleans only: ?op=hrSetupStatus and ?op=ping.
+// The staff-management actions and the allowlist writes keep their own token gates; allowlist_list is the one read left as it was
+// (the sign-in screen reads it before anyone has a token: a separate change, flagged to V2).
+function rosterSameKey_(want, got) {
+  if (!want || typeof got !== 'string' || want.length !== got.length) return false;
+  let d = 0;
+  for (let i = 0; i < want.length; i++) d |= want.charCodeAt(i) ^ got.charCodeAt(i);
+  return d === 0;
+}
+function rosterKeyOk_(key) {
+  const want = String(PropertiesService.getScriptProperties().getProperty('ROSTER_GAME_KEY') || '').trim();
+  return want.length >= 32 && rosterSameKey_(want, String(key || '').trim());
+}
+/** someone the school knows: on the Allowlist, or an Employee Master sign-in (EmpPersonal.AuthEmail: teachers sign in that way) */
+function rosterKnownEmail_(email) {
+  if (readEntries().some(function (x) { return String(x.email || '').toLowerCase() === email; })) return true;
+  const cache = CacheService.getScriptCache();
+  let set = cache.get('roster_authemails');
+  if (set === null) {
+    const rows = SpreadsheetApp.openById(EMP_ROSTER_SHEET_ID).getSheetByName('EmpPersonal').getDataRange().getValues();
+    const col = rows[0].indexOf('AuthEmail'), mails = [];
+    for (let i = 1; col >= 0 && i < rows.length; i++) { const m = String(rows[i][col] || '').trim().toLowerCase(); if (m.indexOf('@') !== -1) mails.push(m); }
+    set = mails.join(' ');
+    try { cache.put('roster_authemails', set, 600); } catch (err) { /* too big for the cache: read again next time */ }
+  }
+  return (' ' + set + ' ').indexOf(' ' + email + ' ') !== -1;
+}
+/** a Google ID token (audience and email checked by Google) whose email the school knows: that email, else ''; remembered 5 minutes per token */
+function rosterTokenEmail_(idToken) {
+  if (!idToken) return '';
+  try {
+    const cache = CacheService.getScriptCache();
+    const ck = 'rtok_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(idToken))).slice(0, 40);
+    const hit = cache.get(ck);
+    if (hit) return hit;
+    const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return '';
+    const payload = JSON.parse(res.getContentText());
+    if (payload.aud !== GOOGLE_CLIENT_ID || (payload.email_verified !== 'true' && payload.email_verified !== true)) return '';
+    const email = String(payload.email || '').toLowerCase();
+    if (!email || !rosterKnownEmail_(email)) return '';
+    cache.put(ck, email, 300);
+    return email;
+  } catch (err) { return ''; }
+}
+const rosterTokenOk_ = function (idToken) { return !!rosterTokenEmail_(idToken); };
 function doGet(e) {
-  const action = (e.parameter.action || 'roster').toLowerCase();
-  if (e.parameter.actAs && ROSTER_SUPPORT_READS_.indexOf(action) === -1) return jsonOut(SUPPORT_READ_ONLY);
-  if (e.parameter.op === 'hrSetupStatus') return jsonOut(hrfSetupStatus_()); // hr-file.gs: booleans only, read-only; never runs the setup itself
-  hrfSelfSetup_(); // hr-file.gs: derives HR_DRIVE_LIVE_URL and installs the sweep trigger once; never throws (after the support refusal: that touches no service)
+  const p = (e && e.parameter) || {};
+  const action = String(p.action || '').toLowerCase();   // no default action: a bare GET answers nothing
+  if (p.actAs && ROSTER_SUPPORT_READS_.indexOf(action) === -1) return jsonOut(SUPPORT_READ_ONLY);
+  if (p.op === 'hrSetupStatus') return jsonOut(hrfSetupStatus_()); // hr-file.gs: booleans only, read-only; never runs the setup itself
+  if (p.op === 'ping') return jsonOut({ success: true, ok: true }); // health: no data
   if (STAFF_ACTIONS_.indexOf(action) !== -1) return staffDoGet_(e);
-  if (ALLOWLIST_ACTIONS_.indexOf(action) !== -1) return allowlistDoGet_(e);
+  const NO = { success: false, error: 'not_authorized' }; // nothing else is said: no echo of the action
+  if (action === 'allowlist_list') { // the access list: the key sees all of it; a signed-in person sees only their own entry (that is all the sign-in reads)
+    if (rosterKeyOk_(p.key)) { hrfSelfSetup_(); return allowlistDoGet_(e); } // hr-file.gs: derives HR_DRIVE_LIVE_URL, installs the sweep trigger once; never throws; only after the key check
+    const me = rosterTokenEmail_(p.idToken);
+    return me ? jsonOut({ success: true, entries: readEntries().filter(function (x) { return String(x.email || '').toLowerCase() === me; }) }) : jsonOut(NO);
+  }
+  if (ALLOWLIST_ACTIONS_.indexOf(action) !== -1) return allowlistDoGet_(e); // add/edit/delete: the admin token gate inside
+  if (action === 'drivecheck') { if (!rosterKeyOk_(p.key)) return jsonOut(NO); hrfSelfSetup_(); return jsonOut(captureDriveCheck_()); } // creates and bins a folder: the key only
+  if (!rosterKeyOk_(p.key) && !rosterTokenOk_(p.idToken)) return jsonOut(NO);
+  hrfSelfSetup_(); // only for an authorised read: an anonymous GET never reaches it
   try {
     if (action === 'roster') return jsonOut({ success: true, rows: cached_('emp_roster', readRosterRows) });
     if (action === 'employees') return jsonOut({ success: true, employees: cached_('emp_employees', readEmployees) });
     if (action === 'designations') return jsonOut({ success: true, designations: cached_('emp_designations', readDesignationSummary) });
-    if (action === 'drivecheck') return jsonOut(captureDriveCheck_()); // read-only: can this deployment reach Drive? (transport-capture.gs)
     return jsonOut({ success: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return jsonOut({ success: false, error: err.message });
@@ -259,9 +316,9 @@ function doPost(e) {
 // SETUP: run rosterInstallKeepWarmTrigger ONCE from the editor (it asks for the trigger permission);
 // re-running replaces the old trigger rather than adding a second.
 function rosterKeepWarm() {
-  const base = ScriptApp.getService().getUrl();
+  const base = ScriptApp.getService().getUrl(), key = String(PropertiesService.getScriptProperties().getProperty('ROSTER_GAME_KEY') || '');
   ['allowlist_list', 'employees'].forEach(function (action) {
-    try { UrlFetchApp.fetch(base + '?action=' + action, { muteHttpExceptions: true }); }
+    try { UrlFetchApp.fetch(base + '?action=' + action + (key ? '&key=' + encodeURIComponent(key) : ''), { muteHttpExceptions: true }); }
     catch (err) { /* best-effort: a missed ping just means one cold start later */ }
   });
 }

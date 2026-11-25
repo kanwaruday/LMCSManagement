@@ -1,7 +1,8 @@
 // node tests/game/test-confirm-prefill.js -- setup quest pre-fill adapters (game-confirm-prefill.gs). Synthetic data only.
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const dir = __dirname + '/../../apps-script/';
-const ctx = { console: Object.assign(Object.create(console), { error() {} }), Logger: { log() {} } };
+const RKEY = 'k'.repeat(40);
+const ctx = { console: Object.assign(Object.create(console), { error() {} }), Logger: { log() {} }, PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'ROSTER_GAME_KEY' ? RKEY : null) }) } };
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
 load('game-confirm-prefill.gs'); load('game-confirm.gs'); load('game-teacher.gs'); load('game.gs');
@@ -35,7 +36,7 @@ const test = (n, fn) => tests.push([n, fn]);
 test('roster.myClasses fetches once for everyone', () => {
   reset({ body: JSON.stringify(ROSTER) });
   assert.deepStrictEqual(ids(P['roster.myClasses']({ caller: T1 }, {})), ['c-class7-math', 'c-class8-science']);
-  assert.deepStrictEqual(calls, [ctx.TCH_ROSTER_URL + '?action=roster']);
+  assert.deepStrictEqual(calls, [ctx.TCH_ROSTER_URL + '?action=roster&key=' + RKEY]); // the Roster's reads need its key (26 Nov)
   P['roster.myClasses']({ caller: T1 }, {});
   assert.deepStrictEqual(ids(P['roster.myClasses']({ caller: T2 }, {})), ['c-class3-hindi']);
   assert.deepStrictEqual(J(P['roster.myClasses']({ caller: { employeeCode: 'TST/99/01/777' } }, {})), []);

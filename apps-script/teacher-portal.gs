@@ -85,7 +85,7 @@ function tpRosterByCampus_(campusId) {
 
   let employees = [];
   try {
-    const res = UrlFetchApp.fetch(TP_EMPLOYEE_ROSTER_URL + '?action=employees', { muteHttpExceptions: true });
+    const res = UrlFetchApp.fetch(TP_EMPLOYEE_ROSTER_URL + '?action=employees' + '&key=' + encodeURIComponent(PropertiesService.getScriptProperties().getProperty('ROSTER_GAME_KEY') || ''), { muteHttpExceptions: true });
     if (res.getResponseCode() === 200) {
       const data = JSON.parse(res.getContentText());
       if (data.success && Array.isArray(data.employees)) employees = data.employees;

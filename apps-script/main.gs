@@ -494,7 +494,7 @@ function pdrResolveViewAsCaller_(caller, viewAsCode) {
   if (!scope) return caller;
   const code = String(viewAsCode).trim();
   try {
-    const res = UrlFetchApp.fetch(TP_EMPLOYEE_ROSTER_URL + '?action=employees', { muteHttpExceptions: true });
+    const res = UrlFetchApp.fetch(TP_EMPLOYEE_ROSTER_URL + '?action=employees' + '&key=' + encodeURIComponent(PropertiesService.getScriptProperties().getProperty('ROSTER_GAME_KEY') || ''), { muteHttpExceptions: true });
     if (res.getResponseCode() !== 200) return caller;
     const data = JSON.parse(res.getContentText());
     if (!data.success || !Array.isArray(data.employees)) return caller;

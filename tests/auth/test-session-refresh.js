@@ -4,7 +4,7 @@
 const vm = require('vm'), fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '../../assets/auth.js'), 'utf8');
 
-const sess = (o) => JSON.stringify(Object.assign({ name: 'X', ts: Date.now(), expiresAt: Date.now() + 3600e3 }, o));
+const sess = (o) => JSON.stringify(Object.assign({ name: 'X', ts: Date.now(), expiresAt: Date.now() + 3600e3, idToken: 'tok' }, o)); // the list is read with the person's own Google token (26 Nov)
 const list = (...entries) => ({ success: true, entries });
 function page(store, reply) {
   const calls = { allowlist: 0 };
