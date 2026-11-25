@@ -11,7 +11,9 @@
 // Who: a Fee Clerk at their own school reads and writes; the Owner reads only (V2, 12 Nov). Script Property OFFICE_GAME_KEY (set by
 // Uday; the same value as the game's CLASSIC_OFFICE_KEY secret). Never logs the key, email, params or amounts.
 
-var OFFICE_GAME_ROLE = { fee_clerk: 'FeeClerk', owner: 'Owner', principal: 'Principal' }; // principal: the cash approvals (lane-d slice 2)
+// accounts_verifier (lms-game 669): the office's own opening.set / account.opening allow FinanceHead; the bridge lets this role reach ONLY the
+// specs marked verifier (the two seal writes + the Day Book review reads), so none of FinanceHead's other powers (close, sign…) is reachable
+var OFFICE_GAME_ROLE = { fee_clerk: 'FeeClerk', owner: 'Owner', principal: 'Principal', accounts_verifier: 'FinanceHead' }; // principal: the cash approvals (lane-d slice 2)
 var OFFICE_GAME_TICKET_MS = 10 * 60 * 1000;
 var OFFICE_GAME_PART_MAX = 2000000; // base64 characters per part (~1.5 MB of bytes)
 var OFFICE_GAME_PARTS_MAX = 20;     // a 25 MB fuel video is 18 parts
@@ -21,14 +23,14 @@ var OFFICE_GAME_PARTS_MAX = 20;     // a 25 MB fuel video is 18 parts
 // string. `write` must match the office action's own `write` (a test checks it). The campus always comes from the proxy, never params.
 var OFFICE_GAME_ACTIONS = {
   gameToday: { act: 'today.get' },
-  gameConfig: { act: 'config.get' },
-  gameDaybookList: { act: 'daybook.list' },
-  gameDaybookBalances: { act: 'daybook.balances' },
+  gameConfig: { act: 'config.get', verifier: true },
+  gameDaybookList: { act: 'daybook.list', verifier: true },
+  gameDaybookBalances: { act: 'daybook.balances', verifier: true },
   gameDaybookAdd: { act: 'daybook.add', write: true, num: ['amount_paise', 'litres_ml', 'odometer_km'], list: ['components'] },
   gameDaybookReverse: { act: 'daybook.reverse', write: true },
   gameDaybookAttachVideo: { act: 'daybook.attach_video', write: true, bool: ['replace'] }, // a pump video for a saved fuel entry (W2 slice 2)
   gameDepositList: { act: 'deposit.list' },
-  gameRecon: { act: 'recon.get' },
+  gameRecon: { act: 'recon.get', verifier: true },
   gameDepositAdd: { act: 'deposit.add', write: true, num: ['amount_paise'] },
   gameErpSet: { act: 'erp.set', write: true, num: ['amount_paise'] },
   gameLedger: { act: 'ledger.summary' },
@@ -44,16 +46,16 @@ var OFFICE_GAME_ACTIONS = {
   gameStartSave: { act: 'start.save', write: true, json: ['fields'], bool: ['skip'] },
   gameStartSubmit: { act: 'start.submit', write: true },
   gameDaybookCount: { act: 'daybook.count', write: true, num: ['counted_paise'] },   // lane-d: the end-of-day cash count
-  gameDaybookCounts: { act: 'daybook.counts' },
-  gameFileView: { act: 'file.view', principal: true }, // the office marks it write only to take the lock for its Audit row; it changes no data
+  gameDaybookCounts: { act: 'daybook.counts', verifier: true },
+  gameFileView: { act: 'file.view', principal: true, verifier: true }, // the office marks it write only to take the lock for its Audit row; it changes no data
   gameFileTicket: { ticket: true, write: true },
   // lane-d (16 Nov; Jarvis/Uday: "OWNER ONLY", as the office's own rule FinanceHead/Owner): the accounts set-up. owner: true is the one
   // exception to "the Owner reads only here", for these five only; a Fee Clerk is refused here (read_only) and by the office rule.
   // campusRows: each row's campus is forced to the proxy's school (a row can't name another).
   gameAccountAdd: { act: 'account.add', write: true, owner: true },
-  gameAccountOpening: { act: 'account.opening', write: true, owner: true, num: ['amount_paise'] },
+  gameAccountOpening: { act: 'account.opening', write: true, owner: true, verifier: true, num: ['amount_paise'] },
   // lane-d go-live: the Owner's seal of the opening books sets the Day Book's own opening (cash per box, bank, UPI); refused once the book has an entry
-  gameOpeningSet: { act: 'opening.set', write: true, owner: true, json: ['balances'] },
+  gameOpeningSet: { act: 'opening.set', write: true, owner: true, verifier: true, json: ['balances'] },
   // ponytail: account.opening's "once per account" looks only at this FY's and last FY's books (officeRecentBooks_), so a second opening
   // two or more years later isn't caught. An all-years check opens one book per past FY on every save; add it if that ever happens.
   gameVehicleAdd: { act: 'vehicle.add', write: true, owner: true },
@@ -85,8 +87,9 @@ function officeGame_(b) {
   const spec = Object.prototype.hasOwnProperty.call(OFFICE_GAME_ACTIONS, b.action) ? OFFICE_GAME_ACTIONS[b.action] : null;
   const role = Object.prototype.hasOwnProperty.call(OFFICE_GAME_ROLE, b.role) ? OFFICE_GAME_ROLE[b.role] : null;
   if (!spec || !role) return officeGameRefuse_('unknown_action');
-  if (b.role === 'principal' && !spec.principal && !spec.approver) return officeGameRefuse_('unknown_action'); // a Principal reaches only the cash approvals
-  if (spec.write && !(spec.approver ? ['principal', 'owner'].indexOf(b.role) !== -1 : spec.owner ? OFFICE_GAME_SETUP_ROLES.indexOf(b.role) !== -1 : b.role === 'fee_clerk')) return officeGameRefuse_('read_only'); // the Owner reads only here, but for the set-up
+  if (b.role === 'principal' && !spec.principal && !spec.approver) return officeGameRefuse_('unknown_action');
+  if (b.role === 'accounts_verifier' && !spec.verifier) return officeGameRefuse_('unknown_action'); // only the seal writes and the review reads // a Principal reaches only the cash approvals
+  if (spec.write && !(b.role === 'accounts_verifier' ? !!spec.verifier : spec.approver ? ['principal', 'owner'].indexOf(b.role) !== -1 : spec.owner ? OFFICE_GAME_SETUP_ROLES.indexOf(b.role) !== -1 : b.role === 'fee_clerk')) return officeGameRefuse_('read_only'); // the Owner reads only here, but for the set-up
   const campus = String(b.campus || '').trim().toUpperCase();
   if (!/^[A-Z0-9]{2,8}$/.test(campus)) return officeGameRefuse_('campus_needed');
   if (spec.write && !(typeof b.email === 'string' && /^[^\s@]+@[^\s@]+$/.test(b.email))) return officeGameRefuse_('who');

@@ -239,4 +239,16 @@ module.exports = function run(t) {
     const b = h.call('daybook.balances', { campus: 'LMS2', date: '2026-10-21' }, 'owner-token');
     assert.deepStrictEqual([b.opening.cash.petty, b.opening.cash.fee, b.opening.bank], [100000, 865000, 2500000], 'the latest split');
   });
+
+  t.test('669 accounts verifier: the bridge lets it set the opening and read the Day Book, and nothing else (no entry, reversal, close or other set-up)', () => {
+    const h = fresh();
+    const V = { role: 'accounts_verifier', email: 'verifier@example.org', campus: 'LMS2' };
+    const bal = [{ mode: 'cash', bucket: 'petty', amount_paise: 120000 }, { mode: 'cash', bucket: 'fee', amount_paise: 0 }, { mode: 'cash', bucket: 'other', amount_paise: 0 }, { mode: 'bank', amount_paise: 0 }];
+    assert.deepStrictEqual(J(h.game('gameOpeningSet', { id: 'open-v-1', balances: JSON.stringify(bal) }, V).data.opening.cash), { petty: 120000, fee: 0, other: 0 });
+    assert.ok(Array.isArray(h.game('gameDaybookList', { from: '2026-10-21', to: '2026-10-21' }, { ...V, email: null }).data.entries));
+    assert.strictEqual(h.game('gameDaybookAdd', { id: 'x1', entry_date: '2026-10-21', account: 'cash:LMS2', direction: 'IN', bucket: 'fee', category: 'fee_collection', amount_paise: '100' }, V).data.code, 'unknown_action', 'no entry');
+    assert.strictEqual(h.game('gameDaybookReverse', { id: 'r1', reverses: 'x', narration: 'nope' }, V).data.code, 'unknown_action', 'no reversal');
+    assert.strictEqual(h.game('gameAccountAdd', { id: 'bank:LMS2:x', kind: 'bank', label: 'x' }, V).data.code, 'unknown_action', 'no other set-up');
+    assert.strictEqual(h.game('gameDecide', { id: 'd1', entry_id: 'p1', approve: 'true' }, V).data.code, 'unknown_action', 'no approvals');
+  });
 };
