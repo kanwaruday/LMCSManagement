@@ -108,4 +108,9 @@ assert.ok(Array.isArray(data(h.post('gameHrPipeline', { key: KEY, role: 'fee_cle
 // every done step is logged by name and step; no values
 assert.ok(logged().some((x) => x[0] === 'Clerk One' && x[1] === 'add' && x[2] === 'T-0042'));
 assert.ok(!JSON.stringify(tabs['Game Actions'].rows).includes('9000000099'), 'no phone in the log');
+// the detail says when an accepted appointment never reached the calendar (so Retry shows), and only then
+LIST[1].appointments = [{ id: 'AP-2', kind: 'interview', start: '2099-01-01T05:00:00.000Z', status: 'accepted', calendarMode: 'none' },
+  { id: 'AP-3', kind: 'demo', start: '2099-01-02T05:00:00.000Z', status: 'accepted', calendarMode: 'event' }];
+const det = data(h.post('gameHrApplicant', { key: KEY, role: 'principal', email: 'principal@lms.org.in', campuses: ['LMS1'], params: { id: 'T-0002' } }));
+assert.deepStrictEqual(det.appointments.map((x) => x.calendarMissing), [true, false]);
 console.log('test-game-hr-s2: all passed');

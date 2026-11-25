@@ -89,7 +89,8 @@ function gameHrDetail_(a, schools, nowMs) {
   return {
     applicant: gameHrRow_(a, schools, nowMs),
     notes: a.notes,
-    appointments: (a.appointments || []).map(function (x) { return { id: x.id, kind: x.kind, start: x.start, status: x.status, reportFiled: !!x.reportFiled }; }),
+    appointments: (a.appointments || []).map(function (x) { return { id: x.id, kind: x.kind, start: x.start, status: x.status, reportFiled: !!x.reportFiled,
+      calendarMissing: x.status === 'accepted' && x.calendarMode === 'none' }; }), // S2: accepted, but the calendar write failed (Retry)
     reports: reports(a.interviewReports, 'interview').concat(reports(a.demoReports, 'demo')),
     stages: { shortlistedAt: a.shortlistedAt, interviewAt: a.interviewAt, demoAt: a.demoAt, salaryOfferAt: a.salaryOfferAt,
       mdInterviewAt: a.mdInterviewAt, hiringStartedAt: a.hiringStartedAt, dateOfJoining: a.dateOfJoining },
