@@ -5,10 +5,11 @@ const assert = require('assert'), fs = require('fs'), path = require('path'), vm
 const here = path.join(__dirname, '../../apps-script');
 const projects = JSON.parse(fs.readFileSync(path.join(here, 'projects.json'), 'utf8'));
 const KEY = 'c'.repeat(40), CLIENT = '697999989724-mvi85iobr20g4mm8a8nrjd1rms2o8tf6.apps.googleusercontent.com';
+const ROSTERKEY = 'r'.repeat(40);
 const SOURCES = JSON.stringify({ cw: 'cw-fake', payroll: 'pay-fake', schools: ['s1', 's2', 's3', 's4', 's5', 's6'] });
 const FEED = JSON.stringify({ generated: 'x', cwRecords: [{ teacher: 'Teacher Alpha' }], cmData: {} });
 
-function boot({ props = { CHAPTER_GAME_KEY: KEY, CHAPTER_SOURCES: SOURCES }, tokens = {} } = {}) {
+function boot({ props = { CHAPTER_GAME_KEY: KEY, ROSTER_GAME_KEY: ROSTERKEY, CHAPTER_SOURCES: SOURCES }, tokens = {} } = {}) {
   const P = Object.assign({}, props), cache = new Map(), calls = { appended: [], payroll: 0, built: 0 };
   const stub = () => new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => '' : k === 'then' ? undefined : stub()), apply: () => stub(), construct: () => stub() });
   const ctx = { console: { log() {}, info() {}, warn() {}, error() {} }, JSON, Date, Math, Object, Array, String, Number, RegExp, Error, encodeURIComponent, parseInt };
@@ -18,7 +19,7 @@ function boot({ props = { CHAPTER_GAME_KEY: KEY, CHAPTER_SOURCES: SOURCES }, tok
   ctx.Utilities = { base64EncodeWebSafe: (b) => Buffer.from(b).toString('base64url'), computeDigest: (_a, s) => Array.from(require('crypto').createHash('sha256').update(s).digest()), DigestAlgorithm: { SHA_256: 1 } };
   ctx.UrlFetchApp = { fetch: (url) => {
     url = String(url);
-    if (url.includes('action=allowlist_list')) return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ success: true, entries: [{ email: 'coord@lms.org.in', role: 'Coordinator' }, { email: 'owner@lms.org.in', role: 'Owner' }, { email: 'prin@lms.org.in', role: 'Principal' }] }) };
+    if (url.includes('action=allowlist_list')) return !url.includes('&key=' + ROSTERKEY) ? { getResponseCode: () => 200, getContentText: () => JSON.stringify({ success: false, error: 'not_authorized' }) } : { getResponseCode: () => 200, getContentText: () => JSON.stringify({ success: true, entries: [{ email: 'coord@lms.org.in', role: 'Coordinator' }, { email: 'owner@lms.org.in', role: 'Owner' }, { email: 'prin@lms.org.in', role: 'Principal' }] }) };
     const m = url.match(/id_token=([^&]+)/), t = m && tokens[decodeURIComponent(m[1])];
     return { getResponseCode: () => (t ? 200 : 400), getContentText: () => JSON.stringify(t || {}) };
   } };

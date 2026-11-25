@@ -163,13 +163,13 @@ function chapterTokenEmail_(idToken) {
     return email;
   } catch (err) { return ''; }
 }
-/** the Roster's Allowlist (the Roster app's one open list; Roster project is a separate change): is this email a Coordinator or Owner? */
+/** the Roster's Allowlist (read with ROSTER_GAME_KEY, which the Roster now requires for it): is this email a Coordinator or Owner? */
 function chapterIsWriter_(email) {
   try {
     const cache = CacheService.getScriptCache(), ck = 'cwriters';
     let set = cache.get(ck);
     if (set === null) {
-      const res = UrlFetchApp.fetch(ROSTER_PROXY_URL + '?action=allowlist_list', { muteHttpExceptions: true });
+      const res = UrlFetchApp.fetch(ROSTER_PROXY_URL + '?action=allowlist_list&key=' + encodeURIComponent(PropertiesService.getScriptProperties().getProperty('ROSTER_GAME_KEY') || ''), { muteHttpExceptions: true });
       const j = JSON.parse(res.getContentText());
       if (!j.success || !Array.isArray(j.entries)) return false;
       set = j.entries.filter(function (x) { return CHAPTER_WRITER_ROLES_.indexOf(String(x.role || '').toLowerCase()) !== -1; })
