@@ -1,188 +1,34 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LMCS — Coordinator · Transport</title>
-<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
-<link rel="stylesheet" href="../shared.css?v=3245715a">
-<link rel="stylesheet" href="../../assets/campus-picker.css?v=153d68d7">
-<link rel="stylesheet" href="../../assets/game/game.css?v=37f754ac">
-<style>.gb-stage #appBody{padding:0}
-/* Setup focus: one active step; the fleet, other buses' quests and the other tools wait behind "Show all" */
-.fc-focus #appBody{display:none!important}
-/* replaced by the unlock engine (GD): the game layer's Today, other buses' quests and the rail's Quests count (the second rail item) */
-.fc-focus #game-root .lg-today,.fc-focus #game-root .lg-quest:not(.fc-mine),.fc-focus #game-rail a.gb-rail-i:nth-of-type(2) .gb-count{display:none!important}
-.gb .gb-go.fc-locked{opacity:.55;cursor:default}
-.fc-all{display:block;margin:8px auto 0;min-height:44px}
-/* Trial runs: outside #appBody, so setup focus never hides it */
-#trial-runs{margin:0 0 16px}
-#trial-runs .tr-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-#trial-runs .tr-links{display:flex;flex-wrap:wrap;gap:6px 14px;margin:6px 0 0;padding:0;list-style:none}
-#trial-runs .tr-links a{display:inline-flex;align-items:center;min-height:44px}</style>
-<link rel="stylesheet" href="../../assets/game/base.css?v=4774c2bb">
-</head>
-<body class="gb gb-app">
-<!-- The screen skeleton (assets/game/base.css): Fleet Command is the fleet's hub. The next-step slot is the open fleet quest of the
-     bus nearest to ready; the stage is Buddy's fleet missions, then the fleet; the task pages fold into a panel. -->
-<header class="gb-head"><div><div><h1>Fleet Command</h1><p>LMCS Transport</p></div><a href="../index.html"><span aria-hidden="true">&lsaquo;</span> Coordinator home</a></div></header>
-<div class="gb-shell">
-  <nav class="gb-rail" id="game-rail" aria-label="Game" hidden></nav>
-  <div class="gb-next-slot" id="fleet-next"></div>
-  <main class="gb-stage">
-    <section id="trial-runs" aria-labelledby="trial-runs-h" hidden><h2 id="trial-runs-h">Trial runs</h2>
-      <p class="gb-muted">Practice runs wait here. Watch the blurred video, then promote one to a real run or discard it. Until then it counts for nothing.</p>
-      <ul class="gb-list" id="trial-list"></ul><p class="gb-err" id="trial-err" role="alert"></p></section>
-    <section id="game-root" aria-label="Fleet setup with Buddy" hidden></section>
-    <div id="authRoot"></div>
-    <div id="appBody" style="display:none"></div>
-  </main>
-  <aside class="gb-panels" id="panels" aria-label="More" hidden>
-    <details class="gb-panel" id="fleet-pages"><summary data-emoji="tools">Fleet pages</summary><div class="gb-panel-b"><ul class="gb-list">
-      <li><a class="gb-go" href="setup.html" data-emoji="bus"><span>Fleet setup<small>Papers, safety kit, parts, driver, fuel and capture plan for each bus</small></span></a></li>
-      <li><a class="gb-go" href="live.html" data-emoji="busCheck"><span>Checks and live buses<small>Safety checks, counts and where each bus is now</small></span></a></li>
-      <li><a class="gb-go" href="capture.html" data-emoji="routeVideo"><span>Capture portal<small>A route timelapse, a count run or the monthly safety check</small></span></a></li>
-      <li><a class="gb-go" href="rollcall.html" data-emoji="rollCall"><span>Today's roll call<small>Who is on each bus</small></span></a></li>
-      <li><a class="gb-go" href="drivers.html" data-emoji="phone"><span>Driver phones<small>Link a driver's own phone to their bus</small></span></a></li>
-    </ul></div></details>
-  </aside>
-</div>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<meta name="lmcs-moved-to" content="#/fleet/desk" />
+<title>This page moved to the game</title>
+<script>window.LMCS_NO_DOCK = true;</script>
 <script src="../../assets/auth.js?v=ebda6786"></script>
-<script src="../../assets/campus-picker.js?v=cd35c768"></script>
-<script src="../transport-rank.js?v=b7edf91e"></script>
-<script src="../shared.js?v=c42a734c"></script>
-<script src="../../assets/game/game.js?v=d0493723"></script>
-<script src="../../assets/game/emoji.js?v=9abef414"></script>
-<script src="../capture/fleet-quests.js?v=9b425e0c"></script>
-<script src="../../assets/game/rail.js?v=716e2ce0"></script>
+</head>
+<body>
+<main style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem">
+<p>This page moved to the game.</p>
+<p><a id="lmcs-moved" href="../../index.html">Open it in the game</a></p>
+</main>
 <script>
-const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // the game backend (same as the four homes); empty = no panel
-const FLEET_TOUR = { id: 'fleet-transport', beats: [
-  { target: '#game-root', text: 'Our fleet setup missions are here, with the next step for our buses.' },
-] };
-// Setup focus (Uday, 30 Oct: "in the coordinator setup, only show the active quests, hide everything else"). While a fleet quest is
-// open: the next-step card, and in the game layer only that bus's quest (folded); the fleet list, the other buses' quests and Today
-// are hidden, and in Fleet pages only Fleet setup opens, the rest "Unlocks after fleet setup". "Show all" brings everything back.
-// Page-only for now; the game director's unlock engine takes this over. The quest gate stays server-side (setupsave refuses an
-// unassigned quest).
-const FOCUS = { reg: '', all: false };
-function focusTools(on) {
-  document.querySelectorAll('#fleet-pages .gb-go').forEach((a) => {
-    const href = a.getAttribute('href') || a.dataset.href || '';
-    if (href === 'setup.html') return;
-    let note = a.querySelector('.fc-unlock');
-    if (on) {
-      a.dataset.href = href; a.removeAttribute('href'); a.setAttribute('aria-disabled', 'true'); a.classList.add('is-static', 'fc-locked');
-      if (!note) { note = document.createElement('small'); note.className = 'fc-unlock'; note.textContent = 'Unlocks after fleet setup · or tap Show all'; (a.querySelector('small') || a).after(note); }
-    } else {
-      a.setAttribute('href', href); a.removeAttribute('aria-disabled'); a.classList.remove('is-static', 'fc-locked'); if (note) note.remove();
-    }
-  });
-}
-function focusQuests() { // the game layer draws on its own time: mark this bus's quest whenever it (re)draws
-  document.querySelectorAll('#game-root .lg-quest').forEach((q) => {
-    const mine = !!FOCUS.reg && (q.querySelector('h2') || q).textContent.indexOf(FOCUS.reg) !== -1;
-    if (mine && !q.classList.contains('fc-mine') && q.tagName === 'DETAILS') q.open = false; // folded: the card above is the step
-    q.classList.toggle('fc-mine', mine);
-  });
-}
-function setFocus(on) {
-  document.body.classList.toggle('fc-focus', on); focusTools(on);
-  const b = document.getElementById('fc-all');
-  if (b) { b.textContent = on ? 'Show all buses and pages' : 'Show only my next step'; b.setAttribute('aria-expanded', String(!on)); }
-}
-// The one next step: the bus nearest to ready (most of its six quests confirmed, not yet all), and its first open quest. Read only.
-async function fleetNext() {
-  const slot = document.getElementById('fleet-next');
+// A retired old-portal page (batch (a), 25 Nov): a bookmark or an old link goes on to its screen in the game. A tab a game door
+// opened (?from=game, ?only=, or the tab's flag from LMCSGameDoor) stays here with the link, so nobody bounces between the two.
+(function () {
+  var D = window.LMCSGameDoor, to = document.querySelector('meta[name="lmcs-moved-to"]').getAttribute('content');
+  if (!D) return;
+  var url = D.GAME + (to === 'home' ? '' : to), stay = true;
   try {
-    const d = await Coord.api({ action: 'coordinatortransportfleet' }), n = new Date(), today = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); // local date, as setup.js
-    const profiles = FleetQuests.profilesFromRows(d.rows), missions = FleetQuests.transportMissions(d.rows);
-    if (!profiles.length) { slot.replaceChildren(); return; } // no buses: nothing to do, and not "ready" either
-    const open = profiles.map((p) => ({ p, f: FleetQuests.busProgress(p, today).confirmed })).filter((x) => x.f < 1).sort((a, b) => b.f - a.f);
-    const busOf = (x) => x.id.slice(x.id.lastIndexOf(':') + 1);
-    let m = null; open.some((o) => (m = missions.find((x) => !x.done && busOf(x) === o.p.reg)));
-    if (!m && open.length) { slot.replaceChildren(); return; } // left to confirm, but nothing to do here: no card rather than a wrong one
-    const card = document.createElement('div'), body = document.createElement('div'), k = document.createElement('span'), t = document.createElement('p');
-    card.className = 'gb-next'; body.className = 'gb-next-b'; k.className = 'gb-next-k'; t.className = 'gb-next-t';
-    card.innerHTML = '<img src="../../assets/game/buddy/winter-formal-neutral.webp" alt="">';
-    k.dataset.emoji = m ? 'missions' : 'done'; k.textContent = m ? 'Your next step' : 'Fleet ready';
-    t.textContent = m ? m.title + '. ' + m.why : 'Every bus has all six fleet quests done.';
-    body.append(k, t);
-    if (m) { const a = document.createElement('a'); a.className = 'gb-btn gb-btn-primary'; a.href = '../../' + m.go; a.textContent = 'Go'; a.setAttribute('aria-label', 'Go: ' + m.title); body.append(a); }
-    card.append(body); slot.replaceChildren(card); LMCSEmoji.decorate(slot);
-    if (m) { // setup is on: focus on this one step
-      FOCUS.reg = busOf(m);
-      const b = document.createElement('button'); b.type = 'button'; b.id = 'fc-all'; b.className = 'gb-btn gb-btn-quiet fc-all';
-      b.addEventListener('click', () => { FOCUS.all = !FOCUS.all; setFocus(!FOCUS.all); });
-      slot.append(b); focusQuests(); setFocus(true);
-      // The quest gate (setup period: Owner-assigned quests only). Once the game layer's data is in (LMCSGame.hasQuest: null until
-      // then), a Coordinator with no fleet quest assigned gets "No quests yet", not a step. An older game.js without hasQuest, or no
-      // answer within 20 s: the card stays (setupsave still refuses an unassigned quest).
-      (function gate(tries) {
-        const G = window.LMCSGame, has = G && typeof G.hasQuest === 'function' ? G.hasQuest('fleet:') : undefined;
-        if (has === null && tries < 40) { setTimeout(() => gate(tries + 1), 500); return; }
-        if (has !== false) return;
-        delete k.dataset.emoji; k.textContent = 'No quests yet'; // no tick: nothing is done
-        t.textContent = 'The Owner has not given you a fleet quest yet. It shows here when they do.';
-        body.querySelector('.gb-btn-primary')?.remove(); FOCUS.reg = ''; focusQuests();
-      })(0);
-    }
-  } catch (e) { slot.replaceChildren(); } // no next step is better than a wrong one; the fleet below still loads
-}
-// Trial runs (transportcapturereview): the Owner's or a Coordinator's shelf of trial timelapses. Shown only when it has rows.
-// The video and photo ids are the Mac's blurred copies only. Every value goes in as text.
-const TRIAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function trialWhen(r) { // the runId says when it was recorded: <REG>-yyyyMMdd-HHmmss-xxxx
-  const m = /-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}-/.exec(r.runId);
-  return m ? Number(m[3]) + ' ' + TRIAL_MONTHS[Number(m[2]) - 1] + ' ' + m[1] + ', ' + m[4] + ':' + m[5] : String(r.pushedAt || '').slice(0, 10);
-}
-const driveLink = (id, text) => { const a = document.createElement('a'); a.href = 'https://drive.google.com/file/d/' + encodeURIComponent(id) + '/view'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = text; return a; };
-async function trialRuns() {
-  const box = document.getElementById('trial-runs'), list = document.getElementById('trial-list'), err = document.getElementById('trial-err');
-  let runs = [];
-  try { runs = (await Coord.api({ action: 'transportcapturereview' })).runs || []; } catch (e) { runs = []; } // no shelf is better than a broken page
-  box.hidden = !runs.length;
-  if (runs.length && location.hash === '#review') box.scrollIntoView({ block: 'start' }); // the game door to the review shelf
-  list.replaceChildren(...runs.map((r) => {
-    const li = document.createElement('li'), head = document.createElement('div'), badge = document.createElement('span'), reg = document.createElement('b'), meta = document.createElement('p');
-    li.className = 'gb-card'; head.className = 'tr-head'; badge.className = 'gb-pill gb-pill-warn'; badge.textContent = 'TRIAL'; reg.textContent = r.reg;
-    const stops = Array.isArray(r.stops) ? r.stops : [];
-    meta.className = 'gb-muted'; meta.textContent = trialWhen(r) + ' · ' + stops.length + (stops.length === 1 ? ' stop' : ' stops') + (r.capturedBy ? ' · by ' + r.capturedBy : '');
-    head.append(badge, reg);
-    const links = document.createElement('ul'); links.className = 'tr-links';
-    if (r.videoFileId) { const i = document.createElement('li'); i.append(driveLink(r.videoFileId, 'Watch video')); links.append(i); }
-    stops.forEach((s, n) => { if (!s || !s.photoFileId) return; const i = document.createElement('li'); i.append(driveLink(s.photoFileId, 'Stop ' + (n + 1) + (s.name ? ': ' + s.name : '') + ' photo')); links.append(i); });
-    const acts = document.createElement('div'), pub = document.createElement('button'), del = document.createElement('button');
-    acts.className = 'gb-row-acts';
-    pub.type = del.type = 'button'; pub.className = 'gb-btn gb-btn-primary'; pub.textContent = 'Promote to real run'; del.className = 'gb-btn gb-btn-danger'; del.textContent = 'Discard';
-    const decide = async (decision) => {
-      if (decision === 'discard' && !confirm('Discard the trial run of bus ' + r.reg + ' (' + trialWhen(r) + ')? Its Drive folder goes to the bin.')) return;
-      if (decision === 'publish' && !confirm('Promote the trial run of bus ' + r.reg + ' (' + trialWhen(r) + ') to a real run? It joins the bus\'s route and counts for its Capture quest.')) return;
-      pub.disabled = del.disabled = true; err.textContent = '';
-      try {
-        const res = await Coord.postJson({ action: 'transportcapturedecide', runId: r.runId, decision });
-        if (!res || !res.success) throw new Error((res && res.error) || 'Request failed');
-      } catch (e) { err.textContent = r.reg + ': ' + e.message; }
-      trialRuns();
-    };
-    pub.addEventListener('click', () => decide('publish')); del.addEventListener('click', () => decide('discard'));
-    acts.append(pub, del);
-    li.append(head, meta, links, acts);
-    return li;
-  }));
-  if (err.textContent) box.hidden = false; // keep the reason in view even when the list emptied
-}
-Coord.boot(function (body) {
-  Coord.transportView(body);
-  fleetNext();
-  trialRuns();
-  const session = LMCS.getSession();
-  document.getElementById('panels').hidden = false;
-  if (window.matchMedia && matchMedia('(min-width: 960px)').matches) document.getElementById('fleet-pages').open = true; // phones: folded, so the fleet stays in view
-  LMCSRail.mount(document.getElementById('game-rail'), { hub: '../index.html', root: '../../' });
-  new MutationObserver(focusQuests).observe(document.getElementById('game-root'), { childList: true, subtree: true });
-  if (typeof LMCSGame !== 'undefined') { try { LMCSGame.mount(document.getElementById('game-root'), { session: session, backendUrl: GAME_BACKEND_URL, root: '../../', only: 'fleet', title: 'Fleet setup', tour: FLEET_TOUR }); } catch (e) { console.warn('game layer', e); } }
-});
+    var q = new URLSearchParams(location.search);
+    if (q.get('from') === 'game' || q.has('only')) sessionStorage.setItem(D.FLAG, '1');
+    stay = sessionStorage.getItem(D.FLAG) === '1';
+  } catch (e) { stay = true; }
+  document.getElementById('lmcs-moved').href = url;
+  if (!stay) location.replace(url);
+})();
 </script>
 </body>
 </html>

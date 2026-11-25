@@ -72,9 +72,9 @@ assert.deepStrictEqual(myRoomIds(R, []), []);
 const B = require('../../assets/game/school-building.js'), M = require('../../assets/game/school-models.js');
 assert.deepStrictEqual(myRoomIds(B.rooms(B.clean(M.LMS2)), ['Class 5', 'Class 6']), [], 'LMS 2: no holds yet, nothing highlighted');
 assert.deepStrictEqual(myRoomIds(B.rooms(B.clean(B.SAMPLE)), ['Class 5']), ['c5a'], 'sample: Class 5 -> 5A');
-urls['teacher/plan-activity.html'] = backendUrl(fs.readFileSync(__dirname + '/../../teacher/plan-activity.html', 'utf8'), 'teacher/plan-activity.html');
+// teacher/plan-activity.html and the two Fleet pages are retired (batch (b), 26 Nov): their stubs are checked by tests/retired
 // Fleet setup: Buddy on the two transport pages, its own missions and quests only, game.css/game.js tags, a collapsed panel under the header
-for (const [page, tour] of [['coordinator/transport/setup.html', 'fleet-setup'], ['coordinator/transport/index.html', 'fleet-transport']]) {
+for (const [page, tour] of [['coordinator/transport/setup.html', 'fleet-setup'], ['coordinator/transport/index.html', 'fleet-transport']].filter(([p]) => !RETIRED.has(p))) {
   const html = fs.readFileSync(__dirname + '/../../' + page, 'utf8');
   assert(/<link rel="stylesheet" href="\.\.\/\.\.\/assets\/game\/game\.css(\?v=[0-9a-f]+)?"/.test(html), page + ': game.css link');
   assert(/<script src="\.\.\/\.\.\/assets\/game\/game\.js(\?v=[0-9a-f]+)?"/.test(html), page + ': game.js script');

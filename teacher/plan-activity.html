@@ -1,110 +1,33 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>LMCS — Plan an activity</title>
-<meta name="theme-color" content="#CE0000">
-<link rel="stylesheet" href="../assets/game/base.css?v=4774c2bb">
-<style>
-  .plan-ch { overflow-wrap:anywhere; }
-  .plan-save { margin-top:4px; }
-  #lmcs-gate { position: fixed; inset: 0; z-index: 99999; background: #fff; display: flex; align-items: center; justify-content: center; }
-  #lmcs-gate .auth-gate { max-width: 380px; margin: 0 auto; padding: 32px 28px; border: 1px solid #ddd; border-top: 3px solid #CE0000; border-radius: 6px; text-align: center; }
-  #lmcs-gate .auth-gate p { color: #555; font-size: 13px; line-height: 1.6; margin: 0 0 20px; }
-  #lmcs-gate #lmcs-g-signin { display: flex; justify-content: center; }
-  #lmcs-gate .auth-denied { margin-top: 16px; background: #fde8e8; border: 1px solid #CE0000; color: #a70000; border-radius: 8px; padding: 12px 14px; font-size: 12px; line-height: 1.6; text-align: left; }
-</style>
-</head>
-<body class="gb">
-<div id="lmcs-gate"><div id="lmcs-gate-slot"></div></div>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<meta name="lmcs-moved-to" content="#/teacher/plan" />
+<title>This page moved to the game</title>
+<script>window.LMCS_NO_DOCK = true;</script>
 <script src="../assets/auth.js?v=ebda6786"></script>
-<script src="../assets/game/emoji.js?v=9abef414"></script>
-
-<header class="gb-head"><div><div><h1 data-emoji="curriculum">Plan an activity</h1><p id="where"></p></div><a href="index.html"><span aria-hidden="true">&lsaquo;</span> My day</a></div></header>
-<main class="gb-page">
-  <form class="gb-card" id="planForm" novalidate>
-    <h2 class="plan-ch" id="chapter"></h2>
-    <p class="gb-lead" id="lead">One line is plenty: what will the children do? I'll look for it in your classwork once you've taught it.</p>
-    <div class="gb-field">
-      <label for="activity">The activity, in a few words</label>
-      <input class="gb-input" type="text" id="activity" name="activity" maxlength="200" autocomplete="off" placeholder="For example: sort picture cards in groups" aria-describedby="count err">
-      <p class="gb-hint" id="count">0 of 200</p>
-      <p class="gb-field-err" id="err" role="alert"></p>
-    </div>
-    <button type="submit" class="gb-btn gb-btn-primary plan-save" id="save">Save</button>
-    <p class="gb-muted" id="msg" role="status" aria-live="polite" hidden></p>
-  </form>
-  <div class="gb-done" id="done" role="status" hidden>
-    <div class="gb-done-tick" aria-hidden="true">✓</div>
-    <h2 tabindex="-1" id="doneHead">Plan saved</h2>
-    <p>Saved. Plan the activity now shows Done on My day, and tonight I'll look for it in your classwork.</p>
-    <div class="gb-row-acts"><a class="gb-btn gb-btn-primary" href="index.html">Back to My day</a></div>
-  </div>
+</head>
+<body>
+<main style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem">
+<p>This page moved to the game.</p>
+<p><a id="lmcs-moved" href="../index.html">Open it in the game</a></p>
 </main>
-
 <script>
-const GAME_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyyk7XpT86JqZRQ3ldFxesPw4ICK6WVAdsgsecEzWPViKasRs4agbYJ3Re_y_lY7mxyCA/exec'; // set at deploy (same value as teacher/index.html); empty = saving is not open yet
+// A retired old-portal page (batch (a), 25 Nov): a bookmark or an old link goes on to its screen in the game. A tab a game door
+// opened (?from=game, ?only=, or the tab's flag from LMCSGameDoor) stays here with the link, so nobody bounces between the two.
 (function () {
-  var q = new URLSearchParams(location.search);
-  var cls = (q.get('cls') || '').trim(), subj = (q.get('subj') || '').trim(), ch = (q.get('ch') || '').trim(), name = (q.get('name') || '').trim(); // ch is the key a save is filed under; name is what the heading shows and the sheet's Chapter column keeps
-  var form = document.getElementById('planForm'), input = document.getElementById('activity'), save = document.getElementById('save'), msg = document.getElementById('msg'), count = document.getElementById('count'), err = document.getElementById('err');
-  var session = null;
-
-  // kind 'err': under the field; 'ok': the form gives way to the done state; '': a quiet line under Save
-  function say(text, kind) {
-    err.textContent = kind === 'err' ? text : '';
-    if (kind === 'err' && text) input.setAttribute('aria-invalid', 'true'); else input.removeAttribute('aria-invalid');
-    msg.textContent = kind === '' ? text : ''; msg.hidden = !(kind === '' && text);
-    if (kind === 'ok') { form.hidden = true; document.getElementById('done').hidden = false; document.getElementById('doneHead').focus(); }
-  }
-
-  document.getElementById('where').textContent = cls && subj ? cls + ' · ' + subj : '';
-  document.getElementById('chapter').textContent = name || ch || 'Which chapter?';
-  if (!cls || !subj || !ch) {
-    document.getElementById('lead').textContent = 'Open this from a chapter on your page, and I will know which one to plan.';
-    input.disabled = true; save.disabled = true;
-  } else if (!GAME_BACKEND_URL) {
-    say('Saving opens once the game is live.', '');
-    input.disabled = true; save.disabled = true;
-  }
-  input.addEventListener('input', function () { count.textContent = input.value.length + ' of 200'; });
-
-  // same rule as the server's chapter key (ownAcadNormChapter_), only to find this chapter's saved line
-  function norm(s) { return String(s || '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ').trim(); }
-  function prefill() {
-    if (!GAME_BACKEND_URL || !session || !cls) return;
-    fetch(GAME_BACKEND_URL + (GAME_BACKEND_URL.indexOf('?') === -1 ? '?' : '&') + 'action=teacherplans&idToken=' + encodeURIComponent(session.idToken || ''), { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (!d || d.success !== true || input.value) return;
-        var mine = (d.plans || []).filter(function (p) { return p.cls === cls && p.subj === subj && p.chapterNorm === norm(ch); })[0];
-        if (mine) { input.value = mine.activity; count.textContent = input.value.length + ' of 200'; }
-      })
-      .catch(function () { /* a first plan starts empty */ });
-  }
-
-  form.addEventListener('submit', function (ev) {
-    ev.preventDefault();
-    if (save.disabled) return;
-    say('', '');
-    save.disabled = true;
-    fetch(GAME_BACKEND_URL, { method: 'POST', body: JSON.stringify({ action: 'teacherplanactivity', idToken: session && session.idToken, cls: cls, subj: subj, ch: ch, name: name, activity: input.value }) })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d && d.success === true) say('Saved.', 'ok');
-        else say(d && d.error ? d.error : 'That did not save. Please try again.', 'err');
-      })
-      .catch(function () { say("I couldn't reach the game just now. Your words are still here; try Save again in a moment.", 'err'); })
-      .then(function () { save.disabled = false; });
-  });
-
-  (LMCS.getSession() ? Promise.resolve(LMCS.getSession()) : LMCS.requireSession('#lmcs-gate-slot')).then(function (s) {
-    session = s || LMCS.getSession();
-    document.getElementById('lmcs-gate').style.display = 'none';
-    prefill();
-    if (!input.disabled) input.focus();
-  });
+  var D = window.LMCSGameDoor, to = document.querySelector('meta[name="lmcs-moved-to"]').getAttribute('content');
+  if (!D) return;
+  var url = D.GAME + (to === 'home' ? '' : to), stay = true;
+  try {
+    var q = new URLSearchParams(location.search);
+    if (q.get('from') === 'game' || q.has('only')) sessionStorage.setItem(D.FLAG, '1');
+    stay = sessionStorage.getItem(D.FLAG) === '1';
+  } catch (e) { stay = true; }
+  document.getElementById('lmcs-moved').href = url;
+  if (!stay) location.replace(url);
 })();
 </script>
 </body>

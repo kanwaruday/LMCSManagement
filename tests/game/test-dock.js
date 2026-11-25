@@ -64,7 +64,7 @@ assert.ok(!banned.test(src), 'buddy-dock.js must not build HTML from strings');
 const dockUrl = /var BACKEND = '(https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec)';/.exec(src);
 assert.ok(dockUrl, 'buddy-dock.js: one BACKEND constant');
 const pages = execPages();
-assert.ok(pages.length >= 7, 'pages with GAME_BACKEND_URL found');
+assert.ok(pages.length >= 4, 'pages with GAME_BACKEND_URL found');
 for (const p of pages) {
   const m = /const GAME_BACKEND_URL = '([^']*)';/.exec(read(p));
   assert.strictEqual(m[1], dockUrl[1], p + ': GAME_BACKEND_URL matches the dock');

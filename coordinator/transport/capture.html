@@ -1,102 +1,34 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#CE0000">
-<title>LMCS — Capture portal</title>
-<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
-<link rel="stylesheet" href="../shared.css?v=3245715a">
-<link rel="stylesheet" href="../capture/capture.css?v=ebb56991">
-<link rel="stylesheet" href="../../assets/game/base.css?v=4774c2bb">
-</head>
-<body class="gb">
-<header class="gb-head site"><div><div><h1>Capture portal</h1><p>LMCS Transport</p></div><a id="back" href="index.html">&lsaquo; Fleet Command</a></div></header>
-<div id="authRoot"></div>
-<main id="appBody" class="cap" hidden>
-  <p id="offline" class="cap-offline" hidden><span>Offline mode: sign in to send.</span> <button type="button" id="signIn" class="cap-btn">Sign in</button></p>
-  <nav class="cap-tabs" aria-label="Capture or upload">
-    <button type="button" data-tab="capture" aria-pressed="true">Capture</button>
-    <button type="button" data-tab="upload" aria-pressed="false">Upload <span id="upCount"></span></button>
-  </nav>
-
-  <section id="tabCapture">
-    <div id="setup">
-      <div id="resume"></div>
-      <div class="cap-modes" role="group" aria-label="Kind of run">
-        <button type="button" data-mode="timelapse" aria-pressed="true">Timelapse</button>
-        <button type="button" data-mode="count" aria-pressed="false">Count run</button>
-        <button type="button" data-mode="inspection" aria-pressed="false">Inspection</button>
-      </div>
-      <p id="modeHelp" class="cap-help"></p>
-      <p id="loNote" class="cap-hint" hidden></p>
-      <label class="cap-field" for="bus">Bus</label>
-      <select id="bus" class="cap-select"><option value="">Loading the buses…</option></select>
-      <p id="busNote" class="cap-note"></p>
-      <label id="privacyRow" class="cap-check" for="privacy"><input type="checkbox" id="privacy"> <span>Camera faces the road · no children's faces in the frame</span></label>
-      <label id="trialRow" class="cap-check" for="trial" hidden><input type="checkbox" id="trial"> <span>Trial run · practice only: it waits on Fleet Command until you promote or discard it</span></label>
-      <p id="hint" class="cap-hint">Plug in the charger. Keep this page open with the screen on: if the phone locks, capture pauses.</p>
-      <ul id="phoneCheck" class="cap-phonecheck" aria-label="Phone check"></ul>
-      <p id="battery" class="cap-note"></p>
-      <button type="button" id="start" class="cap-primary">Start timelapse</button>
-      <p id="setupMsg" class="cap-msg" role="alert"></p>
-    </div>
-
-    <div id="running" class="cap-run" hidden>
-      <div class="cap-mission">
-        <h2 id="mission"></h2>
-        <div id="barWrap" class="cap-bar" role="progressbar" aria-labelledby="mission"><i id="bar"></i></div>
-      </div>
-      <div class="cap-view">
-        <div id="camBox" class="cap-cam">
-          <video id="cam" playsinline muted autoplay></video>
-          <span id="frames" class="cap-chip cap-chip-l"></span>
-          <div id="turn" class="cap-turn" role="alert" hidden><b>फ़ोन को आड़ा करें · Turn the phone sideways</b><span>Frames are paused while the phone is upright. Auto-rotate off? Turn it on.</span></div>
-        </div>
-        <div id="countBox" class="cap-count" hidden>
-          <span>On board now</span>
-          <div class="cap-countnum"><b id="onboard">0</b><span id="seats"></span></div>
-          <button type="button" id="fixCount" class="cap-btn cap-fix" hidden></button>
-        </div>
-      </div>
-      <p id="gps" class="cap-status" aria-live="polite"></p>
-      <p id="runMsg" class="cap-msg" role="alert"></p>
-      <button type="button" id="stopHere" class="cap-stop">Mark a Bus Stop</button>
-      <button type="button" id="end" class="cap-end">End run</button>
-    </div>
-
-    <div id="inspect" class="cap-insp" hidden>
-      <h2 id="inspTitle" class="cap-h"></h2>
-      <div class="cap-hud">
-        <p id="inspCount" class="cap-hudcount" aria-live="polite"></p>
-        <ol id="slots" class="cap-slots" aria-hidden="true"></ol>
-      </div>
-      <p class="cap-note">Check each item on the bus. Yes: it is there and works. No: missing or broken.</p>
-      <ul id="cards" class="cap-cards"></ul>
-      <p id="inspMsg" class="cap-msg" role="alert"></p>
-      <button type="button" id="inspSave" class="cap-primary">Save safety check</button>
-      <input type="file" id="inspPhoto" accept="image/*" capture="environment" hidden>
-    </div>
-
-    <div id="summary" hidden></div>
-  </section>
-
-  <section id="tabUpload" hidden>
-    <h2 class="cap-h">Runs on this phone</h2>
-    <p id="storage" class="cap-note"></p>
-    <p id="netNote" class="cap-msg"></p>
-    <button type="button" id="send" class="cap-primary">Send now</button>
-    <ul id="runList" class="cap-runs"></ul>
-  </section>
-
-  <div id="sheetWrap" class="cap-sheetwrap" hidden>
-    <div id="sheet" class="cap-sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div>
-  </div>
-  <p id="toast" class="cap-toast" role="status" aria-live="polite"></p>
-</main>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<meta name="lmcs-moved-to" content="#/fleet/capture" />
+<title>This page moved to the game</title>
+<script>window.LMCS_NO_DOCK = true;</script>
 <script src="../../assets/auth.js?v=ebda6786"></script>
-<script src="../capture/fleet-quests.js?v=9b425e0c"></script>
-<script src="../../assets/game/bus-chain.js?v=29185d41"></script>
-<script type="module" src="../capture/capture.js?v=89885653"></script>
+</head>
+<body>
+<main style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem">
+<p>This page moved to the game.</p>
+<p><a id="lmcs-moved" href="../../index.html">Open it in the game</a></p>
+</main>
+<script>
+// A retired old-portal page (batch (a), 25 Nov): a bookmark or an old link goes on to its screen in the game. A tab a game door
+// opened (?from=game, ?only=, or the tab's flag from LMCSGameDoor) stays here with the link, so nobody bounces between the two.
+(function () {
+  var D = window.LMCSGameDoor, to = document.querySelector('meta[name="lmcs-moved-to"]').getAttribute('content');
+  if (!D) return;
+  var url = D.GAME + (to === 'home' ? '' : to), stay = true;
+  try {
+    var q = new URLSearchParams(location.search);
+    if (q.get('from') === 'game' || q.has('only')) sessionStorage.setItem(D.FLAG, '1');
+    stay = sessionStorage.getItem(D.FLAG) === '1';
+  } catch (e) { stay = true; }
+  document.getElementById('lmcs-moved').href = url;
+  if (!stay) location.replace(url);
+})();
+</script>
 </body>
 </html>

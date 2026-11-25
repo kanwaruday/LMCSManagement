@@ -29,7 +29,6 @@ function checksTab(hash, owner) {
   assert.strictEqual(await checksTab('#loadout', true), 'overview', 'owner/transport#loadout: tabs stay home, the page scrolls to the loadout');
 
   // the panels that are not tabs
-  assert.ok(/runs\.length && location\.hash === '#review'\) box\.scrollIntoView/.test(read('coordinator/transport/index.html')), 'Fleet Command#review scrolls to the trial-runs shelf when it has runs');
   assert.ok(/location\.hash === '#loadout'\) setTimeout\(function \(\) \{ box\.scrollIntoView/.test(read('owner/transport/index.html')), 'owner/transport#loadout scrolls to the safety loadout');
   const drv = read('driver/driver.js');
   assert.ok(/if \(h === 'route' && !S\.sending\) \{ history\.replaceState\(null, '', location\.pathname \+ location\.search\); route\(\); \$\('viewRoute'\)\.click\(\); return; \}/.test(drv), 'driver#route: home with My route open; never during a send');

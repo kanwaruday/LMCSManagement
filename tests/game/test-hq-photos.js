@@ -215,10 +215,11 @@ test('wiring: POST only (one doPost line), the GET read registered, the page and
   for (const bad of ['', 'HQ', 'https://maps.app.goo.gl/abc', '99, 400', '31.9']) assert.strictEqual(P.parsePin(bad), null, bad);
   assert.ok(P.inArea({ lat: 31.9, lng: 77.1 }) && !P.inArea({ lat: 28.6, lng: 77.2 }));
   const page = fs.readFileSync(__dirname + '/../../hq-photos/index.html', 'utf8'), js = fs.readFileSync(__dirname + '/../../assets/game/hq-photos.js', 'utf8');
-  assert.ok(page.includes('assets/game/hq-photos.js') && /LMCSHqPhotos\.mount/.test(page) && /No people in the photos/.test(js) && /noPeople: true/.test(js));
+  // hq-photos/index.html is retired (batch (b), 26 Nov): its stub is checked by tests/retired; the module keeps its checks
+  assert.ok(/No people in the photos/.test(js) && /noPeople: true/.test(js));
   assert.ok(!/innerHTML/.test(js), 'text as text nodes');
   // the pin on record is offered to confirm or correct (Uday's rule: confirm the data we already hold)
-  assert.ok(/places\.js/.test(page) && page.indexOf('places.js') < page.indexOf('hq-photos.js') && /LMCSPlaces\.HES/.test(js) && /Yes, that is LMCS HQ/.test(js) && /setPin\(known\)/.test(js));
+  assert.ok(/LMCSPlaces\.HES/.test(js) && /Yes, that is LMCS HQ/.test(js) && /setPin\(known\)/.test(js));
   assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(js) && /em\('photo'\)/.test(js) && /em\('realMap'\)/.test(js), 'emoji from the shared map (emoji.js), none typed');
 });
 

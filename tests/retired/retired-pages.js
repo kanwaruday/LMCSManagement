@@ -11,6 +11,18 @@ const PLAN = {
   'curriculum-progress/daily-progress.html': '#/curriculum/daily', 'curriculum-progress/course-mapping-progress.html': '#/curriculum/mapping',
   'curriculum-progress/cwa-gap-report.html': '#/curriculum/gaps', 'curriculum-progress/unmapped-chapters.html': '#/curriculum/unmapped', 'guide/index.html': 'home',
   'owner/index.html': '#/mission', 'owner/kingdom.html': '#/mission', 'owner/people.html': '#/mission', 'coordinator/transport/rollcall.html': '#/base/bus_incharge',
+  // batch (b), 26 Nov (B3): pages whose game home is live
+  'office/driver-fills.html': '#/office/fills',
+  'office/transport.html': '#/fleet/papers',
+  'office/hiring.html': '#/hiring',
+  'coordinator/transport/setup.html': '#/fleet/desk',
+  'coordinator/transport/capture.html': '#/fleet/capture',
+  'coordinator/transport/index.html': '#/fleet/desk',
+  'coordinator/systems/index.html': 'home',
+  'hq-photos/index.html': '#/hq',
+  'teacher/plan-activity.html': '#/teacher/plan',
+  'workplace/index.html': '#/workplace',
+  'curriculum-progress/course-mapping-admin.html': '#/curriculum/admin',
 };
 const RETIRED = new Set(Object.keys(PLAN));
 module.exports = { PLAN, RETIRED };

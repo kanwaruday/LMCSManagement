@@ -11,5 +11,5 @@ assert.ok(/location\.hash === '#approvals' \|\| location\.hash === '#principal'/
 // X5: no Staff Document Submission form links
 assert.ok(!/forms\.gle|DOC_FORM/.test(read('hiring/index.html') + read('office/js/hiring.js')), 'X5 retired');
 // CP2: the admin page points at the setup quest
-assert.ok(read('curriculum-progress/course-mapping-admin.html').includes('moving into the game'), 'CP2 pointer');
+// course-mapping-admin.html is retired (batch (b), 26 Nov): its CP2 pointer went with the page
 console.log('form links: ok');
