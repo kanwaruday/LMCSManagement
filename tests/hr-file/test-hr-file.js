@@ -185,5 +185,42 @@ T('logs carry codes and counts only; the trigger installs once at about 04:00', 
   assert.deepStrictEqual(s.ctx.ScriptApp.triggers.map((x) => [x.fn, x.h]), [['hrFileDaily', 4]]);
 });
 
+// self-setup (no editor run): the URL is derived once, an existing one is untouched, a bad base writes nothing, the trigger is installed once
+const prop = (s, k, v) => { const P = s.ctx.PropertiesService.getScriptProperties(); if (v === undefined) return P.getProperty(k); if (v === null) delete s.P[k]; else P.setProperty(k, v); };
+const fresh = (set) => { const s = setup(); delete s.P.HR_DRIVE_LIVE_URL; Object.assign(s.P, set); return s; };
+T('self-setup: unset URL is derived from PROOF_MIRROR_URL, a trigger installed once across repeated calls', () => {
+  const s = fresh({ PROOF_MIRROR_URL: 'https://abcdefgh.supabase.co/functions/v1/proof-mirror' });
+  s.ctx.hrfSelfSetup_(); s.ctx.hrfSelfSetup_(); s.ctx.hrfSelfSetup_();
+  assert.strictEqual(prop(s, 'HR_DRIVE_LIVE_URL'), 'https://abcdefgh.supabase.co/functions/v1/hr-drive');
+  assert.deepStrictEqual(s.ctx.ScriptApp.triggers.map((x) => [x.fn, x.h]), [['hrFileDaily', 4]]);
+  assert.strictEqual(prop(s, 'HRF_SETUP'), '1');
+  assert.ok(s.logs.every((l) => !/supabase|abcdefgh|https/.test(String(l))), 'codes only, no URL or id');
+});
+T('self-setup: an already-set URL is untouched', () => {
+  const s = fresh({ HR_DRIVE_LIVE_URL: 'https://own.example/hr', PROOF_MIRROR_URL: 'https://abcdefgh.supabase.co/x' });
+  s.ctx.hrfSelfSetup_();
+  assert.strictEqual(prop(s, 'HR_DRIVE_LIVE_URL'), 'https://own.example/hr');
+  assert.strictEqual(s.ctx.ScriptApp.triggers.length, 1);
+});
+T('self-setup: a missing or bad PROOF_MIRROR_URL writes nothing and logs a code', () => {
+  ['', 'http://abcdefgh.supabase.co/x', 'https://evil.example/abcdefgh.supabase.co', 'https://abcdefgh.supabase.co.evil.example/x', 'not a url'].forEach((u) => {
+    const s = fresh(u ? { PROOF_MIRROR_URL: u } : {});
+    s.ctx.hrfSelfSetup_();
+    assert.strictEqual(prop(s, 'HR_DRIVE_LIVE_URL'), null, 'no write for ' + (u || 'missing'));
+    assert.strictEqual(prop(s, 'HRF_SETUP'), null);
+    assert.strictEqual(s.ctx.ScriptApp.triggers.length, 0);
+    assert.deepStrictEqual(s.logs, ['hr-file: setup_no_base_url']);
+  });
+});
+T('self-setup: an existing trigger is left alone (no second one), and a failure never throws', () => {
+  const s = fresh({ PROOF_MIRROR_URL: 'https://abcdefgh.supabase.co/x' });
+  s.ctx.installHrFileTrigger(); s.ctx.hrfSelfSetup_();
+  assert.strictEqual(s.ctx.ScriptApp.triggers.length, 1);
+  const b = fresh({ PROOF_MIRROR_URL: 'https://abcdefgh.supabase.co/x' });
+  b.ctx.ScriptApp.getProjectTriggers = () => { throw new Error('no permission'); };
+  b.ctx.hrfSelfSetup_();
+  assert.ok(b.logs.includes('hr-file: setup_failed') && prop(b, 'HRF_SETUP') === null);
+});
+
 console.log(results.join('\n'));
 if (results.some((r) => r.includes('FAIL'))) process.exit(1);

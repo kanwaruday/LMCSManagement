@@ -191,6 +191,7 @@ const ROSTER_SUPPORT_READS_ = ['roster', 'employees', 'designations', 'drivechec
 function doGet(e) {
   const action = (e.parameter.action || 'roster').toLowerCase();
   if (e.parameter.actAs && ROSTER_SUPPORT_READS_.indexOf(action) === -1) return jsonOut(SUPPORT_READ_ONLY);
+  hrfSelfSetup_(); // hr-file.gs: derives HR_DRIVE_LIVE_URL and installs the sweep trigger once; never throws (after the support refusal: that touches no service)
   if (STAFF_ACTIONS_.indexOf(action) !== -1) return staffDoGet_(e);
   if (ALLOWLIST_ACTIONS_.indexOf(action) !== -1) return allowlistDoGet_(e);
   try {
@@ -210,6 +211,7 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     if (body && body.actAs !== undefined && body.actAs !== null && body.actAs !== '') return staffJsonOut_(SUPPORT_READ_ONLY); // a supporting Principal's switch: no writes here
+    hrfSelfSetup_(); // hr-file.gs (see doGet)
     if (body.action === 'gameAfVideoTicket') return staffJsonOut_(gameAfVideoTicket_(body)); // af-video.gs: lms-game's classic proxy, ROSTER_GAME_KEY
     if (body.action === 'gameAfVideoPart') return staffJsonOut_(gameAfVideoPart_(body)); // af-video.gs: the browser's parts against that ticket
     if (body.action === 'gameMsgFileTicket') return staffJsonOut_(gameMsgFileTicket_(body)); // msg-file.gs: messaging files (lms-game 678), the proxy's ROSTER_GAME_KEY

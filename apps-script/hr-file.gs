@@ -10,7 +10,7 @@
 //     nothing is shared. On finish, any permission beyond the folder's people (anyone with the link, a whole domain) trashes the file
 //     and refuses; otherwise the Roster records it with lms-game itself (hr-drive done), server to server: the browser never sends a
 //     Drive id (G2b). If that record fails, the file is trashed (no paper the game doesn't know about).
-//  3. hrFileDaily (a daily trigger; Uday runs installHrFileTrigger() once): every live paper is checked again, so a link shared later
+//  3. hrFileDaily (a daily trigger; hrfSelfSetup_() installs it once, from the first doGet/doPost, and derives HR_DRIVE_LIVE_URL from PROOF_MIRROR_URL when unset): every live paper is checked again, so a link shared later
 //     is caught too: the file is trashed and hr-drive returns the paper to the person ("upload it again"). It touches ONLY a file that
 //     carries this upload's tag AND sits in that school's HR folder, so a foreign id can never get a school document swept (G2b).
 // Script properties (set by Uday, never in the repo): ROSTER_GAME_KEY (as af-video.gs), HR_DRIVE_LIVE_URL (lms-game's hr-drive
@@ -179,8 +179,30 @@ function hrFileDaily() {
   return out;
 }
 
-/** Uday runs this once from the editor: the daily HR file sweep at about 04:00 IST. */
+/** the daily HR file sweep at about 04:00 IST. Idempotent: no-op when the trigger exists (never a second one). */
 function installHrFileTrigger() {
-  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'hrFileDaily') ScriptApp.deleteTrigger(t); });
+  if (ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'hrFileDaily'; })) return false;
   ScriptApp.newTrigger('hrFileDaily').timeBased().everyDays(1).atHour(4).create();
+  return true;
+}
+
+/** Self-setup, no editor run (scripts.run can't reach Roster): called first from doGet/doPost (the 5-minute keep-warm hits doGet).
+ *  (1) HR_DRIVE_LIVE_URL unset -> PROOF_MIRROR_URL's supabase.co host + /functions/v1/hr-drive (an https supabase.co URL only, else a code).
+ *  (2) the sweep trigger installed once, guarded by the HRF_SETUP script property; the flag is set only when both are done.
+ *  Never throws; logs codes only (no URL, id or host). */
+function hrfSelfSetup_() {
+  try {
+    const p = afvProps_();
+    if (p.getProperty('HRF_SETUP') === '1') return;
+    let url = String(p.getProperty('HR_DRIVE_LIVE_URL') || '').trim();
+    if (!url) {
+      const m = String(p.getProperty('PROOF_MIRROR_URL') || '').trim().match(/^https:\/\/([a-z0-9-]+\.supabase\.co)(?:[\/?#]|$)/i);
+      if (!m) { console.error('hr-file: setup_no_base_url'); return; }
+      url = 'https://' + m[1].toLowerCase() + '/functions/v1/hr-drive';
+      p.setProperty('HR_DRIVE_LIVE_URL', url);
+      console.log('hr-file: setup_url_derived');
+    }
+    if (installHrFileTrigger()) console.log('hr-file: setup_trigger_installed');
+    p.setProperty('HRF_SETUP', '1');
+  } catch (e) { console.error('hr-file: setup_failed'); }
 }
