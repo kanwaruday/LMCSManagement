@@ -83,6 +83,14 @@ assert.deepStrictEqual([r.data.runId, r.data.count, r.data.rosterBumped], ['R-1'
 const ap = JSON.parse(JSON.stringify(calls.find((c) => c[0] === 'payApplyIncrement_')));
 assert.deepStrictEqual(ap[1], { month: '2026-11', times: 1, codes: ['E001'] });
 assert.strictEqual(run('gamePayOutIncApply', { times: '1', expect: '1', entity: 'LMS3' }).data.code, 'not_found');
+// an empty list must write nothing: the old function would read it as everyone (G2b money-safety)
+calls.length = 0;
+for (const x of [{ expect: '0', exclude: 'E001,E003' }, { expect: '0', exclude: '' , entity: 'LMS2' }, { expect: '', exclude: 'E001,E003' }, { expect: '-1', exclude: 'E001,E003' }]) {
+  const e = run('gamePayOutIncApply', { times: '1', ...x }).data;
+  assert.strictEqual(e.ok, false); assert.strictEqual(e.code, 'refused');
+}
+assert.strictEqual(wrote('payApplyIncrement_'), 0, 'an empty list writes nothing');
+assert.strictEqual(run('gamePayOutIncApply', { times: '1', expect: '1', exclude: 'E003' }).data.runId, 'R-1', 'a real list still applies');
 assert.strictEqual(run('gamePayOutIncUndo', { runId: 'R-1' }).data.undone, 2);
 
 // the whole file calls no pay-run writer: no lock/unlock/save inputs, nothing scheduled

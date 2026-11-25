@@ -108,6 +108,8 @@ function gamePayOutRun_(body, caller, p, schools) {
       const res = gamePayOutWrite_(function (ss) {
         const codes = payIncrementEligible_(ss, month, times).filter(function (e) { return mine(e.entity) && (!entity || e.entity === entity) && !skip[e.code]; })
           .map(function (e) { return e.code; });
+        // payApplyIncrement_ reads an EMPTY list as everyone at every school: never let one through (G2b)
+        if (!codes.length || !(Number(p.expect) > 0)) throw new Error('Nobody is ticked: nothing was applied.');
         if (codes.length !== Number(p.expect)) throw new Error('The list changed: it is ' + codes.length + ' people now, not ' + Number(p.expect) + '. Open the preview again.');
         const r = payApplyIncrement_(ss, { month: month, times: times, codes: codes }, caller, ''); // no Google ID token here: the Roster count is bumped by hand (said on screen)
         r.count = codes.length; return r;
