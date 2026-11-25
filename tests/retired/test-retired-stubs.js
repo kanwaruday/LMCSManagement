@@ -12,13 +12,14 @@ assert.strictEqual(Object.keys(PLAN).length, 40);
 assert.ok(fs.existsSync(path.join(ROOT, 'owner/event-design.html')) && !fs.readFileSync(path.join(ROOT, 'owner/event-design.html'), 'utf8').includes('lmcs-moved-to'), 'event-design.html is not retired');
 
 const GAME = 'https://game.example/', FLAG = 'lmcs_from_game';
-function run(html, search, flag) {
+function run(html, search, flag, hash) {
+  const hm = (html.match(/<meta name="lmcs-moved-hashes" content='([^']+)'/) || [])[1];
   const script = html.match(/<script>\n\/\/ A retired old-portal page[\s\S]*?<\/script>/)[0].replace(/^<script>|<\/script>$/g, '');
   const to = html.match(/<meta name="lmcs-moved-to" content="([^"]+)"/)[1];
   const link = { href: '' }, store = { v: flag ? { [FLAG]: '1' } : {}, setItem(k, v) { this.v[k] = v; }, getItem(k) { return this.v[k] ?? null; } };
   let replaced = null;
-  const ctx = { window: { LMCSGameDoor: { GAME, FLAG } }, URLSearchParams, sessionStorage: store, location: { search, replace(u) { replaced = u; } },
-    document: { querySelector: () => ({ getAttribute: () => to }), getElementById: () => link } };
+  const ctx = { window: { LMCSGameDoor: { GAME, FLAG } }, URLSearchParams, sessionStorage: store, location: { search, hash: hash || '', replace(u) { replaced = u; } },
+    document: { querySelector: (q) => (q.includes('moved-hashes') ? (hm ? { getAttribute: () => hm } : null) : { getAttribute: () => to }), getElementById: () => link } };
   vm.runInNewContext(script, ctx);
   return { replaced, link: link.href };
 }
@@ -35,6 +36,10 @@ for (const [p, to] of Object.entries(PLAN)) {
   assert.deepStrictEqual(run(html, '', true), { replaced: null, link: url }, p + ': a flagged tab stays');
   assert.ok(html.includes('This page moved to the game'), p + ': says so');
   n++;
+}
+{ // coordinator/systems: old e-mail links keep their meaning
+  const h = fs.readFileSync(path.join(ROOT, 'coordinator/systems/index.html'), 'utf8');
+  for (const [hash, to] of [['#approvals', '#/hq/approvals'], ['#leave', '#/hq/approvals?show=leave'], ['#fees', '#/pdr'], ['#nonsense', '']]) assert.strictEqual(run(h, '', false, hash).replaced, GAME + to, hash);
 }
 assert.ok(/LMCSGameDoor[\s\S]*const GAME = '/.test(fs.readFileSync(path.join(ROOT, 'assets/auth.js'), 'utf8')), 'the game address comes from LMCSGameDoor');
 

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="robots" content="noindex" />
 <meta name="lmcs-moved-to" content="home" />
+<meta name="lmcs-moved-hashes" content='{"approvals":"#/hq/approvals","leave":"#/hq/approvals?show=leave","today":"#/pdr","digest":"#/pdr","compliance":"#/pdr","repeats":"#/pdr","fees":"#/pdr","admissions":"#/pdr","messages":"#/pdr","registers":"#/pdr","assembly":"#/pdr"}' />
 <title>This page moved to the game</title>
 <script>window.LMCS_NO_DOCK = true;</script>
 <script src="../../assets/auth.js?v=ebda6786"></script>
@@ -20,6 +21,9 @@
 (function () {
   var D = window.LMCSGameDoor, to = document.querySelector('meta[name="lmcs-moved-to"]').getAttribute('content');
   if (!D) return;
+  // an old e-mail link (#approvals, #leave, a PDR tab) goes to its own game screen; an unknown hash goes to the game home
+  var hm = document.querySelector('meta[name="lmcs-moved-hashes"]');
+  if (hm) { try { var m = JSON.parse(hm.getAttribute('content')), h = (location.hash || '').slice(1); if (m[h]) to = m[h]; } catch (e) {} }
   var url = D.GAME + (to === 'home' ? '' : to), stay = true;
   try {
     var q = new URLSearchParams(location.search);
