@@ -65,7 +65,8 @@
       "payroll",
       "payroll-calc",
       "gratuity-liability",
-      "game-pay"
+      "game-pay",
+      "game-pay-out"
     ]
   },
   "coordinator": {
