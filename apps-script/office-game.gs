@@ -48,7 +48,7 @@ var OFFICE_GAME_ACTIONS = {
   gameDaybookCount: { act: 'daybook.count', write: true, num: ['counted_paise'] },   // lane-d: the end-of-day cash count
   gameDaybookCounts: { act: 'daybook.counts', verifier: true },
   gameFileView: { act: 'file.view', principal: true, verifier: true }, // the office marks it write only to take the lock for its Audit row; it changes no data
-  gameFileTicket: { ticket: true, write: true },
+  gameFileTicket: { ticket: true, write: true, verifier: true }, // lane-d: the accounts verifier uploads the Tally documents too (category document)
   // lane-d (16 Nov; Jarvis/Uday: "OWNER ONLY", as the office's own rule FinanceHead/Owner): the accounts set-up. owner: true is the one
   // exception to "the Owner reads only here", for these five only; a Fee Clerk is refused here (read_only) and by the office rule.
   // campusRows: each row's campus is forced to the proxy's school (a row can't name another).
@@ -56,6 +56,9 @@ var OFFICE_GAME_ACTIONS = {
   gameAccountOpening: { act: 'account.opening', write: true, owner: true, verifier: true, num: ['amount_paise'] },
   // lane-d go-live: the Owner's seal of the opening books sets the Day Book's own opening (cash per box, bank, UPI); refused once the book has an entry
   gameOpeningSet: { act: 'opening.set', write: true, owner: true, verifier: true, json: ['balances'] },
+  // lane-d: the Tally set-up answers (the accounts verifier's quests; the Owner sees and may answer too)
+  gameTallyGet: { act: 'tally.get', verifier: true },
+  gameTallySet: { act: 'tally.set', write: true, owner: true, verifier: true },
   // ponytail: account.opening's "once per account" looks only at this FY's and last FY's books (officeRecentBooks_), so a second opening
   // two or more years later isn't caught. An all-years check opens one book per past FY on every save; add it if that ever happens.
   gameVehicleAdd: { act: 'vehicle.add', write: true, owner: true },

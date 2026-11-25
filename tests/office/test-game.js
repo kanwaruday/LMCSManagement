@@ -251,4 +251,26 @@ module.exports = function run(t) {
     assert.strictEqual(h.game('gameAccountAdd', { id: 'bank:LMS2:x', kind: 'bank', label: 'x' }, V).data.code, 'unknown_action', 'no other set-up');
     assert.strictEqual(h.game('gameDecide', { id: 'd1', entry_id: 'p1', approve: 'true' }, V).data.code, 'unknown_action', 'no approvals');
   });
+
+  t.test('Tally set-up: the verifier and the Owner save answers the export reads (latest wins); unknown keys or choices refused; a Fee Clerk can\'t', () => {
+    const h = fresh();
+    const V = { role: 'accounts_verifier', email: 'verifier@example.org', campus: 'LMS2' }, O = { role: 'owner', email: 'owner@example.org', campus: 'LMS2' };
+    assert.strictEqual(h.game('gameTallySet', { key: 'import_format', value: 'xml' }, V).data.saved, true);
+    assert.strictEqual(h.game('gameTallySet', { key: 'import_format', value: 'excel' }, O).data.saved, true, 'the Owner too; latest wins');
+    assert.strictEqual(h.game('gameTallySet', { key: 'head:stationery', value: 'Printing & Stationery' }, V).data.saved, true);
+    assert.strictEqual(h.game('gameTallySet', { key: 'ledger:LMS2:petty', value: 'Petty Cash - Kelheli' }, V).data.saved, true);
+    assert.strictEqual(h.game('gameTallySet', { key: 'head:not_a_head', value: 'x' }, V).data.code, 'BAD_FIELD', 'only real Day Book heads');
+    assert.strictEqual(h.game('gameTallySet', { key: 'ledger:LMS9:petty', value: 'x' }, V).data.code, 'BAD_FIELD');
+    assert.strictEqual(h.game('gameTallySet', { key: 'import_format', value: 'pdf' }, V).data.code, 'BAD_INPUT', 'not one of the choices');
+    assert.strictEqual(h.game('gameTallySet', { key: 'head:stationery', value: ' ' }, V).data.code, 'BAD_INPUT', 'a ledger name is needed');
+    assert.strictEqual(h.game('gameTallySet', { key: 'password', value: 'x' }, V).data.code, 'BAD_FIELD', 'only known keys');
+    assert.strictEqual(h.game('gameTallySet', { key: 'import_format', value: 'xml' }, { campus: 'LMS2' }).data.code, 'read_only', 'a Fee Clerk');
+    const a = h.game('gameTallyGet', {}, { ...V, email: null }).data.answers;
+    assert.strictEqual(a.import_format.value, 'excel');
+    assert.strictEqual(a['head:stationery'].value, 'Printing & Stationery'); assert.strictEqual(a['ledger:LMS2:petty'].value, 'Petty Cash - Kelheli');
+    assert.ok(h.game('gameTallyGet', {}, { role: 'owner', email: null, campus: 'LMS2' }).data.answers.import_format, 'the Owner reads every answer');
+    assert.strictEqual(h.game('gameTallyGet', {}, { campus: 'LMS2', email: null }).data.code, 'FORBIDDEN_ROLE', 'a Fee Clerk reads nothing');
+    const tk = h.game('gameFileTicket', { id: 'tally-ledgers-01', category: 'document', mime: 'application/pdf', name: 'ledgers.pdf' }, V).data;
+    assert.match(tk.url, /ticket=.+&action=gameUploadPart$/, 'the verifier gets an upload ticket for a Tally document');
+  });
 };

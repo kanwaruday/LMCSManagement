@@ -33,6 +33,9 @@ var OFFICE_CONFIG_SEED = {
   // lane-d: expense heads a school doesn't use, hidden from its entry form (the Owner's setting, not a code change); latest row per
   // (campus, category) wins; hidden 'false' shows it again. Entries already made keep their head.
   HiddenHeads: [['campus', 'category', 'hidden', 'created_at', 'created_by']],
+  // lane-d (Uday, 25 Nov: the Tally questions become the accounts verifier's quests): the accountants' answers the Tally export reads;
+  // append-only, the latest row per key wins (value is text, or JSON for the ledger tables)
+  TallySetup: [['key', 'value', 'created_at', 'created_by']],
   // Small settings, key -> value; the latest row per key wins. fund_transfer_emails: comma list of who may enter fund.transfer (besides the Owner).
   Settings: [['key', 'value', 'created_at', 'created_by']],
   // Cash handovers between campuses (office-handover.gs). Append-only events: the handover row (id = handover id, state pending)
@@ -300,6 +303,8 @@ function officeConfigActions_() {
     'account.opening': { roles: ['FinanceHead', 'Owner'], write: true, run: officeAccountOpening_ },
     'opening.set': { roles: ['FinanceHead', 'Owner'], write: true, run: officeOpeningSet_ },
     'heads.hide': { roles: ['FinanceHead', 'Owner'], write: true, run: officeHeadsHide_ },   // lane-d
+    'tally.get': { roles: ['FinanceHead', 'Owner'], write: false, run: officeTallyGet_ },     // lane-d: the Tally set-up answers
+    'tally.set': { roles: ['FinanceHead', 'Owner'], write: true, run: officeTallySet_ },
     'limit.set': { roles: ['Owner'], write: true, run: officeLimitSet_ },   // lane-d slice 2: a school's cash approval limit
   };
 }
@@ -312,7 +317,7 @@ function officeConfigBook_() {
   Object.keys(OFFICE_CONFIG_SEED).forEach(function (tab) {
     const v = OFFICE_CONFIG_SEED[tab];
     const have = ss.getSheetByName(tab);
-    if (have) { if (['Accounts', 'Vehicles', 'Collections', 'StartData', 'SetupQuests', 'Settings', 'Handovers', 'HiddenHeads'].indexOf(tab) !== -1) officeEnsureHeader_(have, v[0]); return; }
+    if (have) { if (['Accounts', 'Vehicles', 'Collections', 'StartData', 'SetupQuests', 'Settings', 'Handovers', 'HiddenHeads', 'TallySetup'].indexOf(tab) !== -1) officeEnsureHeader_(have, v[0]); return; }
     const sh = ss.insertSheet(tab);
     sh.getRange(1, 1, v.length, v[0].length).setNumberFormat('@').setValues(v); // plain text, as in the store
     sh.setFrozenRows(1);
@@ -416,6 +421,35 @@ function officeHiddenHeads_() {
   return out;
 }
 // hide (or show again) one expense head at one school: a Money-out category that exists; appends a row and audits it
+// lane-d: the Tally set-up, answered by the accounts verifier (game role accounts_verifier → FinanceHead here) or the Owner. One value per
+// known key: the choices, short notes, one key per school box (ledger:<school>:<petty|fee|other|bank>) and one per Day Book head
+// (head:<category>), each a ledger name. The Tally export reads exactly this (officeTallyAnswers_), never a guess.
+var OFFICE_TALLY_KEYS = {
+  import_format: ['xml', 'excel'], tally_version: ['prime', 'erp9'], company_model: ['one', 'per_school'], credit_bills: ['journal', 'purchase'],
+  voucher_numbering: ['tally', 'ours'], fee_income: ['one_ledger', 'per_head'], fee_vouchers: ['day_total', 'per_entry'], cost_centres: ['yes', 'no'],
+  reversal_style: ['opposite_voucher', 'cancel_original'], export_frequency: ['daily', 'weekly', 'monthly'], export_days: ['closed_only', 'provisional_too'],
+  company_note: 'text', cost_centre_names: 'text', narration_note: 'text', gst_tds_note: 'text',
+  passthrough_note: 'text', year_note: 'text',
+  upload_ledger_list: 'text', upload_test_import: 'text', // the Files row id of the verifier's upload (a document in the school book, its Drive folder)
+};
+function officeTallyAnswers_() {
+  const out = {};
+  officeRows_(officeConfigBook_(), 'TallySetup').forEach(function (r) { out[r.key] = { value: String(r.value), at: r.created_at, by: r.created_by }; });
+  return out;
+}
+function officeTallyGet_() { return { answers: officeTallyAnswers_(), keys: OFFICE_TALLY_KEYS }; }
+function officeTallySet_(ctx, data) {
+  const key = String(data.key || ''), value = String(data.value == null ? '' : data.value).trim();
+  const ledger = /^ledger:(LMS[1-6]|HES):(petty|fee|other|bank)$/.test(key), head = /^head:([a-z0-9_]{1,40})$/.exec(key);
+  const kind = ledger || head ? 'ledger' : Object.prototype.hasOwnProperty.call(OFFICE_TALLY_KEYS, key) ? OFFICE_TALLY_KEYS[key] : null;
+  if (!kind || (head && !officeCategory_(head[1]))) throw new Error('BAD_FIELD');
+  if (Array.isArray(kind) ? kind.indexOf(value) === -1 : !value || value.length > (kind === 'ledger' ? 120 : 480)) throw officeCoded_('BAD_INPUT');
+  const iso = officeNow_().toISOString(), row = { key: key, value: value, created_at: iso, created_by: ctx.caller.email };
+  officeWriteRow_(officeConfigBook_(), 'TallySetup', row);
+  officeWriteRow_(officeCollectionAuditBook_(ctx.caller), 'Audit', { id: Utilities.getUuid(), ts: iso, who: ctx.caller.email, action: 'tally.set', tab: 'TallySetup', row_id: key, campus: data.campus || '', after: JSON.stringify(row) });
+  return { key: key, saved: true };
+}
+
 function officeHeadsHide_(ctx, data) {
   const cat = officeCategory_(String(data.category || ''));
   if (!cat || cat.direction !== 'OUT') throw new Error('BAD_CATEGORY');

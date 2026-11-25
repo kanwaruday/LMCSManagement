@@ -237,6 +237,6 @@ module.exports = function run(t) {
     const real = h.ctx.officeEnsureHeader_, seen = [];
     h.ctx.officeEnsureHeader_ = (sheet, cols) => { seen.push(sheet.getName()); return real(sheet, cols); };
     assert.equal(h.call('config.get', {}, 'clerk-token').success, true);
-    assert.deepEqual(seen.slice().sort(), ['Accounts', 'Collections', 'Handovers', 'HiddenHeads', 'Settings', 'SetupQuests', 'StartData', 'Vehicles']);
+    assert.deepEqual(seen.slice().sort(), ['Accounts', 'Collections', 'Handovers', 'HiddenHeads', 'Settings', 'SetupQuests', 'StartData', 'TallySetup', 'Vehicles']);
   });
 };
