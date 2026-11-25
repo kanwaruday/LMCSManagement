@@ -18,7 +18,11 @@
 // Not here: Start Hiring Process (it calls the Roster proxy with the person's Google token, which a game call doesn't carry).
 // ═══════════════════════════════════════════════════════════════════
 
-const GAME_HR_ACTIONS = ['gameHrPipeline', 'gameHrApplicant', 'gameHrReveal', 'gameHrAct'];
+const GAME_HR_ACTIONS = ['gameHrPipeline', 'gameHrApplicant', 'gameHrReveal', 'gameHrAct', 'gameHrSalaryConfig', 'gameHrOffer', 'gameHrEpf'];
+// W7 S3 (N3, 25 Nov): the Offer Calculator (salary/index.html) for the Owner: its config, recording an offer on an applicant, and the EPF
+// exemption. Owner only; every one is a POST (so View as can't send it); salary figures are never logged, the config look is audited.
+const GAME_HR_OWNER_ACTIONS = ['gameHrSalaryConfig', 'gameHrOffer', 'gameHrEpf'];
+const GAME_HR_OFFER_NUMS = ['basic', 'da', 'ada', 'epfE', 'pfE', 'esiE', 'totEpf', 'totEsi', 'rrf', 'tuition', 'cti', 'net', 'lmsExp', 'otherExp'];
 const GAME_HR_OPS = ['shortlist', 'unshortlist', 'markstage', 'propose', 'held', 'appt', 'confirmreject', 'revive', 'interview', 'demo', 'add', 'dupsettle', 'calretry'];
 // W7 S2 (N3, 25 Nov; Uday: "keep it in the game"): the room opens to the Principal and the Fee Clerk/PRO too. The game says which role
 // it acts as (body.role); that role must be on this person's own Allowlist row, and it picks the steps. Every step is still the old
@@ -164,6 +168,51 @@ function gameHrAdd_(caller, p, schools) {
   return gameOk_({ ok: true, id: (res && res.applicantId) || '' });
 }
 
+/** ₹ with Indian grouping (12,34,567), as the old page's toLocaleString('en-IN'), without relying on Intl in Apps Script */
+function gameHrInr_(n) {
+  const v = String(Math.round(Number(n) || 0)), neg = v[0] === '-', d = neg ? v.slice(1) : v;
+  const last3 = d.slice(-3), rest = d.slice(0, -3);
+  return '₹' + (neg ? '-' : '') + (rest ? rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' : '') + last3;
+}
+
+/** the offer as the old page records it (updatehiringstatus offerBreakdown): known keys only, figures as whole numbers */
+function gameHrOfferBreakdown_(raw) {
+  const b = gameHrJson_(raw), out = {};
+  GAME_HR_OFFER_NUMS.forEach(function (k) {
+    const v = Number(b[k]);
+    if (!isFinite(v) || v < 0 || v > 1e8) throw new Error('The offer figures didn’t come through. Work it out again.');
+    out[k] = k === 'lmsExp' || k === 'otherExp' ? v : Math.round(v);
+  });
+  out.designation = hirText_(b.designation, 120); out.subjects = hirText_(b.subjects, 120);
+  return out;
+}
+
+/** Record a salary offer on an applicant, as salary/index.html recordSalaryOffer_ does: the notes line, salaryOfferAt and the
+ *  breakdown on the hiring row (hiringUpdateStatus_), then, the first time only, the "Salary Offer Approval" request (aprSubmit_).
+ *  (The Payroll project's copy is the game's second call, to that project.) */
+function gameHrOffer_(caller, a, p, schools) {
+  const b = gameHrOfferBreakdown_(p.breakdown);
+  const campus = String(p.campus || '').toUpperCase();
+  if (schools.indexOf(campus) === -1 || gameHrTags_(a.branches).indexOf(campus) === -1) throw new Error('Pick one of the schools this applicant applied to.');
+  const y2 = Math.round(Number(p.netY2) || 0), y3 = Math.round(Number(p.netY3) || 0);
+  const prior = hiringRowNotes_(a.row);
+  const role = b.designation + (b.designation && b.subjects ? ': ' : '') + b.subjects;
+  const summary = 'Salary Offer recorded: ' + (role ? role + ' — ' : '') + 'CTI ' + gameHrInr_(b.cti) + ', Net Bank Y1 ' + gameHrInr_(b.net) + '/mo, experience LMS ' +
+    b.lmsExp + ' y + other ' + b.otherExp + ' y (' + new Date().toISOString().slice(0, 10) + ')';
+  hiringUpdateStatus_(caller, { row: a.row, status: '', notes: prior.notes ? prior.notes + ' | ' + summary : summary,
+    salaryOfferAt: new Date().toISOString(), offerBreakdown: JSON.stringify(b) });
+  if (prior.salaryOfferAt) return 'already';
+  const res = aprSubmit_(caller, {
+    category: 'Salary Offer Approval',
+    title: 'Appointment Confirmation — ' + a.name + (role ? ' (' + role + ')' : ''),
+    description: 'Confirm the appointment of ' + a.name + (role ? ' as ' + role : '') + ' at ' + campus + ' (' + a.applicantId + '), after the MD Academics interview. ' +
+      'Proposed pay: CTI ' + gameHrInr_(b.cti) + ', Net Bank Y1 ' + gameHrInr_(b.net) + '/mo, Y2 ' + gameHrInr_(y2) + '/mo, Y3 ' + gameHrInr_(y3) + '/mo, on experience LMS ' +
+      b.lmsExp + ' y + other ' + b.otherExp + ' y. Approving lets the Principal complete the hire.',
+    itemName: a.applicantId + ' — ' + a.name,
+  });
+  return res && res.success ? 'submitted' : 'failed';
+}
+
 function gameHrDispatch_(body) {
   if (!gameKeyOk_(body)) return { success: false, error: 'not_authorized' };
   if (GAME_HR_ACTIONS.indexOf(String(body.action)) === -1) return { success: false, error: 'unknown_action' };
@@ -172,6 +221,7 @@ function gameHrDispatch_(body) {
   const role = GAME_HR_ROLES[String(body.role || '')]; // the role the game acts as; it must be on this person's own Allowlist row
   if (!caller || !role || !callerHasRole_(caller, role)) return gameNo_('not_authorized');
   const ops = GAME_HR_ROLE_OPS[role];
+  if (GAME_HR_OWNER_ACTIONS.indexOf(String(body.action)) !== -1 && role !== 'Owner') return gameNo_('not_authorized'); // salary is the Owner's
   const p = body.params || {}, nowMs = Date.now();
   const schools = Array.isArray(body.campuses) ? body.campuses.map(function (c) { return String(c).toUpperCase(); }) : [];
   try {
@@ -202,6 +252,31 @@ function gameHrDispatch_(body) {
         gameHrLog_(caller, String(p.op), a.applicantId);
         const fresh = gameHrList_(caller, schools).filter(function (x) { return x.applicantId === a.applicantId; })[0];
         return gameOk_(fresh ? gameHrDetail_(fresh, schools, Date.now()) : { gone: true });
+      }
+      case 'gameHrSalaryConfig': {
+        gameHrAudit_(caller, 'salary config', ''); // the pay scale is salary data: the look is recorded first
+        const c = salaryConfig_();
+        return gameOk_({ payScale: c.payScale, jobRoleNorms: c.jobRoleNorms, tuitionFees: c.tuitionFees, payrollRates: c.payrollRates, constants: c.constants });
+      }
+      case 'gameHrOffer': {
+        const a = gameHrList_(caller, schools).filter(function (x) { return x.applicantId === String(p.id || ''); })[0];
+        if (!a) return gameNo_('not_found');
+        let approval;
+        try { approval = gameHrOffer_(caller, a, p, schools); } catch (err) { return { success: true, data: { ok: false, code: 'refused', say: gameHrSay_(err) } }; }
+        gameHrLog_(caller, 'offer', a.applicantId); // never the figures
+        return gameOk_({ ok: true, approval: approval, name: a.name });
+      }
+      case 'gameHrEpf': {
+        const a = gameHrList_(caller, schools).filter(function (x) { return x.applicantId === String(p.id || ''); })[0];
+        if (!a) return gameNo_('not_found');
+        if (p.op === 'request') {
+          const res = aprSubmit_(caller, { category: 'EPF Exemption', title: 'EPF Exemption — ' + a.name,
+            description: 'MD-level hire at ' + String(p.campus || '').toUpperCase() + '. Requesting EPF exemption per standard MD compensation structure.', itemName: a.name });
+          if (!res || !res.success) return { success: true, data: { ok: false, code: 'refused', say: gameHrSay_({ message: res && res.error }) } };
+          gameHrLog_(caller, 'epf request', a.applicantId);
+          return gameOk_({ ok: true, requested: true, approved: false });
+        }
+        return gameOk_({ ok: true, approved: salEpfExemptionApproved_(a.name) });
       }
       case 'gameHrReveal': {
         const field = String(p.field || '');
