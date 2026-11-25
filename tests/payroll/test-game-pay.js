@@ -11,7 +11,7 @@ let boom = null;
 const g = {
   PAY_ALLOWLIST_SHEET_ID: 'x', PAY_MEMO: new Map(),
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => ({ GAME_KEY: KEY })[k] || null }) },
-  SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => tabs[n] || null, insertSheet: (n) => { const rows = []; tabs[n] = { rows, getLastRow: () => rows.length, appendRow: (r) => rows.push(r) }; return tabs[n]; }, getSheets: () => [{ getDataRange: () => ({ getValues: () => [['Email', 'Name', 'Campus', 'Role'],
+  SpreadsheetApp: { flush: () => {}, openById: () => ({ getSheetByName: (n) => tabs[n] || null, insertSheet: (n) => { const rows = []; tabs[n] = { rows, getLastRow: () => rows.length, appendRow: (r) => rows.push(r) }; return tabs[n]; }, getSheets: () => [{ getDataRange: () => ({ getValues: () => [['Email', 'Name', 'Campus', 'Role'],
     ['owner@lms.org.in', 'O', 'ALL', 'Owner'], ['principal@lms.org.in', 'P', 'LMS1', 'Principal'], ['both@lms.org.in', 'B', 'ALL', 'Principal, Owner']] }) }] }) },
   LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => calls.push(['release']) }) },
   payOpen_: () => SS,
@@ -22,11 +22,19 @@ const g = {
     if (boom) throw new Error(boom);
     return { month, daysInMonth: 30, steps: ['staff', 'leave'], extraSecret: 'x', rows: [
       { code: 'E001', name: 'Test One', entity: 'LMS1', designation: 'TGT', paidDays: 30, basic: 15194, gross: 21272, net: 15679, cti: 24342, prevNet: 15000, prevCti: 24000,
-        adjustments: [{ type: 'Arrears', direction: 'Earning', amount: 500, note: 'a private note' }], bankAccount: 'SECRET-ACCT', tds: 0 },
+        adjustments: [{ id: 'a1', type: 'Arrears', direction: 'Earning', amount: 500, note: 'a private note' }], bankAccount: 'SECRET-ACCT', tds: 0,
+        input: { paidDays: 24, hold: 'fnf', skipLoan: true, skipReason: 'On file', secretField: 'x' } },
       { code: 'E002', name: 'Test Two', entity: 'LMS3', designation: 'PRT', paidDays: 30, basic: 7000, gross: 9000, net: 8000, cti: 10000, adjustments: [] }],
       warnings: [{ entity: 'LMS1', text: 'E001 has no leave record' }, { entity: 'LMS3', text: 'E002 is on hold' }], locked: { LMS1: true, LMS3: false },
       checklist: { LMS1: { staff: { by: 'o', at: 't' } }, LMS3: {} } };
   },
+  payEntityOf_: () => (code) => { const e = { E001: 'LMS1', E002: 'LMS3', E003: 'LMS2' }[code]; if (!e) throw new Error(code + ': not in Salary Master'); return e; },
+  paySaveInputs_: (ss, month, rows, caller) => { if (boom) throw new Error(boom); calls.push(['paySaveInputs_', month, JSON.parse(JSON.stringify(rows)), caller.email]); },
+  payAddAdjustment_: (ss, d, caller) => { if (boom) throw new Error(boom); calls.push(['payAddAdjustment_', JSON.parse(JSON.stringify(d)), caller.email]); },
+  payDeleteAdjustment_: (ss, month, id) => { if (boom) throw new Error(boom); calls.push(['payDeleteAdjustment_', month, id]); },
+  payMarkStep_: (ss, d, caller) => { if (boom) throw new Error(boom); calls.push(['payMarkStep_', JSON.parse(JSON.stringify(d)), caller.email]); },
+  payRows_: () => [{ ID: 'a1', Month: '2026-11', 'Employee Code': 'E001' }, { ID: 'a2', Month: '2026-11', 'Employee Code': 'E002' }],
+  payMonthKey_: (v) => String(v),
   payRecordOffer_: (ss, d, caller) => { if (boom) throw new Error(boom); calls.push(['payRecordOffer_', ss, JSON.parse(JSON.stringify(d)), caller.email]); },
 };
 vm.createContext(g);
@@ -71,7 +79,8 @@ assert.deepStrictEqual(r.rows.map((x) => x.code), ['E001'], 'only the proxy’s 
 const row = r.rows[0];
 assert.strictEqual(row.net, 15679);
 assert.ok(!('bankAccount' in row) && !('extraSecret' in r), 'only the register columns leave');
-assert.deepStrictEqual(row.adjustments, [{ type: 'Arrears', direction: 'Earning', amount: 500 }], 'the note stays in the sheet');
+assert.deepStrictEqual(row.adjustments, [{ id: 'a1', type: 'Arrears', direction: 'Earning', amount: 500 }], 'the note stays in the sheet');
+assert.deepStrictEqual(row.input, { paidDays: 24, clDays: null, hold: 'fnf', release: null, skipLoan: true, skipReason: 'On file' }, 'the person’s own inputs only');
 assert.deepStrictEqual(r.warnings, [{ entity: 'LMS1', text: 'E001 has no leave record' }]);
 assert.deepStrictEqual([r.locked, Object.keys(r.checklist)], [{ LMS1: true }, ['LMS1']]);
 const looks = JSON.parse(JSON.stringify(tabs['Game Looks'].rows));
@@ -83,8 +92,52 @@ boom = 'sheet unavailable';
 assert.deepStrictEqual(mo({}, { month: '2026-11' }).data, { ok: false, code: 'refused', say: 'sheet unavailable' });
 boom = null;
 assert.strictEqual(g.PAY_MEMO, null, 'the memo is cleared after a read');
-// no write path: the month handler never calls a writer
-assert.ok(!/payWrite_|payLock_|payUnlock_|paySaveInputs_/.test(require('fs').readFileSync(path.join(__dirname, '../../apps-script/game-pay.gs'), 'utf8').replace(/\/\/.*$/gm, '')), 'game-pay.gs calls no payroll writer in S5a');
+// the run is not here: game-pay.gs calls no lock, unlock, increment, settlement, letter or opening-balance writer (S5b adds only the month's inputs)
+const gpSrc = require('fs').readFileSync(path.join(__dirname, '../../apps-script/game-pay.gs'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+assert.ok(!/payLock_|payUnlock_|payApplyIncrement_|payUndoIncrement_|paySettleFnf_|payIssueLetter_|payIssueLoan_|payImportOpening_|payWrite_|payApplyTransfer_|payJoinOffer_/.test(gpSrc), 'game-pay.gs calls no run writer');
+
+// S5b: the month's inputs. Owner only, one thing per call, only people and schools the proxy gives this Owner; each logged (no amounts)
+const PM = { month: '2026-11' };
+const W = () => calls.filter((c) => c[0] !== 'release'); // the lock fake logs its release too
+const wr = (action, params, extra) => call(Object.assign({ action }, extra), params);
+calls.length = 0;
+for (const a of ['gamePayInput', 'gamePayAdjust', 'gamePayStep']) {
+  assert.strictEqual(wr(a, { ...PM, code: 'E001' }, { email: 'principal@lms.org.in' }).data.code, 'not_authorized', a);
+  assert.strictEqual(wr(a, { ...PM, code: 'E001' }, { role: 'principal' }).data.code, 'not_authorized', a);
+}
+assert.strictEqual(W().length, 0);
+// input: only the fields sent; hold 'none' clears; a person at another school is refused
+assert.deepStrictEqual(wr('gamePayInput', { ...PM, code: 'E001', paidDays: '24', hold: 'fnf' }).data, { ok: true, done: true });
+assert.deepStrictEqual(W()[0], ['paySaveInputs_', '2026-11', [{ code: 'E001', paidDays: '24', hold: 'fnf' }], 'owner@lms.org.in']);
+wr('gamePayInput', { ...PM, code: 'E001', hold: 'none' }); assert.strictEqual(W()[1][2][0].hold, '');
+wr('gamePayInput', { ...PM, code: 'E001', skipLoan: '1', skipReason: 'Application on file' }); assert.deepStrictEqual(W()[2][2][0], { code: 'E001', skipLoan: true, skipReason: 'Application on file' });
+calls.length = 0;
+assert.strictEqual(wr('gamePayInput', { ...PM, code: 'E002', paidDays: '20' }).data.say, 'That person isn’t at one of your schools.');
+assert.strictEqual(wr('gamePayInput', { ...PM, code: 'E001' }).data.say, 'Nothing to change.');
+assert.strictEqual(wr('gamePayInput', { month: 'soon', code: 'E001', paidDays: '1' }).data.code, 'refused');
+assert.strictEqual(W().length, 0, 'nothing written for a refused change');
+boom = 'LMS1 is locked for 2026-11 -- corrections go into next month as Adjustments';
+assert.match(wr('gamePayInput', { ...PM, code: 'E001', paidDays: '20' }).data.say, /is locked/, 'a locked school says so in the old words');
+boom = null;
+// adjustment: add (a person here), delete (by id, at a school here)
+assert.deepStrictEqual(wr('gamePayAdjust', { ...PM, op: 'add', code: 'E003', type: 'Arrears', amount: '500', note: 'Oct' }).data, { ok: true, done: true });
+assert.deepStrictEqual(W()[0], ['payAddAdjustment_', { month: '2026-11', code: 'E003', type: 'Arrears', amount: '500', note: 'Oct' }, 'owner@lms.org.in']);
+assert.strictEqual(wr('gamePayAdjust', { ...PM, op: 'add', code: 'E002', type: 'Arrears', amount: '500' }).data.say, 'That person isn’t at one of your schools.');
+assert.deepStrictEqual(wr('gamePayAdjust', { ...PM, op: 'delete', id: 'a1' }).data, { ok: true, done: true });
+assert.deepStrictEqual(W()[1], ['payDeleteAdjustment_', '2026-11', 'a1']);
+assert.strictEqual(wr('gamePayAdjust', { ...PM, op: 'delete', id: 'a2' }).data.say, 'That adjustment isn’t at one of your schools.');
+assert.strictEqual(wr('gamePayAdjust', { ...PM, op: 'delete', id: 'nope' }).data.say, 'Adjustment not found');
+// step: one school of the Owner's, never ALL
+calls.length = 0;
+assert.deepStrictEqual(wr('gamePayStep', { ...PM, entity: 'lms1', step: 'staff', done: '1' }).data, { ok: true, done: true });
+assert.deepStrictEqual(W()[0], ['payMarkStep_', { month: '2026-11', entity: 'LMS1', step: 'staff', done: true }, 'owner@lms.org.in']);
+assert.strictEqual(wr('gamePayStep', { ...PM, entity: 'ALL', step: 'staff', done: '1' }).data.code, 'refused');
+assert.strictEqual(wr('gamePayStep', { ...PM, entity: 'LMS3', step: 'staff', done: '1' }).data.code, 'refused');
+// the log: who, what, month, who-for; never an amount
+const acts = JSON.parse(JSON.stringify(tabs['Game Actions'].rows));
+assert.deepStrictEqual(acts[1].slice(1), ['owner@lms.org.in', 'input', '2026-11', 'E001']);
+assert.ok(acts.some((x) => x[2] === 'adjustment added' && x[4] === 'E003') && acts.some((x) => x[2] === 'step ticked: staff' && x[4] === 'LMS1'));
+assert.ok(!JSON.stringify(acts).includes('500') && !JSON.stringify(acts).includes('24'.repeat(1) + '"'), 'no amounts in the log');
 
 // S5e hook: a gamePayOut* action goes to game-pay-out.gs's gamePayOutRun_ after the same key and Owner checks; missing file = unknown_action
 assert.deepStrictEqual(call({ action: 'gamePayOutMonth' }, { month: '2026-11' }), { success: false, error: 'unknown_action' }, 'no outputs file loaded');

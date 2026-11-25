@@ -11,7 +11,12 @@
 // No figures are logged; refusals come back as plain words unless they could carry data.
 // ═══════════════════════════════════════════════════════════════════
 
-const GAME_PAY_ACTIONS = ['gamePayRecordOffer', 'gamePayMonth'];
+const GAME_PAY_ACTIONS = ['gamePayRecordOffer', 'gamePayMonth', 'gamePayInput', 'gamePayAdjust', 'gamePayStep'];
+// S5b (N3, 26 Nov): the month's inputs, each an Owner-only POST that writes ONE thing the old page's own writer writes, and nothing else:
+//   gamePayInput (one person: paid days, CL days encashed, hold, release of an earlier hold, skip a loan recovery with its reason),
+//   gamePayAdjust (add or delete one adjustment line), gamePayStep (tick or untick one of the five steps for one school).
+// Only people and schools the proxy gives this Owner; a locked school refuses (payAssertOpen_). None locks, runs or schedules payroll: that is
+// S5c, the Owner's own confirmed step. Each write is logged in 'Game Actions' (who, what, month, code or school), never an amount.
 // S5a (N3, 26 Nov): gamePayMonth, the month's draft register, read-only: payMonth_ cut to the schools the proxy gives this Owner and to the
 // columns the old Review step shows. An Owner-only POST (View as can't send it); the look is audited first (who, month, never a figure);
 // nothing is written to the payroll sheets. Payroll runs stay the Owner's own step (S5c): nothing here locks, runs or schedules one.
@@ -65,13 +70,71 @@ function gamePayMonth_(caller, month, schools) {
   const rows = (m.rows || []).filter(function (r) { return mine(r.entity); }).map(function (r) {
     const o = {};
     GAME_PAY_ROW_KEYS.forEach(function (k) { o[k] = r[k] === undefined ? null : r[k]; });
-    o.adjustments = (r.adjustments || []).map(function (a) { return { type: a.type, direction: a.direction, amount: a.amount }; }); // the note stays in the sheet
+    o.adjustments = (r.adjustments || []).map(function (a) { return { id: String(a.id || ''), type: a.type, direction: a.direction, amount: a.amount }; }); // the note stays in the sheet
+    const inp = r.input && typeof r.input === 'object' ? r.input : {}; // S5b: the person's own inputs, so the screen can show and change them
+    o.input = { paidDays: inp.paidDays === undefined ? null : inp.paidDays, clDays: inp.clDays === undefined ? null : inp.clDays, hold: inp.hold === true ? 'fnf' : String(inp.hold || ''),
+      release: inp.release === undefined ? null : inp.release, skipLoan: !!inp.skipLoan, skipReason: String(inp.skipReason || '') };
     return o;
   });
   const keep = function (src) { const o = {}; Object.keys(src || {}).filter(mine).forEach(function (e) { o[e] = src[e]; }); return o; };
-  return { month: month, daysInMonth: m.daysInMonth, steps: m.steps, rows: rows,
+  return { month: month, daysInMonth: m.daysInMonth, steps: m.steps, adjTypes: m.adjTypes || {}, rows: rows,
     warnings: (m.warnings || []).filter(function (w) { return mine(w.entity); }).map(function (w) { return { entity: payEntity_(w.entity), text: String(w.text || '').slice(0, 300) }; }),
     locked: keep(m.locked), checklist: keep(m.checklist) };
+}
+
+function gamePayLog_(who, what, month, subject) {
+  const ss = payOpen_();
+  const sh = ss.getSheetByName('Game Actions') || ss.insertSheet('Game Actions');
+  if (sh.getLastRow() < 1) sh.appendRow(['At', 'Who', 'What', 'Month', 'For']);
+  sh.appendRow([new Date(), who, what, month, subject]);
+}
+/** one write at a time (the script lock), reading fresh, as payWrite_ does, without building the whole month again */
+function gamePayWrite_(month, fn) {
+  payCheckMonth_(month);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { PAY_MEMO = null; const ss = payOpen_(); fn(ss); SpreadsheetApp.flush(); } finally { lock.releaseLock(); }
+}
+const GAME_PAY_INPUT_NUMS = ['paidDays', 'clDays', 'release'];
+/** one person's inputs for the month: only the fields sent change (paySaveInputs_), at a school this Owner reaches */
+function gamePayInput_(caller, p, schools) {
+  const code = String(p.code || '').trim();
+  const r = { code: code };
+  GAME_PAY_INPUT_NUMS.forEach(function (k) { if (p[k] !== undefined) r[k] = String(p[k]); });
+  if (p.hold !== undefined) r.hold = p.hold === 'none' ? '' : String(p.hold);
+  if (p.skipLoan !== undefined) { r.skipLoan = p.skipLoan === '1'; r.skipReason = String(p.skipReason || ''); }
+  if (Object.keys(r).length < 2) throw new Error('Nothing to change.');
+  gamePayWrite_(String(p.month || ''), function (ss) {
+    if (schools.indexOf(payEntityOf_(ss)(code)) === -1) throw new Error('That person isn’t at one of your schools.');
+    paySaveInputs_(ss, p.month, [r], caller);
+  });
+  gamePayLog_(caller.email, 'input', p.month, code);
+}
+/** add one adjustment line (a single month, as the old page's default), or delete one by its id */
+function gamePayAdjust_(caller, p, schools) {
+  if (String(p.op) === 'add') {
+    const code = String(p.code || '').trim();
+    gamePayWrite_(String(p.month || ''), function (ss) {
+      if (schools.indexOf(payEntityOf_(ss)(code)) === -1) throw new Error('That person isn’t at one of your schools.');
+      payAddAdjustment_(ss, { month: p.month, code: code, type: p.type, amount: p.amount, note: p.note }, caller);
+    });
+    gamePayLog_(caller.email, 'adjustment added', p.month, code);
+    return;
+  }
+  gamePayWrite_(String(p.month || ''), function (ss) {
+    const rows = payRows_(ss.getSheetByName('Adjustments')).filter(function (a) { return String(a['ID']) === String(p.id) && payMonthKey_(a['Month']) === p.month; });
+    if (!rows.length) throw new Error('Adjustment not found');
+    if (schools.indexOf(payEntityOf_(ss)(String(rows[0]['Employee Code']).trim())) === -1) throw new Error('That adjustment isn’t at one of your schools.');
+    payDeleteAdjustment_(ss, p.month, p.id);
+  });
+  gamePayLog_(caller.email, 'adjustment removed', p.month, String(p.id));
+}
+/** tick or untick one step of the month's checklist for one school (never ALL) */
+function gamePayStep_(caller, p, schools) {
+  const entity = payEntity_(p.entity);
+  if (schools.indexOf(entity) === -1) throw new Error('That school isn’t one of yours.');
+  gamePayWrite_(String(p.month || ''), function (ss) { payMarkStep_(ss, { month: p.month, entity: entity, step: p.step, done: p.done === '1' }, caller); });
+  gamePayLog_(caller.email, p.done === '1' ? 'step ticked: ' + p.step : 'step unticked: ' + p.step, p.month, entity);
 }
 
 function gamePayDispatch_(body) {
@@ -88,6 +151,12 @@ function gamePayDispatch_(body) {
   if (isOut) {
     try { return gamePayOutRun_(body, caller, p, schools); }
     catch (err) { return gamePayNo_('refused', gamePaySay_(err)); }
+  }
+  if (['gamePayInput', 'gamePayAdjust', 'gamePayStep'].indexOf(String(body.action)) !== -1) {
+    try {
+      ({ gamePayInput: gamePayInput_, gamePayAdjust: gamePayAdjust_, gamePayStep: gamePayStep_ })[String(body.action)](caller, p, schools);
+    } catch (err) { return gamePayNo_('refused', gamePaySay_(err)); }
+    return gamePayOk_({ done: true });
   }
   if (String(body.action) === 'gamePayMonth') {
     try { return gamePayOk_(gamePayMonth_(caller, String(p.month || ''), schools)); }
