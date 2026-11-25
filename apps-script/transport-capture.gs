@@ -478,7 +478,8 @@ function captureDiscard_(body) {
 //  gameCapturePart {ticket, kind, seq, lat, lng, takenAt, base64} -> {success, fileId}: ONE frame, stop or photo per call against the run's
 //    ticket (the 2 MB image cap, idempotent on (runId, kind, seq): capFileSave_, unchanged). The Drive layout is the old one, so the Mac's
 //    blur and PhotoRun see game runs as they are.
-//  gameCaptureRun {bus, run: <JSON, 8 KB at most>} -> {success}: the manifest upsert (captureRun_, unchanged); the bus comes from capture-drive.
+//  gameCaptureRun {bus, runId, runKind, startedAt, endedAt, frames, gaps, stops, status, trial} (flat strings), or {bus, run: '<JSON with the same names>'}
+//    -> {success}: the manifest upsert (captureRun_, unchanged); the bus comes from capture-drive; the stop list is read from the run's stop photos.
 // Script property CAPTURE_DRIVE_URL (lms-game's capture-drive function; never in the repo). Logs: codes only.
 var CAP_GAME_KINDS_ = ['timelapse', 'inspection', 'profile']; // a count run takes no camera, so it never comes from the game
 var CAP_GAME_TICKET_MS_ = 6 * 60 * 60 * 1000;                  // = the script cache's longest entry
@@ -556,8 +557,15 @@ function gameCapturePart_(b) {
 function gameCaptureRun_(b) {
   // flat string params (the proxy caps each at 500 characters): bus, runId, runKind, startedAt, endedAt, frames, gaps, stops (counts; the stop
   // list is read from the run's stop photos in Drive), status running|ended|error, trial 'yes'|''
-  const p = b.params && typeof b.params === 'object' ? b.params : {};
+  const raw = b.params && typeof b.params === 'object' ? b.params : {};
   if (!afvKeyOk_(b.key)) return { success: false, error: 'not_authorized' };
+  // either the flat params above, or one param `run`: a JSON string (the proxy's 500-character cap) with the same names (kind = runKind)
+  let p = raw;
+  if (raw.run !== undefined) {
+    try { p = JSON.parse(String(raw.run)); } catch (e) { p = null; }
+    if (!p || typeof p !== 'object' || Array.isArray(p) || String(raw.run).length > 8192) return msgCapOut_('bad_input');
+    p = Object.assign({}, p, { bus: raw.bus, runKind: p.runKind || p.kind, trial: p.trial === true || p.trial === 'yes' ? 'yes' : '' });
+  }
   const runId = String(p.runId || ''), runKind = String(p.runKind || ''), status = String(p.status || 'running');
   if (!/^[A-Za-z0-9_-]{1,50}$/.test(runId) || CAP_GAME_KINDS_.indexOf(runKind) === -1 || ['running', 'ended', 'error'].indexOf(status) === -1) return msgCapOut_('bad_input');
   const a = capGameAuth_(b, p.bus);

@@ -138,6 +138,13 @@ assert.strictEqual(tk(ME, { runId: 'G1', runKind: 'inspection' }).data.code, 'ki
 tabs['Capture Runs'].find((r) => r[0] === 'HP659511-G1')[12] = 'closed'; Object.keys(cache).forEach((k) => { if (/^caprow_/.test(k)) delete cache[k]; });
 assert.strictEqual(tk(ME, {}).data.code, 'discarded');
 assert.match(partOf(t1, { seq: 11 }).error, /discarded/);
+// the same manifest as one JSON string param (kind = runKind; stops as numbers), with the same rules
+const crunJson = (email, o) => call('gameCaptureRun_', { email, params: { bus: BUS, run: JSON.stringify(Object.assign({ runId: 'G5', kind: 'timelapse', startedAt: 1764144000000, endedAt: null, frames: 1, status: 'running', stops: [3], trial: false }, o)) } }).data;
+assert.strictEqual(crunJson(ME, {}).ok, true);
+assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'HP659511-G5')[3], 'timelapse');
+assert.strictEqual(crunJson(ME, { kind: 'count' }).code, 'bad_input');
+assert.strictEqual(call('gameCaptureRun_', { email: ME, params: { bus: BUS, run: 'not json' } }).data.code, 'bad_input');
+assert.match(crunJson(ME, { runId: 'G6', trial: true }).code, /Only the Owner or a Coordinator/, 'a crew member can not send a trial run, in either form');
 // the manifest: flat params, known words only
 assert.strictEqual(crun(ME, { runId: 'G4', runKind: 'count' }).code, 'bad_input');
 assert.strictEqual(crun(ME, { runId: 'G4', status: 'closed' }).code, 'bad_input', "'closed' is the server's alone");
