@@ -66,6 +66,12 @@ var OFFICE_GAME_ACTIONS = {
   gameCollectionAdd: { act: 'collection.add', write: true, owner: true },
   gameHeadsHide: { act: 'heads.hide', write: true, owner: true, bool: ['hidden'] },   // lane-d: per-school hidden expense heads
   // lane-d slice 2: cash payments above the school's limit wait for the Principal (or the Owner)
+  // lane-d (Uday, 26 Nov): payments above the cash limit are requests; the clerk raises, the Finance Head (verifier) or the Owner decides, pays by bank outside the portal, marks paid, attaches the proof
+  gamePayReqAdd: { act: 'payreq.add', write: true, num: ['amount_paise'] },
+  gamePayReqList: { act: 'payreq.list', verifier: true },
+  gamePayReqDecide: { act: 'payreq.decide', write: true, owner: true, verifier: true, bool: ['approve'] },
+  gamePayReqPaid: { act: 'payreq.paid', write: true, owner: true, verifier: true },
+  gamePayReqProof: { act: 'payreq.proof', write: true, owner: true, verifier: true },
   gameSyncExport: { act: 'sync.export', owner: true, num: ['offset', 'limit'] }, // lane-d: read-only paged tab copy for the Mac sync (Owner role)
   // lane-d batch 5 (parity audit): the day's close, its reopen, and the Finance Head's deposit signature, as the office's own actions
   gameDayClose: { act: 'day.close', write: true, owner: true, verifier: true },   // the Finance Head (verifier) or the Owner

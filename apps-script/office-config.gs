@@ -328,7 +328,7 @@ function officeConfigBook_() {
 
 // Latest Settings value for `key` ('' when unset).
 // lane-d slice 2: a cash payment above this (paise) waits for the Principal's approval. Per school, the Owner's setting; ₹2,000 by default.
-var OFFICE_APPROVAL_LIMIT_DEFAULT = 200000;
+var OFFICE_APPROVAL_LIMIT_DEFAULT = 500000;   // Uday, 26 Nov: cash payments up to ₹5,000 (was ₹2,000); above that is a bank payment request (office-payreq.gs)
 function officeApprovalLimit_(campus) {
   const v = officeSetting_('approval_limit:' + campus);
   return /^\d{1,12}$/.test(v) ? Number(v) : OFFICE_APPROVAL_LIMIT_DEFAULT;

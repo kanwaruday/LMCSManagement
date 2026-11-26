@@ -52,6 +52,7 @@ function officeDayClose_(ctx, data) {
   const decided = {};
   officeRows_(ss, 'Decisions').forEach(function (d) { decided[d.entry_id] = true; });
   if (officeRows_(ss, 'Pending').some(function (p) { return p.entry_date <= date && !decided[p.id]; })) throw officeCoded_('PENDING_APPROVALS');
+  if (officeProofPending_(data.campus, date)) throw officeCoded_('PROOF_PENDING'); // lane-d: a bank payment marked paid without its proof blocks the close
   const book = officeRows_(ss, 'DayBook');
   // Most recent earlier day with entries (this book only: the year's first day has no predecessor).
   const prev = book.reduce(function (m, r) { return r.entry_date < date && r.entry_date > m ? r.entry_date : m; }, '');

@@ -308,4 +308,17 @@ module.exports = function run(t) {
     assert.strictEqual(h.game('gameDayReopen', { id: 'r2', close_date: '2026-10-20' }, { role: 'owner', email: 'x@example.org' }).data.code, 'REASON_REQUIRED');
     { const r = reopen('r3', 'owner'); assert.ok(r.data.ok !== false, JSON.stringify(r)); };
   });
+
+  t.test('lane-d payreq (game bridge): the clerk raises, the verifier or the Owner decides and pays; the clerk can\'t; a Principal reaches nothing here', () => {
+    const h = fresh();
+    ['slip', 'proof'].forEach((id) => h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files', { id, campus: 'LMS1', drive_id: 'D-' + id, name: id + '.jpg' }));
+    const g = (act, p, role) => h.game(act, p, { role, email: role + '@example.org' });
+    const add = g('gamePayReqAdd', { id: 'g1', payee: 'Demo Builders', amount_paise: 900000, category: 'stationery', file_id: 'slip' }, 'fee_clerk');
+    assert.ok(add.data.ok !== false && add.success !== false, JSON.stringify(add));
+    assert.equal(g('gamePayReqDecide', { id: 'gd0', request_id: 'g1', approve: 'true' }, 'fee_clerk').data.code, 'read_only');
+    assert.equal(g('gamePayReqDecide', { id: 'gd0', request_id: 'g1', approve: 'true' }, 'principal').data.code, 'unknown_action');
+    const d = g('gamePayReqDecide', { id: 'gd1', request_id: 'g1', approve: 'true' }, 'accounts_verifier'); assert.ok(d.data.ok !== false, JSON.stringify(d));
+    const p = g('gamePayReqPaid', { id: 'gp1', request_id: 'g1', bank_ref: 'UTR999', account: 'bank:LMS1', proof_file_id: 'proof' }, 'accounts_verifier'); assert.ok(p.data.ok !== false, JSON.stringify(p));
+    const l = g('gamePayReqList', {}, 'accounts_verifier'); assert.equal(l.data.requests[0].state, 'paid');
+  });
 };

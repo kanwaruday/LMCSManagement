@@ -13,6 +13,12 @@ function officeDaybookActions_() {
     'daybook.counts': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookCounts_ },
     // lane-d slice 2 (Uday, 19 Nov: "a cash entry above 2000 should be sent for approvals"): the Principal (or the Owner) decides
     'daybook.pending': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookPending_ },
+    // lane-d (Uday, 26 Nov): payments above the cash limit are requests the Finance Head approves and pays by bank
+    'payreq.add': { roles: ['FeeClerk', 'AdminManager', 'Principal', 'Owner'], write: true, run: officePayRequestAdd_ },
+    'payreq.list': { roles: OFFICE_ALL_ROLES, write: false, run: officePayRequestList_ },
+    'payreq.decide': { roles: ['FinanceHead', 'Owner'], write: true, run: officePayRequestDecide_ },
+    'payreq.paid': { roles: ['FinanceHead', 'Owner'], write: true, run: officePayRequestPaid_ },
+    'payreq.proof': { roles: ['FinanceHead', 'Owner'], write: true, run: officePayRequestProof_ },
     'sync.export': { roles: ['Owner'], write: false, run: officeSyncExport_ }, // lane-d: read-only copy of one tab, paged, for the Mac sync into the game's database
     'daybook.decide': { roles: ['Principal', 'Owner'], write: true, run: officeDaybookDecide_ },
   };
@@ -148,12 +154,11 @@ function officeDaybookAdd_(ctx, data) {
     odometer_note: odometerNote, supplier_bill_no: String(data.supplier_bill_no || '').trim(), settles_account: settlesAccount,
     settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection, components: components, video_file_id: videoId,
   };
-  // lane-d slice 2: a cash payment above the school's limit waits for approval and counts nowhere until then (Pending tab)
-  // (G2) and so does one that, with the day's other cash payments to the same payee, adds up to more: no splitting a bill in two
+  // lane-d (Uday, 26 Nov): cash payments stop at the school's limit (₹5,000 by default), together with the day's other cash payments to the same
+  // payee (no splitting a bill in two). Above it the payment is a bank payment request to the Finance Head (office-payreq.gs), never cash.
   const limit = officeApprovalLimit_(data.campus), cashOut = mode === 'cash' && data.direction === 'OUT';
-  const others = cashOut && data.amount_paise <= limit ? officeSameDayPayee_(ss, row) : 0;
-  const saved = cashOut && data.amount_paise + others > limit
-    ? officePendingAdd_(ss, ctx, row, others ? { split_total_paise: data.amount_paise + others } : null) : officeDaybookWrite_(ss, ctx, row, 'daybook.add');
+  if (cashOut && !officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); }) && data.amount_paise + officeSameDayPayee_(ss, row) > limit) throw officeCoded_('CASH_ABOVE_LIMIT');
+  const saved = officeDaybookWrite_(ss, ctx, row, 'daybook.add');
   return warnings.length ? Object.assign({}, saved, { warnings: warnings }) : saved;
 }
 
