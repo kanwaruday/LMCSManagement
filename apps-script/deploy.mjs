@@ -40,6 +40,8 @@ function sharedProblems() {
       if (typeof r !== 'string' || !/^[\w.-]+$/.test(r) || r.endsWith('.gs')) bad.push(`${key}: retire "${r}" must be a bare file name`);
       else if (p.files.some((f) => pushedAs(f) === `${r}.gs`)) bad.push(`${key}: retire "${r}" is also one of its files`);
     }
+    // gameDeploymentId: a SECOND live deployment of the same project (office: the game's key-gated one, created anonymous), redeployed with the first
+    if (p.gameDeploymentId !== undefined && !(typeof p.gameDeploymentId === 'string' && /^AKfycb[\w-]{20,}$/.test(p.gameDeploymentId) && p.gameDeploymentId !== p.deploymentId)) bad.push(`${key}: gameDeploymentId must be an AKfycb... deployment id different from deploymentId`);
     for (const f of p.files) {
       const name = pushedAs(f);
       if (seen.has(name)) bad.push(`${key}: two entries are pushed as ${name}`);
@@ -127,6 +129,10 @@ function run(key, { push, deploy }) {
   if (!v) throw new Error('could not read the new version number from clasp');
   clasp(stage, 'redeploy', p.deploymentId, '-V', v, '-d', msg);
   console.log(`live deployment ${p.deploymentId.slice(0, 12)}... now at version ${v}.`);
+  if (p.gameDeploymentId) { // the game's own deployment moves to the same version, so the old pages and the game never run different code
+    clasp(stage, 'redeploy', p.gameDeploymentId, '-V', v, '-d', msg);
+    console.log(`game deployment ${p.gameDeploymentId.slice(0, 12)}... now at version ${v}.`);
+  }
 }
 
 if (args.includes('--check')) check();
