@@ -622,25 +622,55 @@ function installDailySSSyncTrigger() {
 
 /** RETIRING THE SS GOOGLE FORMS (the game's native SS form, pdr.ssSubmit / Supabase, replaces all 21). Run once, after VITE_PDR_NATIVE is on:
  *  stops the daily name-dropdown sync (no timer left, nothing to keep alive). Safe to run twice. Does not touch any form: closing them is
- *  listSsFormsToClose() below + Uday, one by one. */
+ *  closeSsForms() below (listSsFormsToClose() lists them). */
 function retireSsFormsSync() {
   let n = 0;
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'syncAllSSForms') { ScriptApp.deleteTrigger(t); n++; }
   });
-  Logger.log('syncAllSSForms timer(s) removed: ' + n + '. The 21 forms are untouched; run listSsFormsToClose() for the ones to close.');
+  Logger.log('syncAllSSForms timer(s) removed: ' + n + '. The forms are not touched here; closeSsForms() closes them.');
+}
+
+/** The one list of SS Google Forms: [{label, key, id}] for every form in SS_ROLE_CONFIGS (6 Teacher + 1 IT + 1 PTI + 1 Fee Clerk + 6 Non-teaching + 6 Driver = 21).
+ *  listSsFormsToClose() and closeSsForms() both read it, so what is listed is exactly what is closed. */
+const SS_FORMS_EXPECTED = 21;
+function ssFormTargets_() {
+  const out = [];
+  Object.keys(SS_ROLE_CONFIGS).forEach(function (roleKey) {
+    const cfg = SS_ROLE_CONFIGS[roleKey];
+    if (!cfg || !cfg.forms) return;
+    Object.keys(cfg.forms).forEach(function (formKey) { out.push({ label: cfg.label + (formKey === 'all' ? '' : ' ' + formKey), key: formKey, id: cfg.forms[formKey] }); });
+  });
+  return out;
 }
 
 /** Read-only: logs each of the 21 SS forms (role, school, edit link) for Uday to open and set "Accepting responses" off. */
 function listSsFormsToClose() {
-  Object.keys(SS_ROLE_CONFIGS).forEach(function (roleKey) {
-    const cfg = SS_ROLE_CONFIGS[roleKey];
-    if (!cfg || !cfg.forms) return;
-    Object.keys(cfg.forms).forEach(function (formKey) {
-      const f = FormApp.openById(cfg.forms[formKey]);
-      Logger.log(cfg.label + (formKey === 'all' ? '' : ' ' + formKey) + (f.isAcceptingResponses() ? ' [OPEN] ' : ' [closed] ') + f.getEditUrl());
-    });
+  ssFormTargets_().forEach(function (t) {
+    const f = FormApp.openById(t.id);
+    Logger.log(t.label + (f.isAcceptingResponses() ? ' [OPEN] ' : ' [closed] ') + f.getEditUrl());
   });
+}
+
+/** CLOSING THE SS GOOGLE FORMS (the game's native SS form replaces all 21). Uday's one step: Run closeSsForms in the PDR editor. Closes exactly the forms
+ *  listSsFormsToClose() lists (same list) with setAcceptingResponses(false) and nothing else; refuses (error ss_forms_not_21) if the list is not 21; an already-closed form
+ *  is skipped, so it is safe to run again. Logs counts only (never a title or link). When every form is closed it removes the daily sync timer (retireSsFormsSync);
+ *  if any form could not be closed it stops with the error ss_forms_close_failed and leaves the timer, and a re-run finishes the rest. */
+function closeSsForms() {
+  const targets = ssFormTargets_();
+  if (targets.length !== SS_FORMS_EXPECTED) throw new Error('ss_forms_not_21');
+  let closed = 0, already = 0, failed = 0;
+  targets.forEach(function (t) {
+    try {
+      const f = FormApp.openById(t.id);
+      if (!f.isAcceptingResponses()) { already++; return; }
+      f.setAcceptingResponses(false);
+      closed++;
+    } catch (err) { failed++; }
+  });
+  Logger.log('closeSsForms: closed=' + closed + ' already_closed=' + already + ' failed=' + failed + ' of ' + targets.length);
+  if (failed) throw new Error('ss_forms_close_failed');
+  retireSsFormsSync();
 }
 
 // ── ADDING A NEW ROLE ───────────────────────────────────────────────
