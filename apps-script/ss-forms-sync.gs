@@ -620,6 +620,29 @@ function installDailySSSyncTrigger() {
   Logger.log('Daily trigger installed: syncAllSSForms() will run once a day around 5 AM.');
 }
 
+/** RETIRING THE SS GOOGLE FORMS (the game's native SS form, pdr.ssSubmit / Supabase, replaces all 21). Run once, after VITE_PDR_NATIVE is on:
+ *  stops the daily name-dropdown sync (no timer left, nothing to keep alive). Safe to run twice. Does not touch any form: closing them is
+ *  listSsFormsToClose() below + Uday, one by one. */
+function retireSsFormsSync() {
+  let n = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'syncAllSSForms') { ScriptApp.deleteTrigger(t); n++; }
+  });
+  Logger.log('syncAllSSForms timer(s) removed: ' + n + '. The 21 forms are untouched; run listSsFormsToClose() for the ones to close.');
+}
+
+/** Read-only: logs each of the 21 SS forms (role, school, edit link) for Uday to open and set "Accepting responses" off. */
+function listSsFormsToClose() {
+  Object.keys(SS_ROLE_CONFIGS).forEach(function (roleKey) {
+    const cfg = SS_ROLE_CONFIGS[roleKey];
+    if (!cfg || !cfg.forms) return;
+    Object.keys(cfg.forms).forEach(function (formKey) {
+      const f = FormApp.openById(cfg.forms[formKey]);
+      Logger.log(cfg.label + (formKey === 'all' ? '' : ' ' + formKey) + (f.isAcceptingResponses() ? ' [OPEN] ' : ' [closed] ') + f.getEditUrl());
+    });
+  });
+}
+
 // ── ADDING A NEW ROLE ───────────────────────────────────────────────
 // 1. Get the live form's real question titles (don't assume — see the
 //    Logger.log one-liner in the TODO comment above).
