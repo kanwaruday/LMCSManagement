@@ -934,3 +934,31 @@ function pdrGame_(body) {
   if (!out.success) return pdrGameRefusal_(out.error);
   return out.data !== undefined ? out : { success: true, data: { ok: true } };
 }
+
+// ── School calendar export for the game's native calendar (B6, 26 Nov 2026) ─────────────────────────────────────────────
+// The game now keeps the school calendar in Supabase (school_calendar_events, migration 1000). Google stays where the dates are kept; this writes what the
+// game needs into a "School Calendar" tab of the Daily Reports workbook: every school's official-calendar events (45 days back, 400 ahead) and the events
+// tagged SS on each Principal's own calendar (45 back, 14 ahead). Run exportSchoolCalendar() from the editor (Run menu), then File > Download > CSV of that tab;
+// db/import/school-calendar.mjs reads it. Re-run when dates change; the importer's --update drops what moved or went. Reads Calendar only; writes only that tab.
+// Columns: Campus, Kind (official | ss), Title, Start, End (ISO dates, End inclusive), AllDay.
+function exportSchoolCalendar() {
+  const now = new Date(), day = 86400000, rows = [['Campus', 'Kind', 'Title', 'Start', 'End', 'AllDay']];
+  const iso = function (d) { return Utilities.formatDate(d, 'Asia/Kolkata', 'yyyy-MM-dd'); };
+  const add = function (campus, kind, ev) {
+    const allDay = ev.isAllDayEvent(), start = ev.getStartTime(), end = allDay ? new Date(ev.getEndTime().getTime() - 1) : ev.getEndTime();   // an all-day end is exclusive
+    rows.push([campus, kind, ev.getTitle(), iso(start), iso(end < start ? start : end), allDay ? 'TRUE' : 'FALSE']);
+  };
+  Object.keys(PDR_SCHOOL_CALENDAR_IDS).forEach(function (campus) {
+    const cal = CalendarApp.getCalendarById(PDR_SCHOOL_CALENDAR_IDS[campus]);
+    if (cal) cal.getEvents(new Date(now.getTime() - 45 * day), new Date(now.getTime() + 400 * day)).forEach(function (ev) { add(campus, 'official', ev); });
+  });
+  Object.keys(PDR_PRINCIPAL_PERSONAL_CALENDARS).forEach(function (campus) {
+    const cal = CalendarApp.getCalendarById(PDR_PRINCIPAL_PERSONAL_CALENDARS[campus]);
+    if (cal) cal.getEvents(new Date(now.getTime() - 45 * day), new Date(now.getTime() + 14 * day)).forEach(function (ev) { if (/\bSS\b/.test(ev.getTitle())) add(campus, 'ss', ev); });
+  });
+  const ss = SpreadsheetApp.openById(PDR_DAILY_REPORTS_SHEET_ID);
+  const sh = ss.getSheetByName('School Calendar') || ss.insertSheet('School Calendar');
+  sh.clearContents();
+  sh.getRange(1, 1, rows.length, 6).setNumberFormat('@').setValues(rows);
+  Logger.log('School Calendar tab written: ' + (rows.length - 1) + ' rows.');
+}
