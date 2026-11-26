@@ -67,7 +67,7 @@ export const CODES = {
   HANDOVER_SELF: 'You handed this cash over yourself, so someone at the receiving school has to accept it or report it.',
   HANDOVER_ACCEPTED: 'This cash handover was accepted by the receiving school, so it cannot be reversed. Tell Uday if it is wrong.',
   ALREADY_REVERSED: 'This entry was already reversed.',
-  CASH_ABOVE_LIMIT: 'Cash payments stop at the school’s limit (₹5,000 unless the Owner set another). For more, raise a payment request: the Finance Head approves it and pays by bank.', // lane-d 26 Nov
+  ABOVE_LIMIT_USE_REQUEST: 'Payments above the school’s limit (₹5,000 unless the Owner set another) cannot be entered here, in cash or by bank. Raise a payment request: the Finance Head approves it, pays by bank and attaches the proof.', // lane-d 26 Nov
   PROOF_PENDING: 'A bank payment from this day has no proof yet. Attach the bank proof (UTR or ICICI confirmation), then close the day.', // lane-d 26 Nov
   NOT_APPROVED: 'That payment request is not approved yet.',
   NOT_PAID: 'That payment is not marked paid yet.',

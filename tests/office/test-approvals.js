@@ -1,5 +1,5 @@
 // lane-d Day Book slice 2 (Uday, 19 Nov: "a cash entry above 2000 should be sent for approvals"), changed 26 Nov (Uday: "lets move this to 5000, payments above that
-// cannot be made in cash"): cash payments stop at the limit (₹5,000, CASH_ABOVE_LIMIT, no Pending); above it is a payment request (test-payreq.js). What still waits
+// cannot be made in cash"): cash payments stop at the limit (₹5,000, ABOVE_LIMIT_USE_REQUEST, no Pending); above it is a payment request (test-payreq.js). What still waits
 // for the Principal (or the Owner) is taking back a cash receipt above the limit (a reversal pays cash out). Synthetic data only.
 'use strict';
 const assert = require('assert');
@@ -38,21 +38,23 @@ module.exports = function run(t) {
   const petty = (h, d = '2026-10-21') => h.call('daybook.balances', { campus: 'LMS1', date: d }, 'clerk-token').closing.cash.petty;
   const listed = (h) => h.call('daybook.list', { campus: 'LMS1', from: '2026-10-21' }, 'clerk-token').entries;
 
-  t.test('cash limit: ₹5,000 and below is paid in cash at once; above it is refused (CASH_ABOVE_LIMIT); bank is never gated', () => {
+  t.test('limit: ₹5,000 and below is paid at once; above it is refused (ABOVE_LIMIT_USE_REQUEST) in cash, bank or UPI; a bill on credit is not a payment', () => {
     const h = fresh();
     assert.equal(pay(h, { id: 'at', amount_paise: 500000, payee: 'Shop A' }).error, undefined);
-    assert.equal(pay(h, { id: 'big', amount_paise: 500001, payee: 'Shop B' }).error, 'CASH_ABOVE_LIMIT');
+    assert.equal(pay(h, { id: 'big', amount_paise: 500001, payee: 'Shop B' }).error, 'ABOVE_LIMIT_USE_REQUEST');
     assert.equal(petty(h), 1000000 - 500000, 'a refused payment is nowhere in the books');
     assert.equal(h.call('daybook.pending', { campus: 'LMS1', state: 'pending' }, 'p1-token').entries.length, 0, 'nothing waits for the Principal any more');
     assert.equal(h.call('daybook.add', { id: 'bk', campus: 'LMS1', entry_date: '2026-10-21', account: 'bank:LMS1', mode: 'bank', direction: 'OUT', category: 'utilities', amount_paise: 900000, payee: 'P', narration: 'x', file_id: 'slip' }, 'clerk-token').error, 'FORBIDDEN_ACCOUNT', 'a clerk never pays from the bank: that is the Finance Head\'s');
-    assert.equal(h.call('daybook.add', { id: 'bk2', campus: 'LMS1', entry_date: '2026-10-21', account: 'bank:LMS1', mode: 'bank', direction: 'OUT', category: 'utilities', amount_paise: 900000, payee: 'P', narration: 'x', file_id: 'slip' }, 'owner-token').error, undefined, 'bank is not under the cash limit');
+    assert.equal(h.call('daybook.add', { id: 'bk2', campus: 'LMS1', entry_date: '2026-10-21', account: 'bank:LMS1', mode: 'bank', direction: 'OUT', category: 'utilities', amount_paise: 900000, payee: 'P', narration: 'x', file_id: 'slip' }, 'owner-token').error, 'ABOVE_LIMIT_USE_REQUEST', 'bank above the limit is a payment request too');
+    assert.equal(h.call('daybook.add', { id: 'bk3', campus: 'LMS1', entry_date: '2026-10-21', account: 'bank:LMS1', mode: 'upi', direction: 'OUT', category: 'utilities', amount_paise: 900000, payee: 'P', narration: 'x', file_id: 'slip' }, 'owner-token').error, 'ABOVE_LIMIT_USE_REQUEST', 'UPI too');
+    assert.equal(h.call('daybook.add', { id: 'bk4', campus: 'LMS1', entry_date: '2026-10-21', account: 'bank:LMS1', mode: 'bank', direction: 'OUT', category: 'utilities', amount_paise: 400000, payee: 'P', narration: 'x', file_id: 'slip' }, 'owner-token').error, undefined, 'bank within the limit is fine');
     assert.equal(pay(h, { id: 'at', amount_paise: 500000, payee: 'Shop A' }).duplicate, true, 'a resend of a saved entry is a retry, not refused');
   });
 
   t.test('cash limit: a bill split to stay under it: 3,000 + 2,500 to one payee is refused; 3,000 + 1,900 is fine', () => {
     const h = fresh(5000000);
     assert.equal(pay(h, { id: 's1', amount_paise: 300000, payee: 'Demo Traders' }).error, undefined);
-    assert.equal(pay(h, { id: 's2', amount_paise: 250000, payee: '  demo   TRADERS ' }).error, 'CASH_ABOVE_LIMIT', 'same payee, spaces and case aside');
+    assert.equal(pay(h, { id: 's2', amount_paise: 250000, payee: '  demo   TRADERS ' }).error, 'ABOVE_LIMIT_USE_REQUEST', 'same payee, spaces and case aside');
     assert.equal(pay(h, { id: 's3', amount_paise: 190000, payee: 'Demo Traders' }).error, undefined);
     assert.equal(pay(h, { id: 's4', amount_paise: 300000, payee: 'Other Shop' }).success, true, 'another payee');
     assert.equal(pay(h, { id: 's5', amount_paise: 300000, payee: 'Demo Traders', entry_date: '2026-10-20' }).success, true, 'another day');
@@ -66,7 +68,7 @@ module.exports = function run(t) {
     const lim = h.call('config.get', {}, 'owner-token').approval_limits;
     assert.equal(lim.LMS1, 300000); assert.equal(lim.LMS2, 500000);
     assert.equal(pay(h, { id: 'u', amount_paise: 300000 }).error, undefined);
-    assert.equal(pay(h, { id: 'o', amount_paise: 300001, payee: 'Other' }).error, 'CASH_ABOVE_LIMIT');
+    assert.equal(pay(h, { id: 'o', amount_paise: 300001, payee: 'Other' }).error, 'ABOVE_LIMIT_USE_REQUEST');
   });
 
   t.test('reversal: taking back a ₹6,000 cash receipt goes straight through (Uday, 26 Nov), with a reason; nothing waits for the Principal', () => {

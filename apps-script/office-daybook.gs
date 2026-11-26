@@ -154,10 +154,13 @@ function officeDaybookAdd_(ctx, data) {
     odometer_note: odometerNote, supplier_bill_no: String(data.supplier_bill_no || '').trim(), settles_account: settlesAccount,
     settles: settlesAccount ? String(data.settles || '').trim() : '', source: 'live', collection: collection, components: components, video_file_id: videoId,
   };
-  // lane-d (Uday, 26 Nov): cash payments stop at the school's limit (₹5,000 by default), together with the day's other cash payments to the same
-  // payee (no splitting a bill in two). Above it the payment is a bank payment request to the Finance Head (office-payreq.gs), never cash.
-  const limit = officeApprovalLimit_(data.campus), cashOut = mode === 'cash' && data.direction === 'OUT';
-  if (cashOut && !officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); }) && data.amount_paise + officeSameDayPayee_(ss, row) > limit) throw officeCoded_('CASH_ABOVE_LIMIT');
+  // lane-d (Uday, 26 Nov; V2 G2: "payments above 5000 should be sent to Pawan Sir for approval and initiation of icici payments"): NO money out above
+  // the school's limit goes through here, whatever the mode (cash, bank or UPI; a bill on a supplier's credit account is not a payment). Cash counts with the
+  // day's other cash to the same payee (no splitting a bill in two). The only way is a payment request (office-payreq.gs): the Finance Head approves,
+  // pays by bank outside the portal and marks it paid with the bank ref and proof. (payreq.paid writes its row itself, not through here.)
+  const limit = officeApprovalLimit_(data.campus), payment = data.direction === 'OUT' && mode !== 'credit';
+  if (payment && !officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); })
+      && data.amount_paise + (mode === 'cash' ? officeSameDayPayee_(ss, row) : 0) > limit) throw officeCoded_('ABOVE_LIMIT_USE_REQUEST');
   const saved = officeDaybookWrite_(ss, ctx, row, 'daybook.add');
   return warnings.length ? Object.assign({}, saved, { warnings: warnings }) : saved;
 }
