@@ -81,12 +81,17 @@ var OFFICE_GAME_SETUP_ROLES = ['owner'];
 
 function officeGameRefuse_(code) { return { success: true, data: { ok: false, code: code } }; }
 
-function officeGameKeyOk_(given) {
-  const want = PropertiesService.getScriptProperties().getProperty('OFFICE_GAME_KEY');
-  if (!want || typeof given !== 'string' || given.length !== want.length) return false;
+// Constant-time string compare (equal lengths only; a length difference is not secret here: keys and signatures have fixed lengths).
+function officeConstEq_(want, given) {
+  if (typeof want !== 'string' || typeof given !== 'string' || given.length !== want.length) return false;
   let diff = 0;
   for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ given.charCodeAt(i);
   return diff === 0;
+}
+
+function officeGameKeyOk_(given) {
+  const want = PropertiesService.getScriptProperties().getProperty('OFFICE_GAME_KEY');
+  return !!want && officeConstEq_(want, given);
 }
 
 function officeGame_(b) {
@@ -165,7 +170,7 @@ function officeGameTicketOk_(s) {
   const at = String(s || '').indexOf('.');
   if (at < 1) return null;
   const body = s.slice(0, at), sig = s.slice(at + 1);
-  if (!PropertiesService.getScriptProperties().getProperty('OFFICE_GAME_KEY') || sig !== officeGameSign_(body)) return null;
+  if (!PropertiesService.getScriptProperties().getProperty('OFFICE_GAME_KEY') || !officeConstEq_(officeGameSign_(body), sig)) return null; // constant time, like the key compare
   let t;
   try { t = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(body + '==='.slice((body.length + 3) % 4))).getDataAsString()); } catch (err) { return null; }
   if (!t || typeof t.x !== 'number' || t.x < officeNow_().getTime()) return null;
