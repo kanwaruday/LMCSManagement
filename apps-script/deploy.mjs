@@ -74,10 +74,13 @@ function run(key, { push, deploy }) {
   const p = projects[key];
   if (!p) throw new Error(`unknown project "${key}". Known: ${Object.keys(projects).join(', ')}`);
   if (!p.scriptId) throw new Error(`projects.json: set scriptId for "${key}" (Apps Script editor > Project Settings).`);
+  const pullTo = (dir) => {
+    writeFileSync(join(dir, '.clasp.json'), JSON.stringify({ scriptId: p.scriptId, rootDir: '.', fileExtension: 'gs' }));
+    clasp(dir, 'pull');
+    for (const f of readdirSync(dir)) if (f.endsWith('.js')) renameSync(join(dir, f), join(dir, f.slice(0, -3) + '.gs'));
+  };
   const stage = mkdtempSync(join(tmpdir(), `clasp-${key}-`));
-  writeFileSync(join(stage, '.clasp.json'), JSON.stringify({ scriptId: p.scriptId, rootDir: '.', fileExtension: 'gs' }));
-  clasp(stage, 'pull');
-  for (const f of readdirSync(stage)) if (f.endsWith('.js')) renameSync(join(stage, f), join(stage, f.slice(0, -3) + '.gs'));
+  pullTo(stage);
 
   const remote = new Set(readdirSync(stage).filter((f) => f.endsWith('.gs')));
   const bad = sharedProblems();
@@ -99,8 +102,24 @@ function run(key, { push, deploy }) {
   if (!push) return console.log('dry run, nothing pushed. Add --push.');
   if (!changed.length && !added.length && !retired.length) return console.log('nothing to push.');
 
-  clasp(stage, 'push');
-  console.log('pushed.');
+  // clasp 3 pushes only when a local file is new or differs from HEAD; a deletion alone is "Script is already up to date."
+  // and nothing is sent. So a retire with no other change marks one of our files (a comment line) to force the full push,
+  // which replaces HEAD's file list and so drops the retired files. The next deploy pushes the plain file again.
+  if (retired.length && !changed.length && !added.length) {
+    const f = [...ours].sort()[0];
+    writeFileSync(join(stage, f), read(join(stage, f)) + `\n// deploy.mjs: retired ${retired.join(', ')}\n`);
+  }
+  const out = clasp(stage, 'push');
+  if (/already up to date/i.test(out)) throw new Error('clasp pushed nothing ("already up to date"); nothing versioned.');
+  // Check HEAD before any version: every file of ours as staged, no retired file left.
+  const head = mkdtempSync(join(tmpdir(), `clasp-${key}-head-`));
+  pullTo(head);
+  const headBad = [
+    ...retired.filter((f) => existsSync(join(head, f))).map((f) => `${f} is still in the project`),
+    ...[...ours].filter((f) => !existsSync(join(head, f)) || read(join(head, f)) !== read(join(stage, f))).map((f) => `${f} in the project differs from what was pushed`),
+  ];
+  if (headBad.length) throw new Error('after push: ' + headBad.join('; ') + '. Nothing versioned.');
+  console.log('pushed (HEAD checked).');
   if (!deploy) return;
   if (!p.deploymentId) throw new Error(`projects.json: set deploymentId for "${key}" to update its live deployment.`);
   const msg = typeof deploy === 'string' ? deploy : 'deploy.mjs';
