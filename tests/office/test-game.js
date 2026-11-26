@@ -293,6 +293,7 @@ module.exports = function run(t) {
     const h = fresh();
     h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Deposits', { id: 'dp1', campus: 'LMS1', covers_date: '2026-10-20', amount_paise: 5000, bank_ref: 'CH-1', file_id: 'slip' });
     const sign = (id, role) => h.game('gameDepositSign', { id, deposit_id: 'dp1' }, { role, email: 'x@example.org' });
+    assert.strictEqual(h.game('gameDepositList', { covers_date: '2026-10-20' }, { role: 'accounts_verifier' }).data.deposits.length, 1);
     assert.strictEqual(sign('s0', 'fee_clerk').data.code, 'read_only');
     assert.strictEqual(sign('s0', 'principal').data.code, 'unknown_action');
     { const r = sign('s1', 'accounts_verifier'); assert.ok(r.data.ok !== false, JSON.stringify(r)); };

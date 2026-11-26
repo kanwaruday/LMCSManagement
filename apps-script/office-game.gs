@@ -29,7 +29,7 @@ var OFFICE_GAME_ACTIONS = {
   gameDaybookAdd: { act: 'daybook.add', write: true, num: ['amount_paise', 'litres_ml', 'odometer_km'], list: ['components'] },
   gameDaybookReverse: { act: 'daybook.reverse', write: true },
   gameDaybookAttachVideo: { act: 'daybook.attach_video', write: true, bool: ['replace'] }, // a pump video for a saved fuel entry (W2 slice 2)
-  gameDepositList: { act: 'deposit.list' },
+  gameDepositList: { act: 'deposit.list', verifier: true }, // the verifier signs deposits, so reads them
   gameRecon: { act: 'recon.get', verifier: true },
   gameDepositAdd: { act: 'deposit.add', write: true, num: ['amount_paise'] },
   gameErpSet: { act: 'erp.set', write: true, num: ['amount_paise'] },
