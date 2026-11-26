@@ -66,6 +66,7 @@ var OFFICE_GAME_ACTIONS = {
   gameCollectionAdd: { act: 'collection.add', write: true, owner: true },
   gameHeadsHide: { act: 'heads.hide', write: true, owner: true, bool: ['hidden'] },   // lane-d: per-school hidden expense heads
   // lane-d slice 2: cash payments above the school's limit wait for the Principal (or the Owner)
+  gameSyncExport: { act: 'sync.export', owner: true, num: ['offset', 'limit'] }, // lane-d: read-only paged tab copy for the Mac sync (Owner role)
   gamePending: { act: 'daybook.pending', principal: true },
   gameDecide: { act: 'daybook.decide', write: true, approver: true, bool: ['approve'] },
   gameLimitSet: { act: 'limit.set', write: true, owner: true, num: ['limit_paise'] },

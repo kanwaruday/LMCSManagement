@@ -13,6 +13,7 @@ function officeDaybookActions_() {
     'daybook.counts': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookCounts_ },
     // lane-d slice 2 (Uday, 19 Nov: "a cash entry above 2000 should be sent for approvals"): the Principal (or the Owner) decides
     'daybook.pending': { roles: OFFICE_ALL_ROLES, write: false, run: officeDaybookPending_ },
+    'sync.export': { roles: ['Owner'], write: false, run: officeSyncExport_ }, // lane-d: read-only copy of one tab, paged, for the Mac sync into the game's database
     'daybook.decide': { roles: ['Principal', 'Owner'], write: true, run: officeDaybookDecide_ },
   };
 }
@@ -453,4 +454,17 @@ function officeDaybookCounts_(ctx, data) {
     if (r.count_date === data.date && (!latest[r.bucket] || String(r.created_at) >= String(latest[r.bucket].created_at))) latest[r.bucket] = r;
   });
   return { counts: OFFICE_BUCKETS.filter(function (b) { return latest[b]; }).map(function (b) { return latest[b]; }) };
+}
+
+// lane-d (Uday 26 Nov, "bring that to the newer game"): a read-only, paged copy of one tab of one school's book, for db/import/daybook-sync.mjs
+// (the Mac, Jarvis runs it). Owner scope only; reached through the game key (gameSyncExport). Writes nothing. Rows are returned as the sheet holds them.
+var OFFICE_SYNC_TABS = ['DayBook', 'Opening', 'Closes', 'Reopens', 'Pending', 'Decisions'];
+function officeSyncExport_(ctx, data) {
+  if (OFFICE_SYNC_TABS.indexOf(data.tab) === -1) throw new Error('BAD_INPUT');
+  if (!/^\d{4}-\d{2}$/.test(String(data.fy || ''))) throw new Error('BAD_INPUT');
+  const offset = Number(data.offset || 0), limit = Math.min(Number(data.limit || 500), 500);
+  if (!(offset >= 0 && limit >= 1)) throw new Error('BAD_INPUT');
+  if (!officeHasBook_(data.campus, data.fy)) return { rows: [], total: 0, no_book: true };
+  const all = officeRows_(officeOpen_(data.campus, data.fy), data.tab).filter(function (r) { return String(r.id || '') !== ''; });
+  return { rows: all.slice(offset, offset + limit), total: all.length, no_book: false };
 }

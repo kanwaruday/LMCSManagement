@@ -274,4 +274,18 @@ module.exports = function run(t) {
     assert.match(tk.url, /ticket=.+&action=gameUploadPart$/, 'the verifier gets an upload ticket for a Tally document');
     assert.strictEqual(h.game('gameFileTicket', { id: 'tally-bill-01', category: 'bill', mime: 'image/jpeg' }, V).data.code, 'BAD_CATEGORY', 'only document for the verifier');
   });
+
+  t.test('sync export: Owner role only, read-only, paged, one tab; refuses bad tabs and a missing key', () => {
+    const h = fresh();
+    h.game('gameDaybookAdd', { id: 'e1', entry_date: '2026-10-21', direction: 'IN', account: 'cash:LMS1', bucket: 'fee', category: 'fee_collection', amount_paise: '50000', charged_to: 'LMS1' });
+    const ex = (p, o) => h.game('gameSyncExport', Object.assign({ fy: '2026-27', tab: 'DayBook' }, p), Object.assign({ role: 'owner' }, o));
+    const r = ex({});
+    assert.strictEqual(r.data.total, 1); assert.strictEqual(r.data.rows[0].id, 'e1'); assert.strictEqual(r.data.rows.length, 1);
+    assert.strictEqual(ex({ offset: '1' }).data.rows.length, 0);
+    assert.strictEqual(ex({ tab: 'Config' }).data.code, 'BAD_INPUT');
+    assert.strictEqual(ex({ fy: 'x' }).data.code, 'BAD_INPUT');
+    assert.strictEqual(ex({ fy: '2020-21' }).data.no_book, true);
+    assert.strictEqual(h.game('gameSyncExport', { fy: '2026-27', tab: 'DayBook' }, { role: 'fee_clerk' }).data.code, 'FORBIDDEN_ROLE');
+    assert.deepStrictEqual(ex({}, { key: 'x' }), { success: false, error: 'not_authorized' });
+  });
 };
