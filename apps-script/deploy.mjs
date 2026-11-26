@@ -10,9 +10,11 @@
 // <basename>.gs (e.g. ../coordinator/capture/fleet-quests.js, the Fleet setup quest logic the setup page also loads).
 //
 // Safety: stages in a temp dir from the REMOTE project (pull), overlays our files on top. So the remote
-// appsscript.json (scopes, webapp access) is kept, and remote-only files are kept, never deleted.
+// appsscript.json (scopes, webapp access) is kept, and remote-only files are kept, never deleted, EXCEPT names listed in the
+// project's "retire" (a remote file our files replace, e.g. chapter's old Code.gs, now chapter-main.gs: both loaded = duplicate
+// declarations and a dead /exec). Retired files are dropped from the stage, so clasp push removes them from the project.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, readdirSync, mkdtempSync, copyFileSync, renameSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, mkdtempSync, copyFileSync, renameSync, existsSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, basename, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +36,10 @@ function sharedProblems() {
   const gs = new Set(readdirSync(here).filter((f) => f.endsWith('.gs'))), bad = [];
   for (const [key, p] of Object.entries(projects)) {
     const seen = new Set();
+    for (const r of p.retire || []) {
+      if (typeof r !== 'string' || !/^[\w.-]+$/.test(r) || r.endsWith('.gs')) bad.push(`${key}: retire "${r}" must be a bare file name`);
+      else if (p.files.some((f) => pushedAs(f) === `${r}.gs`)) bad.push(`${key}: retire "${r}" is also one of its files`);
+    }
     for (const f of p.files) {
       const name = pushedAs(f);
       if (seen.has(name)) bad.push(`${key}: two entries are pushed as ${name}`);
@@ -86,10 +92,12 @@ function run(key, { push, deploy }) {
     else changed.push(f);
     copyFileSync(src[f], dst);
   }
-  const remoteOnly = [...remote].filter((f) => !ours.has(f));
-  console.log(`${p.name}\n  changed:     ${changed.join(', ') || '-'}\n  new:         ${added.join(', ') || '-'}\n  unchanged:   ${same.length}\n  remote-only: ${remoteOnly.join(', ') || '-'} (kept)`);
+  const retired = (p.retire || []).map((r) => `${r}.gs`).filter((f) => remote.has(f));
+  for (const f of retired) unlinkSync(join(stage, f));
+  const remoteOnly = [...remote].filter((f) => !ours.has(f) && !retired.includes(f));
+  console.log(`${p.name}\n  changed:     ${changed.join(', ') || '-'}\n  new:         ${added.join(', ') || '-'}\n  unchanged:   ${same.length}\n  retired:     ${retired.join(', ') || '-'} (removed from the project)\n  remote-only: ${remoteOnly.join(', ') || '-'} (kept)`);
   if (!push) return console.log('dry run, nothing pushed. Add --push.');
-  if (!changed.length && !added.length) return console.log('nothing to push.');
+  if (!changed.length && !added.length && !retired.length) return console.log('nothing to push.');
 
   clasp(stage, 'push');
   console.log('pushed.');

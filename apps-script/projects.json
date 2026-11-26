@@ -98,6 +98,9 @@
     "files": [
       "chapter-main",
       "ChapterTracker"
+    ],
+    "retire": [
+      "Code"
     ]
   },
   "feemail": {
