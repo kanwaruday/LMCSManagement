@@ -130,9 +130,5 @@ assert.strictEqual(ctx.GAME_MODULE_ACTIONS.teacherclasses({ roles: ['Staff'], em
 vm.runInContext('TCH_DEFAULTS.cwhwDeferred = true', ctx); ctx.tchLoadCfg_ = () => ({});
 assert.strictEqual(ctx.GAME_MODULE_ACTIONS.teacherclasses({ roles: ['Teacher'], email: 't@x' }).deferred, true, 'default config: deferred');
 vm.runInContext('TCH_DEFAULTS.cwhwDeferred = false', ctx); // restore the pin the tests above use
-// the page shows the section only after a non-deferred reply (no flash for a deferred teacher)
-const page = fs.readFileSync(__dirname + '/../../teacher/index.html', 'utf8');
-const loadFn = page.slice(page.indexOf('function loadClasses_('), page.indexOf('function loadClasses_(') + 400).split('\n}')[0];
-assert.ok(!/classesOn_ = true|showClasses_\(/.test(loadFn), 'loadClasses_ does not show the section before the reply');
-assert.ok(/res\.deferred\) return;[^\n]*\n  classesOn_ = true; showClasses_\(\);/.test(page), 'renderClasses_ returns on deferred before showing the section');
+// the old teacher page (which showed the section after a non-deferred reply) is a redirect stub since batch 1, 26 Nov
 console.log('teacher-classes: ok');

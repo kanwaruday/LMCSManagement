@@ -8,8 +8,7 @@ const assert = require('assert');
 const ROOT = path.join(__dirname, '../..');
 
 const { PLAN } = require('./retired-pages');
-assert.strictEqual(Object.keys(PLAN).length, 39);
-assert.ok(fs.existsSync(path.join(ROOT, 'owner/event-design.html')) && !fs.readFileSync(path.join(ROOT, 'owner/event-design.html'), 'utf8').includes('lmcs-moved-to'), 'event-design.html is not retired');
+assert.strictEqual(Object.keys(PLAN).length, 46);
 
 const GAME = 'https://game.example/', FLAG = 'lmcs_from_game';
 function run(html, search, flag, hash) {

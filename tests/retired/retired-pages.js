@@ -22,6 +22,16 @@ const PLAN = {
   'teacher/plan-activity.html': '#/teacher/plan',
   'workplace/index.html': '#/workplace',
   'curriculum-progress/course-mapping-admin.html': '#/curriculum/admin',
+  // batch 1, 26 Nov (B3, Uday: everything off the old portal): pages whose game screen is live. Kept live (no game screen yet): coordinator/systems
+  // (coordinators approve there), coordinator/transport/live (map, route map, stops, follow-ups), setup, hiring/index, payroll, staff/add-employee
+  // (documents), staff-home (rules, routes), principals-daily-reporting, driver
+  'owner/event-design.html': '#/hq/events',
+  'coordinator/transport/drivers.html': '#/fleet/desk',
+  'coordinator/academics/index.html': '#/academics/morning',
+  'salary/index.html': '#/hq/salary',
+  'owner/transport/index.html': '#/fleet/overview',
+  'teacher/index.html': 'home',
+  'office/index.html': 'home',
 };
 const RETIRED = new Set(Object.keys(PLAN));
 module.exports = { PLAN, RETIRED };

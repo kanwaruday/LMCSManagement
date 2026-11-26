@@ -4,6 +4,7 @@ const vm = require('vm');
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
+const { RETIRED } = require('../retired/retired-pages');
 const root = path.join(__dirname, '../..');
 const src = fs.readFileSync(path.join(root, 'assets/datasrc.js'), 'utf8');
 
@@ -72,6 +73,7 @@ const { SRC, PAGES } = env0.window.LMCS_DATASRC;
 
 const uncovered = [];
 for (const rel of pages(root)) {
+  if (RETIRED.has(rel)) continue; // a redirect stub holds no data (tests/retired)
   const html = fs.readFileSync(path.join(root, rel), 'utf8');
   const folder = '/' + rel.replace(/index\.html$/, '');
   const own = /class="datasrc-links"/.test(html);

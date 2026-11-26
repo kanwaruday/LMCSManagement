@@ -1,56 +1,34 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#CE0000">
-<title>LMCS — Driver phones</title>
-<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://accounts.google.com">
-<link rel="stylesheet" href="../shared.css?v=3245715a">
-<link rel="stylesheet" href="../capture/capture.css?v=ebb56991">
-<link rel="stylesheet" href="../../assets/game/base.css?v=4774c2bb">
-<style>
-  .dp-form .cap-input[readonly]{background:transparent;border-style:dashed;color:var(--c-muted,#555)} /* the code follows the pick: not a box to type in */
-  .dp-list{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:8px}
-  .dp-list>li{border:1.5px solid var(--c-line);border-radius:14px;padding:12px 14px;background:var(--gb-paper,#fff)}
-  .dp-list b{font-size:17px}
-  .dp-list p{margin:2px 0;font-size:15px}
-  .dp-off{color:var(--c-mute)}
-  .dp-acts{display:flex;gap:8px;margin-top:8px}
-  .dp-acts .gb-btn{flex:1 1 0}
-  .dp-form label{display:block;font-weight:700;margin:12px 0 4px}
-  .dp-form .gb-row-acts{margin-top:16px}
-  .dp-qr{display:block;width:240px;max-width:100%;margin:12px auto;border:1.5px solid var(--c-line);border-radius:12px}
-  .dp-url{word-break:break-all;font-size:13px;color:var(--c-mute)}
-  .gb .gb-btn{text-decoration:none}
-  .dp-how { margin:10px 0; padding-left:22px; font-size:15px; }
-  .dp-how li { margin:4px 0; }
-</style>
-</head>
-<body class="gb">
-<header class="gb-head site"><div><div><h1>Driver phones</h1><p>LMCS Transport</p></div><a id="back" href="setup.html">&lsaquo; Fleet setup</a></div></header>
-<div id="authRoot"></div>
-<main id="appBody" class="cap" hidden>
-  <p id="loadMsg" class="cap-note"><span>Loading…</span> <button type="button" id="retry" class="cap-btn" hidden>Try again</button></p>
-  <section id="fresh" class="gb-card" hidden aria-label="New driver link"></section>
-  <div id="addRow"><button type="button" id="add" class="gb-btn gb-btn-primary" style="width:100%;min-height:52px">Add driver phone</button></div>
-  <form id="form" class="dp-form gb-card" hidden novalidate>
-    <label for="bus">Bus</label><select id="bus" class="cap-select"></select>
-    <label for="name">Driver</label><input id="name" class="cap-input" maxlength="80" autocomplete="off" list="staffList" aria-describedby="nameHelp">
-    <datalist id="staffList"></datalist>
-    <p id="pickInfo" class="cap-note" role="status" hidden></p>
-    <p id="nameHelp" class="cap-note" hidden>This school's drivers come first. The bus's usual driver is filled in when the list knows them.</p>
-    <label for="code" id="codeLabel">Employee code (optional)</label><input id="code" class="cap-input" maxlength="12" autocomplete="off">
-    <p id="formMsg" class="cap-msg" role="alert"></p>
-    <div class="gb-row-acts"><button type="submit" id="create" class="gb-btn gb-btn-primary">Create link</button><button type="button" id="cancel" class="gb-btn">Cancel</button></div>
-  </form>
-  <h2 class="cap-h" style="margin-top:20px">Linked phones</h2>
-  <p id="google" class="cap-note"></p>
-  <ul id="links" class="dp-list"></ul>
-  <p id="toast" class="cap-toast" role="status" aria-live="polite"></p>
-</main>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<meta name="lmcs-moved-to" content="#/fleet/desk" />
+<title>This page moved to the game</title>
+<script>window.LMCS_NO_DOCK = true;</script>
 <script src="../../assets/auth.js?v=7bb0f6cc"></script>
-<script type="module" src="../capture/drivers.js?v=6f7ebfa3"></script>
+</head>
+<body>
+<main style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem">
+<p>This page moved to the game.</p>
+<p><a id="lmcs-moved" href="../../index.html">Open it in the game</a></p>
+</main>
+<script>
+// A retired old-portal page (batch (a), 25 Nov): a bookmark or an old link goes on to its screen in the game. A tab a game door
+// opened (?from=game, ?only=, or the tab's flag from LMCSGameDoor) stays here with the link, so nobody bounces between the two.
+(function () {
+  var D = window.LMCSGameDoor, to = document.querySelector('meta[name="lmcs-moved-to"]').getAttribute('content');
+  if (!D) return;
+  var url = D.GAME + (to === 'home' ? '' : to), stay = true;
+  try {
+    var q = new URLSearchParams(location.search);
+    if (q.get('from') === 'game' || q.has('only')) sessionStorage.setItem(D.FLAG, '1');
+    stay = sessionStorage.getItem(D.FLAG) === '1';
+  } catch (e) { stay = true; }
+  document.getElementById('lmcs-moved').href = url;
+  if (!stay) location.replace(url);
+})();
+</script>
 </body>
 </html>

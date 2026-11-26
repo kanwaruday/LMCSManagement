@@ -77,5 +77,5 @@ for (const f of ['chapter-main']) { // ChapterTracker.gs's tracker sheet id and 
 assert.throws(() => boot({ props: { CHAPTER_GAME_KEY: KEY } }).ctx.chapterSources_(), /CHAPTER_SOURCES not set/);
 // every caller sends the key or a token (none fetches the bare URL)
 for (const [f, re] of [['teacher-portal.gs', /TP_CWHW_PROXY_URL \+ '\?action=feed&key='/], ['coordinator.gs', /COORD_CWHW_URL \+ '\?action=feed&key='/], ['game-teacher.gs', /TCH_FEED_URL \+ tchFeedKey_\(\)/]]) assert.ok(re.test(fs.readFileSync(path.join(here, f), 'utf8')), f);
-assert.ok(/CWHW_PROXY_URL \+ '\?action=feed&idToken='/.test(fs.readFileSync(path.join(here, '../teacher/index.html'), 'utf8')), 'teacher page sends the token');
+// the old teacher page (which sent the token) is a redirect stub since batch 1, 26 Nov
 console.log('chapter lock: ok');

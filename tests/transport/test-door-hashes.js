@@ -29,7 +29,7 @@ function checksTab(hash, owner) {
   assert.strictEqual(await checksTab('#loadout', true), 'overview', 'owner/transport#loadout: tabs stay home, the page scrolls to the loadout');
 
   // the panels that are not tabs
-  assert.ok(/location\.hash === '#loadout'\) setTimeout\(function \(\) \{ box\.scrollIntoView/.test(read('owner/transport/index.html')), 'owner/transport#loadout scrolls to the safety loadout');
+  // owner/transport is a redirect stub since batch 1, 26 Nov (tests/retired); its loadout scroll went with it
   const drv = read('driver/driver.js');
   assert.ok(/if \(h === 'route' && !S\.sending\) \{ history\.replaceState\(null, '', location\.pathname \+ location\.search\); route\(\); \$\('viewRoute'\)\.click\(\); return; \}/.test(drv), 'driver#route: home with My route open; never during a send');
   // office/buses.html is retired (batch (a), 25 Nov; tests/retired checks its stub): its section-id check went with it
