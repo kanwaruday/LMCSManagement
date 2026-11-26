@@ -38,6 +38,7 @@
     "files": [
       "employee-roster",
       "staff-management-api",
+      "game-staff-master",
       "principal-allowlist",
       "salary-payscale-sync",
       "certificate-link-import",

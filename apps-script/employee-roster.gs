@@ -280,6 +280,7 @@ function doPost(e) {
     if (body.action === 'gameHrFileTicket') return staffJsonOut_(gameHrFileTicket_(body)); // hr-file.gs: a staff paper to the school's HR Drive folder (lms-game 618)
     if (body.action === 'gameHrFilePart') return staffJsonOut_(gameHrFilePart_(body)); // hr-file.gs: the browser's parts against that ticket
     if (body.action === 'gameStaffLogins') return staffJsonOut_(gameStaffLogins_(body)); // staff-logins.gs: lms-game's teacher-rollout, ROSTER_GAME_KEY
+    if (body.action === 'gameStaffMaster') return staffJsonOut_(gameStaffMaster_(body)); // game-staff-master.gs: lms-game's staff-master / staff-links --roster, ROSTER_GAME_KEY (read-only, allow-listed columns)
     if (body.action === 'uploaddocument') return staffJsonOut_(sdocUpload_(body));
     if (body.action === 'transportupload') return staffJsonOut_(tupUpload_(body)); // transport-uploads.gs
     if (body.action === 'driverfilllist') return staffJsonOut_(driverFillList_(body)); // driver-fill-confirm.gs: the Fee Clerk's check
