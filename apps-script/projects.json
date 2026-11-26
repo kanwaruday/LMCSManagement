@@ -115,6 +115,7 @@
     "name": "LMCS Office Backend (Fee Clerk + PRO Portal)",
     "scriptId": "11FcmgHBXcVdIQbTvSQqA-LvIg8E4nfoqlSXQUvO9hHzd9HXvFG-FicDv",
     "deploymentId": "AKfycbzdVhCwnTnMybe6cdcDC87PbINCFG1n6U7UncMHDvk9eHFG6hC4dn7oEiqJKki4-lULEw",
+    "gameDeploymentId": "AKfycbz7k95DPjxl2eGfKuVbKJDUh3ndPLTtOMXdUuhGbNP92Igl4KRfPtfHxLxiq7iwb2EdTA",
     "files": [
       "office",
       "office-game",
