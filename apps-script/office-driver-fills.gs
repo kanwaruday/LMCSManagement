@@ -47,7 +47,7 @@ function officeDriverFillDaybook_(ctx, data) {
   const entryDate = Utilities.formatDate(when, 'Asia/Kolkata', 'yyyy-MM-dd'), name = String(cell('Driver Name'));
   const fileId = officeDriverFillFile_(ctx, data.campus, id + '-bill', String(cell('Bill File ID')), 'bill', 'fuel-bill');
   const videoId = officeDriverFillFile_(ctx, data.campus, id + '-video', String(cell('Video File ID')), 'fuel_video', 'fuel-video');
-  const res = officeDaybookAdd_(ctx, {
+  const res = officeDaybookAdd_(Object.assign({}, ctx, { driverFill: true }), {   // a fill already pumped and billed: recorded, never refused for its size (see the limit check in daybook.add)
     id: id, campus: data.campus, entry_date: entryDate, direction: 'OUT', category: 'fuel', account: data.account, mode: '', bucket: data.bucket || '',
     amount_paise: Math.round(Number(cell('Amount')) * 100), litres_ml: Math.round(Number(cell('Litres')) * 1000), odometer_km: Number(cell('Odometer')),
     vehicle: String(cell('Reg')), file_id: fileId, video_file_id: videoId, payee: '', narration: 'Driver fill ' + fillId + (name ? ' (' + name + ')' : ''),

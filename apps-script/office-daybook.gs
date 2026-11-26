@@ -158,7 +158,7 @@ function officeDaybookAdd_(ctx, data) {
   // the school's limit goes through here, whatever the mode (cash, bank or UPI; a bill on a supplier's credit account is not a payment). Cash counts with the
   // day's other cash to the same payee (no splitting a bill in two). The only way is a payment request (office-payreq.gs): the Finance Head approves,
   // pays by bank outside the portal and marks it paid with the bank ref and proof. (payreq.paid writes its row itself, not through here.)
-  const limit = officeApprovalLimit_(data.campus), payment = data.direction === 'OUT' && mode !== 'credit';
+  const limit = officeApprovalLimit_(data.campus), payment = data.direction === 'OUT' && mode !== 'credit' && !(ctx && ctx.driverFill); // a driver's fuel fill is a record of fuel already pumped (office-driver-fills.gs), not a new payment
   if (payment && !officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); })
       && data.amount_paise + (mode === 'cash' ? officeSameDayPayee_(ss, row) : 0) > limit) throw officeCoded_('ABOVE_LIMIT_USE_REQUEST');
   const saved = officeDaybookWrite_(ss, ctx, row, 'daybook.add');
