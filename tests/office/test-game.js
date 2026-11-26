@@ -35,7 +35,7 @@ module.exports = function run(t) {
 
   t.test('game bridge: only listed game actions and the game roles; a Principal reaches only the cash approvals', () => {
     const h = fresh();
-    assert.strictEqual(h.game('gameDayClose', {}).data.code, 'unknown_action');
+    assert.strictEqual(h.game('gameDayDelete', {}).data.code, 'unknown_action');
     assert.strictEqual(h.game('gameToday', {}, { role: 'principal' }).data.code, 'unknown_action');
     assert.strictEqual(h.game('gameToday', {}, { role: 'driver' }).data.code, 'unknown_action');
     assert.notStrictEqual(h.game('gamePending', {}, { role: 'principal' }).data.code, 'unknown_action');
@@ -287,5 +287,24 @@ module.exports = function run(t) {
     assert.strictEqual(ex({ fy: '2020-21' }).data.no_book, true);
     assert.strictEqual(h.game('gameSyncExport', { fy: '2026-27', tab: 'DayBook' }, { role: 'fee_clerk' }).data.code, 'FORBIDDEN_ROLE');
     assert.deepStrictEqual(ex({}, { key: 'x' }), { success: false, error: 'not_authorized' });
+  });
+
+  t.test('batch 5: the Owner or the verifier closes a day and signs a deposit; only the Owner reopens; a Fee Clerk or Principal does none', () => {
+    const h = fresh();
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Deposits', { id: 'dp1', campus: 'LMS1', covers_date: '2026-10-20', amount_paise: 5000, bank_ref: 'CH-1', file_id: 'slip' });
+    const sign = (id, role) => h.game('gameDepositSign', { id, deposit_id: 'dp1' }, { role, email: 'x@example.org' });
+    assert.strictEqual(sign('s0', 'fee_clerk').data.code, 'read_only');
+    assert.strictEqual(sign('s0', 'principal').data.code, 'unknown_action');
+    { const r = sign('s1', 'accounts_verifier'); assert.ok(r.data.ok !== false, JSON.stringify(r)); };
+    assert.strictEqual(sign('s2', 'owner').data.code, 'ALREADY_SIGNED');
+    const close = (id, role, d) => h.game('gameDayClose', { id, close_date: d || '2026-10-20' }, { role, email: 'x@example.org' });
+    assert.strictEqual(close('c0', 'fee_clerk').data.code, 'read_only');
+    { const r = close('c1', 'accounts_verifier'); assert.ok(r.data.ok !== false, JSON.stringify(r)); };
+    assert.strictEqual(close('c2', 'owner', '2026-10-20').data.code, 'ALREADY_CLOSED');
+    const reopen = (id, role) => h.game('gameDayReopen', { id, close_date: '2026-10-20', reason: 'wrong count' }, { role, email: 'x@example.org' });
+    assert.strictEqual(reopen('r0', 'accounts_verifier').data.code, 'unknown_action');
+    assert.strictEqual(reopen('r1', 'fee_clerk').data.code, 'read_only');
+    assert.strictEqual(h.game('gameDayReopen', { id: 'r2', close_date: '2026-10-20' }, { role: 'owner', email: 'x@example.org' }).data.code, 'REASON_REQUIRED');
+    { const r = reopen('r3', 'owner'); assert.ok(r.data.ok !== false, JSON.stringify(r)); };
   });
 };
