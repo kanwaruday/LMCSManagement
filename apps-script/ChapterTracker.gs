@@ -330,6 +330,27 @@ function logChapterDeadlines() {
   }
 }
 
+// Read-only: for 2026-27 (or the year `startYr` names), the term-end dates the SCHOOL calendars give, per school code, for Uday's
+// curriculum_terms setting. Same reader as the deadlines above (chapterFindEventStart; the end is the day before Revision/Exam
+// starts), but a miss prints "not found" instead of the hardcoded fallback. Logs dates and codes only. Changes nothing.
+function termDatesReport(startYr) {
+  const yr = startYr || 2026, fmt = (d) => Utilities.formatDate(d, 'Asia/Kolkata', 'yyyy-MM-dd');
+  const find = (lms, from, to, board) => {
+    try {
+      const st = chapterFindEventStart(CHAPTER_CALENDAR_IDS[lms], from, to, board);
+      return st ? fmt(chapterDayBefore(st)) : 'not found';
+    } catch (e) { return 'not found'; }
+  };
+  Logger.log('Term ends from the school calendars, ' + yr + '-' + String(yr + 1).slice(2));
+  for (let lms = 1; lms <= 6; lms++) {
+    Logger.log('LMS' + lms +
+      '  T1=' + find(lms, new Date(yr, 7, 15), new Date(yr, 9, 15), false) +
+      '  T2=' + find(lms, new Date(yr + 1, 0, 1), new Date(yr + 1, 2, 15), false) +
+      '  | board T1=' + find(lms, new Date(yr, 5, 1), new Date(yr, 7, 15), true) +
+      '  T2=' + find(lms, new Date(yr, 10, 1), new Date(yr, 11, 20), true));
+  }
+}
+
 // Normalizes the free-text Term column (which has real inconsistencies --
 // blank ~40% of the time, plus "term 1" lowercase, "Both terms"/"Both
 // Terms" casing, stray "Term 3"/"Term 2/1" values) into exactly one of
