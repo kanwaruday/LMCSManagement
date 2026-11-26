@@ -41,15 +41,15 @@ assert.deepStrictEqual(boot({ props: {} }).post({ action: 'gameStaffMaster', key
 
 const ok = r.post({ action: 'gameStaffMaster', key: KEY });
 assert.strictEqual(ok.success, true);
-assert.deepStrictEqual(Object.keys(ok.tabs).sort(), ['Certificate Links', 'EmpMaster', 'EmpPersonal', 'EmpSalary', 'SalaryMaster']);
+assert.deepStrictEqual(Object.keys(ok.tabs).sort(), ['Adjustments', 'Certificate Links', 'EmpMaster', 'EmpPersonal', 'EmpSalary', 'PayrollRegister', 'SalaryMaster']);
 assert.deepStrictEqual(Object.keys(ok.tabs.EmpMaster[0]), ['EmployeeCode', 'Name', 'SchoolCode', 'DateOfJoining', 'ReportsTo']);
 assert.deepStrictEqual(Object.keys(ok.tabs.EmpPersonal[0]), ['EmployeeCode', 'AuthEmail']);
-assert.deepStrictEqual(Object.keys(ok.tabs.EmpSalary[0]), ['EmployeeCode', 'Designation', 'Department']);
+assert.deepStrictEqual(Object.keys(ok.tabs.EmpSalary[0]), ['EmployeeCode', 'Designation', 'Department', 'HOD']);
 assert.deepStrictEqual(Object.keys(ok.tabs['Certificate Links'][0]), ['Employee Code', 'Document Type', 'Filename', 'Drive Link', 'Status']);
 assert.deepStrictEqual(Object.keys(ok.tabs.SalaryMaster[0]), ['Employee Code', 'Full Basic', 'Effective From', 'HOD']);
 // the HOD incentive leaves as a boolean only: no amount, no header text
 assert.strictEqual(ok.tabs.SalaryMaster[0].HOD, true); assert.strictEqual(typeof ok.tabs.SalaryMaster[0].HOD, 'boolean');
-assert.ok(!JSON.stringify(ok).includes('1500') && !JSON.stringify(ok).includes('HOD Incentive'), 'the incentive amount must not leave');
+assert.ok(!JSON.stringify(ok).includes('1500'), 'the incentive amount must not leave (header NAMES now do, in heads, so a dry run can name the column)');
 // the presence rule: blank, 0, no, false, - and nil are not an incentive
 const rules = ['', '0', '0.00', 'No', 'false', '-', 'nil', ' ₹ 0 '].map((v) => { PAY['Salary Master'] = sheet([['Employee Code', 'Full Basic', 'HOD Allowance'], ['T/9', '1', v]]); return boot().post({ action: 'gameStaffMaster', key: KEY }).tabs.SalaryMaster[0].HOD; });
 assert.deepStrictEqual(rules, [false, false, false, false, false, false, false, false]);
@@ -72,6 +72,15 @@ assert.strictEqual(nr.success, true); assert.strictEqual(nr.pay, 'pay_sheet_not_
 assert.ok(!JSON.stringify(nr).includes('No access'), 'the error text never leaves');
 const nt = boot({ props: { ROSTER_GAME_KEY: KEY, PAY_SHEET_ID: 'elsewhere' } }).post({ action: 'gameStaffMaster', key: KEY });
 assert.strictEqual(nt.success, true); assert.strictEqual(nt.pay, 'no_salary_tab'); assert.strictEqual(nt.tabs.SalaryMaster, null);
+// the live Salary Master has NO HOD column: the incentive is found in the Payroll Register column, an Adjustments Type, or an EmpSalary column, as codes + a boolean
+PAY['Salary Master'] = sheet([['Employee Code', 'Full Basic'], ['T/1', '100']]);
+PAY['Payroll Register'] = sheet([['Month', 'Employee Code', 'Gross', 'HodIncentive'], ['Oct', 'T/2', '9000', '2500'], ['Oct', 'T/3', '9000', '0'], ['Oct', 'T/4', '9000', '']]);
+PAY['Adjustments'] = sheet([['ID', 'Month', 'Employee Code', 'Type', 'Amount', 'Note'], ['a', 'Oct', 'T/5', 'HOD Incentive', '7777', 'Secret note'], ['b', 'Oct', 'T/6', 'Fine', '5', ''], ['c', 'Oct', 'T/7', 'Method fee', '5', '']]);
+const hd = boot().post({ action: 'gameStaffMaster', key: KEY });
+assert.deepStrictEqual(hd.tabs.PayrollRegister, [{ 'Employee Code': 'T/2', HOD: true }]); assert.deepStrictEqual(hd.tabs.Adjustments, [{ 'Employee Code': 'T/5', HOD: true }]); // "Method" is not HOD
+assert.deepStrictEqual(hd.heads.PayrollRegister, ['Month', 'Employee Code', 'Gross', 'HodIncentive']); assert.deepStrictEqual(hd.heads.SalaryMaster, ['Employee Code', 'Full Basic']);
+assert.deepStrictEqual(hd.adjTypes.sort(), ['Fine', 'HOD Incentive', 'Method fee']);
+assert.ok(!['2500', '7777', 'Secret note'].some((x) => JSON.stringify(hd).includes(x)), 'no amount and no note leaves');
 // a failure is a code only: no row text, no message
 const rb = boot(); rb.ctx.openWorkbook_ = () => { throw new Error('Staff Alpha 123412341234'); };
 assert.deepStrictEqual(rb.post({ action: 'gameStaffMaster', key: KEY }), { success: false, error: 'read_failed' });
