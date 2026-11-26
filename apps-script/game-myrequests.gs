@@ -19,13 +19,18 @@
 // leave_overlap, leave_teachers_only, leave_dates. Never an email, never sheet text, nothing logged but the error's name.
 // ═══════════════════════════════════════════════════════════════════
 
-const GAME_MYREQ_ACTIONS = ['gameMyReqSubmit', 'gameMyReqList', 'gameMyReqDetail', 'gameMyReqComment'];
+const GAME_MYREQ_ACTIONS = ['gameMyReqSubmit', 'gameMyReqList', 'gameMyReqDetail', 'gameMyReqComment', 'gameMyReqHiringReason', 'gameMyReqHiringClose'];
+// W7 (N3, 27 Nov): a New/ Backup Position request carries WHY the position is open as one sentence in its evidence column (the old form's own
+// format, approvals.gs aprHiringReason_ reads it back). The game sends it as `hiringNote`; only these two shapes are accepted.
+const GAME_HIRING_NOTE = /^(Looking for Backup for: [^\r\n]{1,80}|Received Resignation from: [^\r\n]{1,80} \u2014 last working day \d{4}-\d{2}-\d{2})$/;
 // approvals.gs / approvals-leave.gs error sentences -> short codes (checked in order; anything unlisted is gameCode_'s)
 const GAME_MYREQ_CODES = [
   [/no longer be applied/i, 'leave_past'], [/not a working day|no working days/i, 'leave_not_working'], [/at most \d+ days/i, 'leave_too_long'],
   [/already have a leave request/i, 'leave_overlap'], [/filed by teachers/i, 'leave_teachers_only'],
   [/leave type|valid "(from|to)" date|before the "from" date/i, 'leave_dates'],
   [/invalid category|teachers can only submit|title required|description required/i, 'bad_input'],
+  [/only the principal who raised/i, 'not_authorized'], [/request not found/i, 'not_found'], [/already (approved|rejected|revoked|archived)/i, 'decided'],
+  [/only applies to New|enter the last working day|say why the position|no backup or resignation/i, 'bad_input'],
 ];
 function gameMyReqCode_(res) {
   const e = String((res && res.error) || '');
@@ -60,8 +65,10 @@ function gameMyReqDispatch_(body) {
       case 'gameMyReqSubmit': {
         const category = String(p.category || '').trim();
         if (!principal && APR_TEACHER_CATEGORIES.indexOf(category) === -1) return gameNo_('bad_input');
+        const hiring = category === 'New/ Backup Position';
+        if (hiring && !GAME_HIRING_NOTE.test(String(p.hiringNote || ''))) return gameNo_('bad_input'); // the reason and the person it is about are required
         const res = aprSubmit_(caller, { category: category, title: p.title, description: p.description, urgency: p.urgency, amount: p.amount,
-          itemName: p.itemName, quantity: p.quantity, evidenceLink: p.evidenceLink, leaveType: p.leaveType, fromDate: p.fromDate, toDate: p.toDate,
+          itemName: p.itemName, quantity: p.quantity, evidenceLink: hiring ? String(p.hiringNote) : p.evidenceLink, leaveType: p.leaveType, fromDate: p.fromDate, toDate: p.toDate,
           campusId: campus }); // campusId only counts for an 'ALL' caller (aprSubmit_), so it can't move anyone else's request
         return res.success ? gameOk_({ id: res.id, duplicate: !!res.duplicate }) : gameNo_(gameMyReqCode_(res));
       }
@@ -92,6 +99,16 @@ function gameMyReqDispatch_(body) {
         if (!text || text.length > 500) return gameNo_('bad_input');
         const res = aprAddComment_(caller, { approvalId: String(p.id), body: text });
         return res.success ? gameOk_({ status: res.status }) : gameNo_(gameMyReqCode_(res));
+      }
+      case 'gameMyReqHiringReason':
+      case 'gameMyReqHiringClose': {   // the school's Principal, for a request they raised (or a decider: aprHiringRow_ decides); the old page's own two writers
+        const row = gameAprRow_(String(p.id || ''));
+        if (!row) return gameNo_('not_found');
+        if (!principal || !mayOpen(row)) return gameNo_('not_authorized');
+        const res = String(body.action) === 'gameMyReqHiringReason'
+          ? aprChangeHiringReason_(caller, { id: String(p.id), lastWorkingDay: String(p.lastWorkingDay || '') })
+          : aprCloseHiring_(caller, { id: String(p.id), note: String(p.note || '') });
+        return res.success ? gameOk_({ done: true }) : gameNo_(gameMyReqCode_(res));
       }
     }
   } catch (err) {

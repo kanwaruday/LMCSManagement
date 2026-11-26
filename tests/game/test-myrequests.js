@@ -29,7 +29,7 @@ aprComments_ = function (id) { return COMMENTS.slice(1).filter(function (c) { re
 aprSheet_ = function () { return { getDataRange: function () { return { getValues: function () { return ROWS; } }; }, getRange: function (r, c) { return { setValue: function (v) { ROWS[r-1][c-1] = v; } }; } }; };
 aprCommentsSheet_ = function () { return { appendRow: function (r) { COMMENTS.push(r); }, getDataRange: function () { return { getValues: function () { return COMMENTS; } }; } }; };
 aprNotifyThread_ = function () { MAILS++; }; aprNotifyDeciders_ = function () { MAILS++; };
-aprAppendRequest_ = function (caller, body, category, title, description, amountVal, showsItem, showsQty, campusId, leave) { APPENDED.push({ by: caller.email, category: category, title: title, campusId: campusId, leave: leave }); return { success: true, id: 'apr-new' }; };
+aprAppendRequest_ = function (caller, body, category, title, description, amountVal, showsItem, showsQty, campusId, leave) { APPENDED.push({ by: caller.email, category: category, title: title, campusId: campusId, leave: leave, evidence: body && body.evidenceLink }); return { success: true, id: 'apr-new' }; };
 aprLvHolidays_ = function () { return {}; };
 aprLvNowIst_ = function () { return { iso: '2026-11-14', hour: 9 }; };
 aprLvEnsureColumns_ = function () {};
@@ -77,6 +77,37 @@ assert.equal(d(call('teach@x.test', 'gameMyReqSubmit', { category: 'Other', titl
 const A = APPENDED();
 assert.deepEqual(A.map((a) => [a.by, a.category, a.campusId]), [['drv@x.test', 'Other', 'LMS2'], ['teach@x.test', 'Leave', 'LMS2'], ['prin@x.test', 'Financial / Purchase', 'LMS2']]);
 assert.match(A[1].title, /Casual Leave/);
+// W7 hiring (N3): the reason sentence is required and exactly one of two shapes; change-reason and close are the Principal's, for their own school
+const NOTE_B = 'Looking for Backup for: Asha Devi (E-12)', NOTE_R = 'Received Resignation from: Asha Devi (E-12) — last working day 2026-12-31';
+const hire = (extra) => Object.assign({ category: 'New/ Backup Position', title: 'TGT: Math', description: 'Cover for maths', itemName: 'TGT: Math' }, extra);
+assert.equal(d(call('prin@x.test', 'gameMyReqSubmit', hire({}))).code, 'bad_input', 'a hiring request without its reason');
+assert.equal(d(call('prin@x.test', 'gameMyReqSubmit', hire({ hiringNote: 'Because' }))).code, 'bad_input');
+assert.equal(d(call('prin@x.test', 'gameMyReqSubmit', hire({ hiringNote: 'Received Resignation from: A — last working day soon' }))).code, 'bad_input');
+assert.equal(d(call('prin@x.test', 'gameMyReqSubmit', hire({ hiringNote: NOTE_R, evidenceLink: 'https://x.test/y' }))).ok, true);
+assert.equal(APPENDED().pop().evidence, NOTE_R, 'the sentence, never the link, is what is filed');
+assert.equal(d(call('prin@x.test', 'gameMyReqSubmit', hire({ hiringNote: NOTE_B }))).ok, true);
+vm.runInContext(`ROWS.push(mk('apr-5','LMS2','New/ Backup Position','prin@x.test','Approved')); ROWS[ROWS.length-1][10] = ${JSON.stringify(NOTE_B)};
+  ROWS.push(mk('apr-6','LMS2','New/ Backup Position','other@x.test','Approved')); ROWS[ROWS.length-1][10] = ${JSON.stringify(NOTE_B)};
+  PEOPLE['other@x.test'] = { roles: ['Principal'], campusId: 'LMS2', role: 'Principal' }; PEOPLE['own@x.test'] = { roles: ['Owner'], campusId: 'ALL', role: 'Owner' };
+  Utilities.formatDate = function () { return '27 Nov'; }; aprRaiseClosedHiringTask_ = function () { TASKS++; }; hirQueuePositionSync_ = function () {}; var TASKS = 0;`, ctx);
+const reason = (email, id, lwd) => d(call(email, 'gameMyReqHiringReason', { id, lastWorkingDay: lwd }));
+assert.equal(reason('teach@x.test', 'apr-5', '2026-12-31').code, 'not_authorized', 'staff cannot');
+assert.equal(reason('prin@x.test', 'nope', '2026-12-31').code, 'not_found');
+assert.equal(reason('prin@x.test', 'apr-1', '2026-12-31').code, 'bad_input', 'not a hiring request');
+assert.equal(reason('prin@x.test', 'apr-5', 'soon').code, 'bad_input');
+assert.equal(reason('prin@x.test', 'apr-6', '2026-12-31').code, 'not_authorized', "another Principal's request at the same school");
+assert.equal(reason('prin@x.test', 'apr-5', '2026-12-31').ok, true);
+assert.match(vm.runInContext('ROWS[ROWS.length-2][10]', ctx), /^Received Resignation from: Asha Devi \(E-12\) — last working day 2026-12-31 \(changed from backup on /);
+assert.match(COMMENTS().slice(-1)[0][4], /Reason changed from backup to resignation\. Last working day: 2026-12-31\./);
+assert.equal(reason('prin@x.test', 'apr-5', '2027-01-15').ok, true);
+assert.match(COMMENTS().slice(-1)[0][4], /Last working day changed to 2027-01-15\./);
+const close = (email, id, note) => d(call(email, 'gameMyReqHiringClose', { id, note }));
+assert.equal(close('prin@x.test', 'apr-5', ' ').code, 'bad_input', 'a reason is needed to close');
+assert.equal(close('teach@x.test', 'apr-5', 'x').code, 'not_authorized');
+assert.equal(close('prin@x.test', 'apr-5', 'Resignation withdrawn').ok, true);
+assert.equal(vm.runInContext('ROWS[ROWS.length-2][13]', ctx), 'Revoked'); assert.equal(vm.runInContext('TASKS', ctx), 1, 'the coordinators are told');
+assert.match(COMMENTS().slice(-1)[0][4], /^Position closed: Resignation withdrawn/);
+assert.equal(close('prin@x.test', 'apr-5', 'again').code, 'decided', 'closed already');
 console.log('ok: game-myrequests (who sees what, comments, submit rules, no emails)');
 function COMMENTS() { return vm.runInContext('COMMENTS', ctx); }
 function APPENDED() { return vm.runInContext('APPENDED', ctx); }
