@@ -30,9 +30,11 @@ module.exports = function run(t) {
   const pay = (h, o, tok) => h.call('daybook.add', Object.assign({ id: 'a' + (++n), campus: 'LMS1', entry_date: '2026-10-21', account: 'cash:LMS1', direction: 'OUT', mode: 'cash',
     bucket: 'petty', category: 'stationery', amount_paise: 300000, payee: 'Shop', narration: 'x', file_id: 'slip' }, o), tok || 'clerk-token');
   const decide = (h, entry, approve, o, tok) => h.call('daybook.decide', Object.assign({ id: 'd-' + entry + '-' + (++n), campus: 'LMS1', entry_id: entry, approve }, o), tok || 'p1-token');
-  // a reversal of a ₹6,000 cash receipt waits for approval: the one thing that still goes to the Principal; its id is the waiting entry's id
-  const wait = (h, id, o) => { h.call('daybook.add', { id: 'src-' + id, campus: 'LMS1', entry_date: '2026-10-21', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'petty', category: 'other_in', amount_paise: 600000, payee: 'Parent', narration: 'x' }, 'clerk-token');
-    return h.call('daybook.reverse', Object.assign({ id, campus: 'LMS1', reverses: 'src-' + id, narration: 'Entered twice' }, o), 'clerk-token'); };
+  // a payment that was already waiting for the Principal before 26 Nov (cash above the old ₹2,000 limit): the decide path stays for those rows. Written straight to the Pending tab.
+  const wait = (h, id) => {
+    const row = { id, campus: 'LMS1', entry_date: '2026-10-21', direction: 'OUT', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 300000, payee: 'Shop', narration: 'x', file_id: 'slip', reverses: '', account: 'cash:LMS1', charged_to: 'LMS1', source: 'live' };
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Pending', Object.assign({}, row, { row: JSON.stringify(row), created_by: 'clerk@example.org', created_at: '2026-10-21T09:00:00Z' }));
+  };
   const petty = (h, d = '2026-10-21') => h.call('daybook.balances', { campus: 'LMS1', date: d }, 'clerk-token').closing.cash.petty;
   const listed = (h) => h.call('daybook.list', { campus: 'LMS1', from: '2026-10-21' }, 'clerk-token').entries;
 
@@ -67,27 +69,30 @@ module.exports = function run(t) {
     assert.equal(pay(h, { id: 'o', amount_paise: 300001, payee: 'Other' }).error, 'CASH_ABOVE_LIMIT');
   });
 
-  t.test('approvals: taking back a ₹6,000 cash receipt waits with its reason; a small one doesn\'t; approve counts it, decided once', () => {
+  t.test('reversal: taking back a ₹6,000 cash receipt goes straight through (Uday, 26 Nov), with a reason; nothing waits for the Principal', () => {
     const h = fresh();
-    const r = wait(h, 'rv1'); assert.equal(r.pending, true);
-    h.call('daybook.add', { id: 'in2', campus: 'LMS1', entry_date: '2026-10-21', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'petty', category: 'other_in', amount_paise: 50000, payee: 'Parent', narration: 'x' }, 'clerk-token');
-    assert.equal(petty(h), 1000000 + 600000 + 50000, 'not counted while it waits');
-    assert.equal(h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 'src-rv1', narration: 'Entered twice' }, 'clerk-token').duplicate, true);
-    assert.equal(h.call('daybook.reverse', { id: 'rv2', campus: 'LMS1', reverses: 'src-rv1', narration: 'again' }, 'clerk-token').error, 'REVERSAL_PENDING');
-    const w = h.call('daybook.pending', { campus: 'LMS1', state: 'pending' }, 'p1-token').entries[0];
-    assert.equal(w.reverses, 'src-rv1'); assert.equal(w.narration, 'Entered twice');
-    assert.equal(decide(h, 'rv1', true, { id: 'dec1' }).state, 'approved');
-    assert.equal(petty(h), 1000000 + 50000);
-    assert.equal(decide(h, 'rv1', true, { id: 'dec1' }).duplicate, true, 'a retry of the same decision');
-    assert.equal(decide(h, 'rv1', false, { reason: 'changed my mind' }).error, 'ALREADY_DECIDED');
-    assert.equal(h.call('daybook.reverse', { id: 'rv3', campus: 'LMS1', reverses: 'in2', narration: 'Wrong entry' }, 'clerk-token').pending, undefined);
+    h.call('daybook.add', { id: 'in1', campus: 'LMS1', entry_date: '2026-10-21', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'petty', category: 'other_in', amount_paise: 600000, payee: 'Parent', narration: 'x' }, 'clerk-token');
+    assert.equal(h.call('daybook.reverse', { id: 'rv0', campus: 'LMS1', reverses: 'in1', narration: ' ' }, 'clerk-token').error, 'REASON_REQUIRED');
+    const r = h.call('daybook.reverse', { id: 'rv1', campus: 'LMS1', reverses: 'in1', narration: 'Entered twice' }, 'clerk-token');
+    assert.equal(r.error, undefined); assert.equal(r.pending, undefined);
+    assert.equal(petty(h), 1000000, 'taken back at once');
+    assert.equal(listed(h).find((e) => e.id === 'rv1').narration, 'Entered twice');
+    assert.equal(h.call('daybook.pending', { campus: 'LMS1', state: 'pending' }, 'p1-token').entries.length, 0);
+  });
+
+  t.test('approvals: a payment already waiting from before 26 Nov can still be approved, once; it counts on the day it was entered', () => {
+    const h = fresh(); wait(h, 'old');
+    assert.equal(decide(h, 'old', true, { id: 'dec1' }).state, 'approved');
+    assert.equal(petty(h), 1000000 - 300000);
+    assert.equal(decide(h, 'old', true, { id: 'dec1' }).duplicate, true);
+    assert.equal(decide(h, 'old', false, { reason: 'changed my mind' }).error, 'ALREADY_DECIDED');
   });
 
   t.test('approvals: reject needs a reason; the entry stays listed as rejected and never counts', () => {
     const h = fresh(); wait(h, 'big');
     assert.equal(decide(h, 'big', false, { reason: ' ' }).error, 'REASON_REQUIRED');
     assert.equal(decide(h, 'big', false, { reason: 'Not a mistake' }).state, 'rejected');
-    assert.equal(petty(h), 1000000 + 600000);
+    assert.equal(petty(h), 1000000);
     assert.equal(decide(h, 'big', true).error, 'ALREADY_DECIDED');
   });
 
@@ -95,8 +100,8 @@ module.exports = function run(t) {
     const h = fresh(); wait(h, 'big');
     assert.equal(decide(h, 'big', true, {}, 'p2-token').error, 'FORBIDDEN_CAMPUS');
     assert.equal(decide(h, 'big', true, {}, 'clerk-token').error, 'FORBIDDEN_ROLE');
-    h.call('daybook.add', { id: 'src-mine', campus: 'LMS1', entry_date: '2026-10-21', account: 'cash:LMS1', direction: 'IN', mode: 'cash', bucket: 'petty', category: 'other_in', amount_paise: 600000, payee: 'Parent', narration: 'x' }, 'pc-token');
-    assert.equal(h.call('daybook.reverse', { id: 'mine', campus: 'LMS1', reverses: 'src-mine', narration: 'x y z' }, 'pc-token').pending, true);
+    const row = { id: 'mine', campus: 'LMS1', entry_date: '2026-10-21', direction: 'OUT', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 300000, payee: 'Shop', narration: 'x', file_id: 'slip', reverses: '', account: 'cash:LMS1', charged_to: 'LMS1', source: 'live' };
+    h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Pending', Object.assign({}, row, { row: JSON.stringify(row), created_by: 'pc@example.org', created_at: '2026-10-21T09:00:00Z' }));
     assert.equal(decide(h, 'mine', true, {}, 'pc-token').error, 'OWN_ENTRY');
     assert.equal(decide(h, 'big', true, {}, 'owner-token').state, 'approved');
   });

@@ -349,9 +349,8 @@ function officeDaybookReverse_(ctx, data) {
     odometer_note: orig.odometer_note, supplier_bill_no: orig.supplier_bill_no, settles_account: orig.settles_account, settles: orig.settles,
     source: orig.source || 'live', legacy_category: orig.legacy_category, mapped_by: orig.mapped_by, collection: orig.collection, components: orig.components,
   };
-  // lane-d slice 2 (G2): taking back a cash receipt above the limit pays cash out, so it waits for approval like a payment would
-  // (it counts only once approved; its reason is the row's narration). A handover leg is never a cash IN, so it never waits here.
-  if (!handover && orig.mode === 'cash' && orig.direction === 'IN' && orig.amount_paise > officeApprovalLimit_(data.campus)) return officePendingAdd_(ss, ctx, row);
+  // lane-d (Uday via V2, 26 Nov): taking back a cash receipt goes straight through, whatever the amount: it corrects a mistake, it is not a payment. It needs a reason
+  // (checked above), shows in the day's entries with who reversed, and the Finance Head sees it (game: Payment requests → reversals). The Principal hold is gone.
   if (handover) officeHandoverEvent_(ctx, handover, 'closed'); // before the row: a retry finding closed writes the missing reversal
   return officeDaybookWrite_(ss, ctx, row, 'daybook.reverse');
 }
