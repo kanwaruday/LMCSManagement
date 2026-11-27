@@ -12,7 +12,7 @@ const ctx = vm.createContext({
     tryLock() { if (held) throw new Error('lock taken while held (nested lock)'); held = true; return true; },
     releaseLock() { held = false; } }) },
 });
-['hiring.gs', 'hiring-appointments.gs'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8'), ctx));
+['hiring.gs', 'classic-base.gs', 'hiring-appointments.gs'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../../apps-script', f), 'utf8'), ctx));
 const C = vm.runInContext('HIR_COL', ctx);
 const REAL_CAL = ctx.APPT_CAL_;
 const H = Array.from(vm.runInContext('APPT_HEADERS', ctx));
@@ -267,7 +267,7 @@ T('a same-campus Principal accepts -> accepted, column 13 set, event on their ow
   assert.strictEqual(cal.inserts[0].id, 'p@lms.org.in');
   assert.strictEqual(ev.summary, 'Interview: Asha (English)');
   assert.ok(ev.description.includes('9876543210') && ev.description.includes('LMS4') && ev.description.includes('c@lms.org.in'));
-  assert.ok(ev.description.includes('https://kanwaruday.github.io/LMCSManagement/hiring/index.html#row=2'));
+  assert.ok(ev.description.includes('https://lmcs-classic.pages.dev/hiring/index.html#row=2'));
   assert.strictEqual(new Date(ev.end.dateTime) - new Date(ev.start.dateTime), 30 * 60000);
   assert.strictEqual(ev.attendees, undefined);
 });

@@ -184,7 +184,7 @@ function empSubjectLabel(code) {
 // domain-restricted deployment -- see that file's header for the
 // trade-off Uday explicitly accepted merging it in.
 const STAFF_ACTIONS_ = ['nextcode', 'list', 'detail', 'addnewhire', 'starthire', 'joinhire', 'transfer', 'markinactive', 'documentstatus', 'uploadstatus', 'verificationqueue', 'reassigncertificate', 'autoresolvequeue', 'salaryfullrecord', 'installjobrolesync', 'bumpincrement', 'docrules', 'savedocrules'];
-const ALLOWLIST_ACTIONS_ = ['allowlist_list', 'allowlist_add', 'allowlist_edit', 'allowlist_delete'];
+const ALLOWLIST_ACTIONS_ = ['allowlist_list', 'allowlist_add', 'allowlist_edit', 'allowlist_delete', 'datasrc_links'];
 
 // a supporting Principal's switch (supporting-charge.gs, auth.js actAs): these reads still answer; every other action is a write and is refused
 const ROSTER_SUPPORT_READS_ = ['roster', 'employees', 'designations', 'drivecheck', 'allowlist_list', 'nextcode', 'list', 'detail', 'documentstatus', 'uploadstatus', 'verificationqueue', 'salaryfullrecord', 'docrules'];

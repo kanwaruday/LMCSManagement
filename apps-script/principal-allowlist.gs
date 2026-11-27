@@ -69,6 +69,9 @@ function allowlistDoGet_(e) {
       return jsonOut({ success: true, entries: readEntries() });
     }
 
+    // The Owner/Coordinator's "sheet ↗" link rows: ids stay out of the (public) static pages. Answers only a verified Owner/Coordinator.
+    if (action === 'datasrc_links') return jsonOut(datasrcLinksFor_(e.parameter.idToken));
+
     // Every mutating action requires a Google ID token that verifies,
     // server-side, to one of ADMIN_EMAILS — not just "logged in."
     const email = verifyAdminToken(e.parameter.idToken);
@@ -190,6 +193,12 @@ function deleteEntry(email) {
 // endpoint (signature + audience + expiry all checked by Google, not us).
 // Returns the verified email if it's an admin, otherwise null.
 function verifyAdminToken(idToken) {
+  const email = verifiedTokenEmail_(idToken);
+  return email && ADMIN_EMAILS.indexOf(email) !== -1 ? email : null;
+}
+
+// The verified email behind a Google ID token (audience + expiry + email_verified checked), or null.
+function verifiedTokenEmail_(idToken) {
   if (!idToken) return null;
   try {
     const res = UrlFetchApp.fetch(
@@ -200,11 +209,61 @@ function verifyAdminToken(idToken) {
     const payload = JSON.parse(res.getContentText());
     if (payload.aud !== GOOGLE_CLIENT_ID) return null; // token wasn't issued for our client
     if (payload.email_verified !== 'true' && payload.email_verified !== true) return null;
-    const email = (payload.email || '').toLowerCase();
-    return ADMIN_EMAILS.indexOf(email) !== -1 ? email : null;
+    return (payload.email || '').toLowerCase() || null;
   } catch (err) {
     return null;
   }
+}
+
+// Data-source links (Google Sheets and calendars) for the Owner/Coordinator "📄 sheet ↗" rows on the pages. They live HERE, not in the static pages
+// (the pages are public; the repo is private): assets/datasrc.js and three pages fetch them through the datasrc_links action, which answers only a verified
+// Owner/Coordinator. One literal on purpose: tests/datasrc reads it. Add a key here, then use it from PAGES in assets/datasrc.js.
+const DATASRC_LINKS_ = {
+  approvals: ['Approvals sheet','https://docs.google.com/spreadsheets/d/1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4/edit'],
+  allowlist: ['Access list sheet','https://docs.google.com/spreadsheets/d/1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58/edit'],
+  staff: ['LMCSStaffMasters sheet','https://docs.google.com/spreadsheets/d/1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0/edit'],
+  hiring: ['Teaching Applicants sheet','https://docs.google.com/spreadsheets/d/1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ/edit#gid=1181288827'],
+  docs: ['Doc Submission sheet','https://docs.google.com/spreadsheets/d/1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg/edit'],
+  teacherss: ['Teacher SS responses sheet','https://docs.google.com/spreadsheets/d/1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc/edit'],
+  nonteaching: ['Non-Teaching SS responses sheet','https://docs.google.com/spreadsheets/d/1PHNLl_rdBVzjzpBs0oWFsvYxBDVq7_1i6TRQhwY45ac/edit'],
+  driver: ['Driver SS responses sheet','https://docs.google.com/spreadsheets/d/1rFQH0Xcrhq1i2oNvLgpvrixXZNsr-rlntDXOGQ3J6ME/edit'],
+  dailyreports: ['Daily Reports sheet','https://docs.google.com/spreadsheets/d/1GzGdakmjjkou0GGgljY6ugXvOM21MLkyeyc85Ke3i1Y/edit'],
+  fees: ['Fee Defaulter Emails sheet','https://docs.google.com/spreadsheets/d/1za2G5vEOcR0fOpNr8oPF-RNJtYnYVSCkCSTYnpV_ok4/edit'],
+  payscale: ['Salary PayScale sheet','https://docs.google.com/spreadsheets/d/1d8MdOgXNM5KVJjLwejAKpbbDaINnvPZO6zX_E5xABYU/edit'],
+  payroll: ['Payroll sheet','https://docs.google.com/spreadsheets/d/1sal-zeXPZazN2ASqF7CchfJo-tF9_-Q80zcZtXbNwY8/edit'],
+  transport: ['Transport responses sheet','https://docs.google.com/spreadsheets/d/1VXTMZjqCS82ftB1rwoN4BzoiOTP7-Vg0m5vTH01Tfzc/edit#gid=1365845375'],
+  daily: ['Daily/CW sheet','https://docs.google.com/spreadsheets/d/1z5hzpMRHMru6ulpYs2lsGZr7quAywwpQ_zySa3rvGUA/edit'],
+  cal1: ['LMS 1 calendar','https://calendar.google.com/calendar/u/0/r?cid=c_88402c40e6c9a435cbed4810bfae632d781ac9e7ca167b5435e4a9586bda7595%40group.calendar.google.com'],
+  cal2: ['LMS 2/3 calendar','https://calendar.google.com/calendar/u/0/r?cid=c_25n5qbggh7u9s5o6vq31iho4vc%40group.calendar.google.com'],
+  cal4: ['LMS 4 calendar','https://calendar.google.com/calendar/u/0/r?cid=lms.org.in_snflpd3f357jv8l380s8sc4ju0%40group.calendar.google.com'],
+  cal5: ['LMS 5 calendar','https://calendar.google.com/calendar/u/0/r?cid=c_d367ca2cb9bbab4f6a5b6864d6e03c28fbfccf02b5212621e89daf2f9f3f8523%40group.calendar.google.com'],
+  cal6: ['LMS 6 calendar','https://calendar.google.com/calendar/u/0/r?cid=c_3db6cb2edb78d889cf166771c426f0fe3ba78b04cf9ca8e566329c888d023635%40group.calendar.google.com'],
+  timetable: ['Timetable data','https://github.com/kanwaruday/LMCSManagement/blob/main/teacher/data/timetable.json'],
+  calSchoolLMS1: ["School's calendar",'https://calendar.google.com/calendar/u/0/r?cid=c_88402c40e6c9a435cbed4810bfae632d781ac9e7ca167b5435e4a9586bda7595%40group.calendar.google.com'],
+  calSchoolLMS2: ["School's calendar",'https://calendar.google.com/calendar/u/0/r?cid=c_25n5qbggh7u9s5o6vq31iho4vc%40group.calendar.google.com'],
+  calSchoolLMS3: ["School's calendar",'https://calendar.google.com/calendar/u/0/r?cid=c_25n5qbggh7u9s5o6vq31iho4vc%40group.calendar.google.com'],
+  calSchoolLMS4: ["School's calendar",'https://calendar.google.com/calendar/u/0/r?cid=lms.org.in_snflpd3f357jv8l380s8sc4ju0%40group.calendar.google.com'],
+  calSchoolLMS5: ["School's calendar",'https://calendar.google.com/calendar/u/0/r?cid=c_d367ca2cb9bbab4f6a5b6864d6e03c28fbfccf02b5212621e89daf2f9f3f8523%40group.calendar.google.com'],
+  calSchoolLMS6: ["School's calendar",'https://calendar.google.com/calendar/u/0/r?cid=c_3db6cb2edb78d889cf166771c426f0fe3ba78b04cf9ca8e566329c888d023635%40group.calendar.google.com'],
+  calPrincipalLMS1: ["Principal's calendar",'https://calendar.google.com/calendar/u/0/r?cid=nidhi.kant%40lms.org.in'],
+  calPrincipalLMS2: ["Principal's calendar",'https://calendar.google.com/calendar/u/0/r?cid=arti.sharma%40lms.org.in'],
+  calPrincipalLMS3: ["Principal's calendar",'https://calendar.google.com/calendar/u/0/r?cid=suresh.prasher%40lms.org.in'],
+  calPrincipalLMS4: ["Principal's calendar",'https://calendar.google.com/calendar/u/0/r?cid=nisha.lms%40lms.org.in'],
+  calPrincipalLMS5: ["Principal's calendar",'https://calendar.google.com/calendar/u/0/r?cid=priyanka.sharma%40lms.org.in'],
+  calPrincipalLMS6: ["Principal's calendar",'https://calendar.google.com/calendar/u/0/r?cid=nikita.sen%40lms.org.in'],
+};
+
+// The same rule as assets/auth.js canViewDataSources: Owner or Coordinator (an admin email counts as Owner). Checked here, on the verified token.
+function datasrcLinksFor_(idToken) {
+  const email = verifiedTokenEmail_(idToken);
+  if (!email) return { success: false, error: 'Not authorized' };
+  let ok = ADMIN_EMAILS.indexOf(email) !== -1;
+  if (!ok) {
+    readEntries().forEach(function (en) {
+      if (en.email === email && /(^|,)\s*(owner|coordinator)\s*(,|$)/i.test(en.role)) ok = true;
+    });
+  }
+  return ok ? { success: true, links: DATASRC_LINKS_ } : { success: false, error: 'Not authorized' };
 }
 
 // jsonOut() is NOT redefined here -- employee-roster.gs's identical

@@ -28,7 +28,7 @@ var GAME_MODULE_DONE_AT = GAME_MODULE_DONE_AT || {};
 // TP_EMP_SHEET_ID in teacher-portal.gs.
 var TCH_FEED_URL = 'https://script.google.com/macros/s/AKfycbyYk0uDnp-PHdUDdOh5-KfD2xK1ahYCQ_vt7SJigQMhSA3DSs5t5v_q4tnseoZKw3_L/exec';
 var TCH_ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec';
-var TCH_TIMETABLE_URL = 'https://kanwaruday.github.io/LMCSManagement/teacher/data/timetable.json';
+function tchTimetableUrl_() { return classicBase_() + 'teacher/data/timetable.json'; }
 var TCH_TRACKER_SHEET_ID = '11u0Aeonc_CdwDa7ysXrdsF6vs2xYKxckQjOnc7ZEuCM';
 var TCH_EMP_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0';
 
@@ -451,7 +451,7 @@ function tchRosterKey_() { return '&key=' + encodeURIComponent(PropertiesService
 
 // -> {feed, roster, timetable} or null if the feed or the roster could not be read (the timetable is optional: without it periodsByDay is null)
 function tchFetchInputs_() {
-  const urls = [TCH_FEED_URL + tchFeedKey_(), TCH_ROSTER_URL + '?action=employees' + tchRosterKey_(), TCH_ROSTER_URL + '?action=roster' + tchRosterKey_(), TCH_TIMETABLE_URL];
+  const urls = [TCH_FEED_URL + tchFeedKey_(), TCH_ROSTER_URL + '?action=employees' + tchRosterKey_(), TCH_ROSTER_URL + '?action=roster' + tchRosterKey_(), tchTimetableUrl_()];
   const res = UrlFetchApp.fetchAll(urls.map(function (u) { return { url: u, muteHttpExceptions: true }; }));
   const parse = function (r) {
     if (!r || r.getResponseCode() !== 200) return null;

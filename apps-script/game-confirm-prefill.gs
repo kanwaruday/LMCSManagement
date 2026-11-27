@@ -93,7 +93,7 @@ function cqTimetable_(cacheOnly) {
   const cache = CacheService.getScriptCache();
   if (cqTtKeys_(cache)) return true;
   if (cacheOnly) return false;
-  const j = cqFetchJson_(TCH_TIMETABLE_URL);
+  const j = cqFetchJson_(tchTimetableUrl_());
   if (!j) return false;
   const put = {}, sched = j.campusPeriodSchedule || {}, camps = j.campuses || {};
   Object.keys(sched).forEach(function (c) { put['cq_tt_bells_' + c] = sched[c]; });

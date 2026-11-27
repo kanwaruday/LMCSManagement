@@ -16,7 +16,7 @@ function build(dec, opts) {
   const store = {}; ctx.fetches = 0;
   ctx.CacheService = { getScriptCache: () => ({ get: (k) => (k in store ? store[k] : null), put: (k, v) => { store[k] = v; } }) };
   ctx.UrlFetchApp = { fetch: () => { ctx.fetches++; return { getResponseCode: () => (opts.http || 200), getContentText: () => FILE }; } };
-  for (const f of ['game-quests.gs', 'game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs', 'game-event-design.gs'])
+  for (const f of ['classic-base.gs', 'game-quests.gs', 'game.gs', 'game-actions.gs', 'game-missions.gs', 'game-windows.gs', 'game-event-design.gs'])
     vm.runInContext(fs.readFileSync(__dirname + '/../../apps-script/' + f, 'utf8'), ctx);
   ctx.store = store;
   return ctx;

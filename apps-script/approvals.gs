@@ -635,7 +635,7 @@ function aprNotifyDeciders_(caller, title, category, campusId) {
     if (!to.length) return;
     MailApp.sendEmail(to.join(','), 'New approval request: ' + title,
       caller.email + ' (' + campusId + ') requested approval for "' + title + '" [' + category +
-      ']. Review it in the Approvals tab of the Coordinator Portal (Systems): https://kanwaruday.github.io/LMCSManagement/coordinator/systems/#approvals');
+      ']. Review it in the Approvals tab of the Coordinator Portal (Systems): ' + classicBase_() + 'coordinator/systems/#approvals');
   } catch (err) { /* best-effort */ }
 }
 

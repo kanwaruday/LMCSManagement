@@ -26,7 +26,7 @@ if (process.argv.includes('--live')) {
   const pages = ['', 'coordinator/', 'payroll/', 'hiring/', 'principals-daily-reporting/', 'staff/add-employee.html', 'office/', 'owner/'];
   const projects = JSON.parse(readFileSync(join(root, 'apps-script/projects.json'), 'utf8'));
   const urls = [
-    ...pages.map((p) => `https://kanwaruday.github.io/LMCSManagement/${p}`),
+    ...pages.map((p) => `${(process.env.CLASSIC_BASE || 'https://lmcs-classic.pages.dev/').replace(/\/*$/, '/')}${p}`),
     ...Object.values(projects).filter((p) => p?.deploymentId).map((p) => `https://script.google.com/macros/s/${p.deploymentId}/exec`),
   ];
   const results = await Promise.allSettled(urls.map(async (u) => { const r = await fetch(u, { redirect: 'follow' }); if (!r.ok) throw new Error(`${r.status} ${u}`); }));

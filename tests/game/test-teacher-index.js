@@ -5,7 +5,7 @@ const ctx = { console, PropertiesService: { getScriptProperties: () => ({ getPro
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
 // game-teacher.gs may run BEFORE game.gs (guard lines): load it first, on purpose
-load('game-teacher.gs'); load('acad-episodes.gs'); load('game.gs'); load('game-actions.gs');
+load('classic-base.gs'); load('game-teacher.gs'); load('acad-episodes.gs'); load('game.gs'); load('game-actions.gs');
 vm.runInContext('TCH_DEFAULTS.cwhwDeferred = false', ctx); // these tests cover CW/HW switched on; the deferred path has its own tests
 const J = (x) => JSON.parse(JSON.stringify(x));
 const DAY = 86400000, D0 = Date.UTC(2026, 8, 1), NOW = D0 + 60 * DAY;       // 'today' = 31 Oct 2026

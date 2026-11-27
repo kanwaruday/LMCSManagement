@@ -5,7 +5,7 @@ const RKEY = 'k'.repeat(40);
 const ctx = { console: Object.assign(Object.create(console), { error() {} }), Logger: { log() {} }, PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'ROSTER_GAME_KEY' ? RKEY : null) }) } };
 vm.createContext(ctx);
 const load = (f) => vm.runInContext(fs.readFileSync(dir + f, 'utf8'), ctx);
-load('game-confirm-prefill.gs'); load('game-confirm.gs'); load('game-teacher.gs'); load('game.gs');
+load('classic-base.gs'); load('game-confirm-prefill.gs'); load('game-confirm.gs'); load('game-teacher.gs'); load('game.gs');
 const J = (x) => JSON.parse(JSON.stringify(x));
 
 let store = new Map(), calls = [], answer;

@@ -9,7 +9,8 @@ export function wantsDriverMode(search, token, session) {
 }
 
 // ── Fee Clerk side (coordinator/transport/drivers.html) ──
-export const DRIVER_PAGE = 'https://kanwaruday.github.io/LMCSManagement/driver/';
+// relative to this file, so it follows whichever host serves the pages (no host written anywhere)
+export const DRIVER_PAGE = new URL('../../driver/', import.meta.url).href;
 // the link a driver scans; the token is in the fragment, so opening it never sends it to a server. Shared on WhatsApp it does pass
 // through WhatsApp (accepted by the design: the QR is the first choice)
 export const linkUrl = (token) => DRIVER_PAGE + '#k=' + token;

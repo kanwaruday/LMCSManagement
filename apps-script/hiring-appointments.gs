@@ -294,7 +294,7 @@ function apptEvent_(a) {
     summary: APPT_TITLE[a.kind] + ': ' + a.name + (role ? ' (' + role + ')' : ''),
     description: ['Phone: ' + a.phone, 'School: ' + a.campus, role ? 'Position: ' + role : '', stage ? 'Stage: ' + stage : '',
       'Proposed by: ' + a.proposedBy, a.place ? 'Place: ' + a.place : '',
-      'https://kanwaruday.github.io/LMCSManagement/hiring/index.html#row=' + a.row].filter(Boolean).join('\n'),
+      classicBase_() + 'hiring/index.html#row=' + a.row].filter(Boolean).join('\n'),
     start: { dateTime: start.toISOString(), timeZone: 'Asia/Kolkata' },
     end: { dateTime: new Date(start.getTime() + (a.durationMin || APPT_DURATION[a.kind] || 30) * 60000).toISOString(), timeZone: 'Asia/Kolkata' },
   };

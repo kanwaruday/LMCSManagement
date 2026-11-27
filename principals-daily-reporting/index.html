@@ -680,29 +680,8 @@ const PDR_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzpkFLy4KvTdSJf
 // duplicated from the Apps Script backend -- these are just link targets (no data read), so no
 // backend round-trip needed. Kept in sync manually; if a sheet/form is
 // ever recreated, update both here and in the matching backend file.
-const DATASRC_TEACHER_SHEET_ID = '1cP-f8ShSJJPMBXkQCfkSvmajPA1db6fMBOPCbLH3oIc'; // "LMCS Teacher SS 2026 (Responses)" -- also backs IT/PTI/Clerk SS (own tab each)
-const DATASRC_NONTEACHING_SHEET_ID = '1PHNLl_rdBVzjzpBs0oWFsvYxBDVq7_1i6TRQhwY45ac'; // "LMCS Non-Teaching SS (Responses)"
-const DATASRC_DRIVER_SHEET_ID = '1rFQH0Xcrhq1i2oNvLgpvrixXZNsr-rlntDXOGQ3J6ME'; // "LMCS Driver Responses Sheet"
-const DATASRC_STAFF_MASTERS_SHEET_ID = '1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0'; // "LMCSStaffMasters" -- feeds every SS form's Name dropdown/roster
-const DATASRC_DAILY_REPORTS_SHEET_ID = '1GzGdakmjjkou0GGgljY6ugXvOM21MLkyeyc85Ke3i1Y'; // "LMCS Principal DR — Daily Reports"
-const DATASRC_APPROVALS_SHEET_ID = '1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4'; // "LMCS Approvals"
-// Same maps as PDR_SCHOOL_CALENDAR_IDS / PDR_PRINCIPAL_PERSONAL_CALENDARS
-// in apps-script/principal-dr.gs.
-const DATASRC_SCHOOL_CALENDAR_IDS = {
-  LMS1: 'c_88402c40e6c9a435cbed4810bfae632d781ac9e7ca167b5435e4a9586bda7595@group.calendar.google.com',
-  LMS2: 'c_25n5qbggh7u9s5o6vq31iho4vc@group.calendar.google.com',
-  LMS3: 'c_25n5qbggh7u9s5o6vq31iho4vc@group.calendar.google.com',
-  LMS4: 'lms.org.in_snflpd3f357jv8l380s8sc4ju0@group.calendar.google.com',
-  LMS5: 'c_d367ca2cb9bbab4f6a5b6864d6e03c28fbfccf02b5212621e89daf2f9f3f8523@group.calendar.google.com',
-  LMS6: 'c_3db6cb2edb78d889cf166771c426f0fe3ba78b04cf9ca8e566329c888d023635@group.calendar.google.com',
-};
-const DATASRC_PRINCIPAL_CALENDARS = {
-  LMS1: 'nidhi.kant@lms.org.in', LMS2: 'arti.sharma@lms.org.in', LMS3: 'suresh.prasher@lms.org.in',
-  LMS4: 'nisha.lms@lms.org.in', LMS5: 'priyanka.sharma@lms.org.in', LMS6: 'nikita.sen@lms.org.in',
-};
-
-function datasrcSheetUrl_(id) { return 'https://docs.google.com/spreadsheets/d/' + id + '/edit'; }
-function datasrcCalendarUrl_(calId) { return 'https://calendar.google.com/calendar/u/0/r?cid=' + encodeURIComponent(calId); }
+// The sheet and calendar ids are NOT in this public page: they come from the backend (LMCS.datasrcLinks, Owner/Coordinator only).
+// Keys: teacherss nonteaching driver staff dailyreports approvals, calSchoolLMS1..6, calPrincipalLMS1..6 (apps-script/principal-allowlist.gs DATASRC_LINKS_).
 
 /** {label, url}[] -> the small link row, or '' if not an Owner/Coordinator (LMCS.canViewDataSources) --
  *  called by renderAllDataSourceLinks_() below, never render this
@@ -722,21 +701,22 @@ function datasrcHtml_(items) {
 function renderAllDataSourceLinks_() {
   const c = SELECTED_CAMPUS_ID;
   const set = function (id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-
-  set('datasrc-principal', datasrcHtml_([
-    { label: 'Daily Reports sheet', url: datasrcSheetUrl_(DATASRC_DAILY_REPORTS_SHEET_ID) },
-    { label: "School's Calendar", url: datasrcCalendarUrl_(DATASRC_SCHOOL_CALENDAR_IDS[c]) },
-    { label: "Principal's Calendar (SS count)", url: datasrcCalendarUrl_(DATASRC_PRINCIPAL_CALENDARS[c]) },
-  ]));
-  set('datasrc-dashboard', datasrcHtml_([
-    { label: 'Teacher/IT/PTI/Clerk sheet', url: datasrcSheetUrl_(DATASRC_TEACHER_SHEET_ID) },
-    { label: 'Non-Teaching sheet', url: datasrcSheetUrl_(DATASRC_NONTEACHING_SHEET_ID) },
-    { label: 'Driver sheet', url: datasrcSheetUrl_(DATASRC_DRIVER_SHEET_ID) },
-    { label: 'Staff roster', url: datasrcSheetUrl_(DATASRC_STAFF_MASTERS_SHEET_ID) },
-  ]));
-  set('datasrc-approvals', datasrcHtml_([
-    { label: 'Approvals sheet', url: datasrcSheetUrl_(DATASRC_APPROVALS_SHEET_ID) },
-  ]));
+  if (!LMCS.canViewDataSources(SESSION)) { ['datasrc-principal', 'datasrc-dashboard', 'datasrc-approvals'].forEach(function (id) { set(id, ''); }); return; }
+  LMCS.datasrcLinks().then(function (L) {
+    const row = function (items) { return datasrcHtml_(items.filter(function (i) { return L[i.key]; }).map(function (i) { return { label: i.label, url: L[i.key][1] }; })); };
+    set('datasrc-principal', row([
+      { key: 'dailyreports', label: 'Daily Reports sheet' },
+      { key: 'calSchool' + c, label: "School's Calendar" },
+      { key: 'calPrincipal' + c, label: "Principal's Calendar (SS count)" },
+    ]));
+    set('datasrc-dashboard', row([
+      { key: 'teacherss', label: 'Teacher/IT/PTI/Clerk sheet' },
+      { key: 'nonteaching', label: 'Non-Teaching sheet' },
+      { key: 'driver', label: 'Driver sheet' },
+      { key: 'staff', label: 'Staff roster' },
+    ]));
+    set('datasrc-approvals', row([{ key: 'approvals', label: 'Approvals sheet' }]));
+  });
 }
 
 let SESSION = null;

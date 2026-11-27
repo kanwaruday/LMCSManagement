@@ -418,6 +418,21 @@ window.LMCS = (function () {
     return hasRole(session, 'Owner') || hasRole(session, 'Coordinator');
   }
 
+  // The sheet/calendar links behind those rows: {key: [label, url]}. NOT in this (public) file: the backend sends them to a verified Owner/Coordinator
+  // only (principal-allowlist.gs datasrc_links; they live in DATASRC_LINKS_ there). One fetch per page load; a failure gives {} (the row just stays empty).
+  let datasrcPromise_ = null;
+  function datasrcLinks() {
+    const s = getSession();
+    if (!s || !s.idToken || !canViewDataSources(s)) return Promise.resolve({});
+    if (!datasrcPromise_) {
+      datasrcPromise_ = fetch(ALLOWLIST_API_URL + '?action=datasrc_links&idToken=' + encodeURIComponent(s.idToken), { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { return d && d.success && d.links ? d.links : {}; })
+        .catch(function () { datasrcPromise_ = null; return {}; });
+    }
+    return datasrcPromise_;
+  }
+
   // Teacher Portal (teacher/index.html) is the lowest tier, so every tier above it can open it too
   // (2026-10-08, per Uday): Teacher, Principal, Coordinator, Owner.
   function canViewTeacherPortal(session) {
@@ -630,7 +645,7 @@ window.LMCS = (function () {
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', supportBanner_); else supportBanner_();
 
-  return { requireSession, getSession, supportSwitch, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewPrincipalPortal, showNotForRole, roleLabel, canViewTeacherPortal, canViewDataSources, viewAsScope, CAMPUS_NAMES };
+  return { requireSession, getSession, supportSwitch, signOut, notifyAuthFailure, campusLabel, hasRole, canManageStaff, canViewTeacherSS, canUseHiring, canViewOwnerPortal, canViewCoordinatorPortal, canViewPrincipalPortal, showNotForRole, roleLabel, canViewTeacherPortal, canViewDataSources, datasrcLinks, viewAsScope, CAMPUS_NAMES };
 })();
 
 

@@ -14,7 +14,7 @@ var GAME_MODULE_QUESTS = GAME_MODULE_QUESTS || {};
 // Uses game.gs / game-actions.gs / game-missions.gs globals only inside function bodies: load order is not ours.
 
 var ED_WINDOW = 'event-design';
-var ED_URL = 'https://kanwaruday.github.io/LMCSManagement/data/event-proposals.json'; // Game Config eventDesignUrl overrides it
+function edUrl_() { return classicBase_() + 'data/event-proposals.json'; } // Game Config eventDesignUrl overrides it
 var ED_CACHE_KEY = 'ed_items', ED_CACHE_S = 600;
 var ED_GO = 'owner/event-design.html';
 var ED_GROUPS = [['calendar', 'Calendar changes'], ['chain', 'Event chains'], ['design', 'Designs']];
@@ -48,7 +48,7 @@ function edItems_(cfg, cacheOnly) {
   if (hit) { try { return JSON.parse(hit); } catch (err) { /* refetch */ } }
   if (cacheOnly) return null;
   try {
-    const url = (cfg && typeof cfg.eventDesignUrl === 'string' && /^https:\/\//.test(cfg.eventDesignUrl)) ? cfg.eventDesignUrl : ED_URL;
+    const url = (cfg && typeof cfg.eventDesignUrl === 'string' && /^https:\/\//.test(cfg.eventDesignUrl)) ? cfg.eventDesignUrl : edUrl_();
     const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
     if (res.getResponseCode() !== 200) { console.warn('event-design: proposals HTTP ' + res.getResponseCode()); return null; }
     const items = edParse_(res.getContentText());

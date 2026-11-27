@@ -19,7 +19,8 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => console.log('ok  ' + na
     assert.strictEqual(M.wantsDriverMode('?driver=1', TOKEN, { email: 'staff@example.test' }), false, 'a staff session wins');
   });
   await t('the link keeps the token in the fragment; WhatsApp text carries the link, encoded', () => {
-    assert.strictEqual(M.linkUrl(TOKEN), 'https://kanwaruday.github.io/LMCSManagement/driver/#k=' + TOKEN);
+    assert.ok(/^(https:|file:)/.test(M.linkUrl(TOKEN)) && M.linkUrl(TOKEN).endsWith('/driver/#k=' + TOKEN), 'relative to the module: follows whichever host serves the pages');
+    assert.ok(!/github\.io/.test(M.linkUrl(TOKEN)));
     const w = M.whatsappUrl(TOKEN, 'A B');
     assert.ok(w.startsWith('https://wa.me/?text='));
     assert.ok(decodeURIComponent(w.slice(20)).includes(M.linkUrl(TOKEN)));

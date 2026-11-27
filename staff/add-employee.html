@@ -392,15 +392,18 @@ async function init() {
   }
   DOCS_ONLY = docsOnly;
 
-  // Owner/Coordinator "data source" links (2026-09-20; Coordinators added 2026-10-21) -- IDs duplicated from
-  // apps-script/staff-management-api.gs's STAFF_EMP_SHEET_ID.
+  // Owner/Coordinator "data source" links (2026-09-20; Coordinators added 2026-10-21) -- ids come from the backend
+  // (LMCS.datasrcLinks), not from this public page.
   if (LMCS.canViewDataSources(SESSION)) {
     // Doc Submission = the response workbook the Documents tab / Certificate Links are built from; Teaching
-    // Applicants = where "complete hire" candidates come from (IDs from apps-script/staff-management-api.gs).
-    document.getElementById('datasrcStaff').innerHTML =
-      '📄 <a href="https://docs.google.com/spreadsheets/d/1OjVMUvpLM8JkdAwjmljCtZUI1VUqGLbic36cW9dm0C0/edit" target="_blank" rel="noopener">LMCSStaffMasters sheet ↗</a>' +
-      '<a href="https://docs.google.com/spreadsheets/d/1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg/edit" target="_blank" rel="noopener" style="margin-left:14px">Doc Submission sheet ↗</a>' +
-      '<a href="https://docs.google.com/spreadsheets/d/1aSCQ3IGO-ZP_5yRjtnMpZdlauTdWj3814ATD9qwskPQ/edit#gid=1181288827" target="_blank" rel="noopener" style="margin-left:14px">Teaching Applicants sheet ↗</a>';
+    // Applicants = where "complete hire" candidates come from (links from the backend).
+    LMCS.datasrcLinks().then(function (L) {
+      if (!L.staff || !L.docs || !L.hiring) return;
+      document.getElementById('datasrcStaff').innerHTML =
+        '📄 <a href="' + L.staff[1] + '" target="_blank" rel="noopener">LMCSStaffMasters sheet ↗</a>' +
+        '<a href="' + L.docs[1] + '" target="_blank" rel="noopener" style="margin-left:14px">Doc Submission sheet ↗</a>' +
+        '<a href="' + L.hiring[1] + '" target="_blank" rel="noopener" style="margin-left:14px">Teaching Applicants sheet ↗</a>';
+    });
   }
 
   document.getElementById('formArea').style.display = 'block';
@@ -570,8 +573,10 @@ async function loadUploadStatus(force) {
       el.innerHTML = '<div class="upload-banner ok">✓ Every uploaded file is in the list below.' + checkNow + '</div>';
       return;
     }
+    const docsLink = (await LMCS.datasrcLinks()).docs; // the Documents table link comes from the backend (Owner/Coordinator only); others see its name
+    const docsTable = docsLink ? '<a href="' + docsLink[1] + '" target="_blank" rel="noopener">Documents table</a>' : 'Documents table';
     el.innerHTML = '<div class="upload-banner info"><span>📤 ' + total + ' uploaded files aren\'t in the list below because they can\'t be matched to a staff member — ' +
-      parts.join('; ') + '. Fix the Employee ID on those rows in the <a href="https://docs.google.com/spreadsheets/d/1PJ2acPOHopbHzzwGes8X4YPWSDBdXnd0zl46zvFCvIg/edit" target="_blank" rel="noopener">Documents table</a> ' +
+      parts.join('; ') + '. Fix the Employee ID on those rows in the ' + docsTable + ' ' +
       '(filter the ID Check column); they\'ll show up here within the hour.</span>' + checkNow + '</div>';
   } catch (e) {
     el.innerHTML = '';
