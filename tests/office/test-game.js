@@ -289,6 +289,15 @@ module.exports = function run(t) {
     assert.deepStrictEqual(ex({}, { key: 'x' }), { success: false, error: 'not_authorized' });
   });
 
+  t.test('sync export: a header mismatch says where (tab, column number, expected column) and never the sheet\'s own header text', () => {
+    const h = fresh();
+    h.game('gameSyncExport', { fy: '2026-27', tab: 'DayBook' }, { role: 'owner' }); // the book and its tabs exist
+    h.books['BOOK-LMS1-2026-27'].getSheetByName('DayBook').getRange(1, 3, 1, 1).setValues([['Some Person 98765']]);
+    const r = h.game('gameSyncExport', { fy: '2026-27', tab: 'Opening' }, { role: 'owner' });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { success: true, data: { ok: false, code: 'HEADER_MISMATCH', where: 'DayBook!3:entry_date' } }, 'the whole book is refused, and it names the bad tab');
+    assert.doesNotMatch(JSON.stringify(r), /Person|98765/);
+  });
+
   t.test('batch 5: the Owner or the verifier closes a day and signs a deposit; only the Owner reopens; a Fee Clerk or Principal does none', () => {
     const h = fresh();
     h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Deposits', { id: 'dp1', campus: 'LMS1', covers_date: '2026-10-20', amount_paise: 5000, bank_ref: 'CH-1', file_id: 'slip' });

@@ -140,6 +140,8 @@ function officeGame_(b) {
     const out = Object.assign({}, r); delete out.success;
     return { success: true, data: out };
   } catch (err) {
+    // a header mismatch says where (tab!column:expected column, code constants only), so the Mac's counts can name it (V2, 27 Nov)
+    if (err.code === 'HEADER_MISMATCH' && /^[A-Za-z]{2,30}!\d{1,3}:[a-z][a-z0-9_]{0,40}$/.test(String(err.where || ''))) return { success: true, data: { ok: false, code: 'HEADER_MISMATCH', where: err.where } };
     return officeGameRefuse_(officeGameCode_(err.code || err.message));
   } finally {
     OFFICE_MEMO = null;

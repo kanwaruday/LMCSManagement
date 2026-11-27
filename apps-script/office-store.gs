@@ -86,6 +86,7 @@ function officeEnsureHeader_(sheet, columns) {
   if (at !== -1) { // names the tab and column so the fix is a header repair, not a hunt (code stays HEADER_MISMATCH)
     const err = new Error('HEADER_MISMATCH: ' + sheet.getName() + '!' + (at + 1));
     err.code = 'HEADER_MISMATCH';
+    err.where = sheet.getName() + '!' + (at + 1) + ':' + (columns[at] || 'extra_column'); // the tab, the column number and the column the code expects: never the sheet's own cell
     throw err;
   }
   if (head.length >= columns.length) return;
