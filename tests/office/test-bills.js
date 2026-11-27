@@ -97,5 +97,17 @@ module.exports = function run(t) {
     assert.equal(game('gamePayReqAdd', { id: 'g1', settles_account: 'pump1', bills: 'b1,b2', amount_paise: '1390001' }).data.code, 'SETTLEMENT_MISMATCH');
     assert.equal(game('gamePayReqAdd', { id: 'g1', settles_account: 'pump1', bills: 'b1,b2', amount_paise: '1390000' }).data.duplicate, false);
   });
+
+  t.test('G2 low (28 Nov): a settlement reads the open bills and appends under the script lock, so two at once can\'t take the same bill', () => {
+    const h = fresh(); let held = false; const seen = [];
+    h.ctx.LockService = { getScriptLock: () => ({ waitLock() { assert.equal(held, false, 'one writer at a time'); held = true; }, releaseLock() { held = false; } }) };
+    const read = h.ctx.officeCreditBills_, append = h.ctx.officeAppend_;
+    h.ctx.officeCreditBills_ = function () { seen.push(['read', held]); return read.apply(this, arguments); };
+    h.ctx.officeAppend_ = function (ss, tab) { if (tab === 'PayRequests') seen.push(['append', held]); return append.apply(this, arguments); };
+    assert.equal(settle(h, {}).duplicate, false);
+    assert.equal(settle(h, { id: 's2', bills: ['b2'], amount_paise: 410000 }).code, 'BILL_NOT_OPEN', 'the second one, right after, finds b2 taken');
+    assert.ok(seen.length >= 3 && seen.every(([, l]) => l === true), JSON.stringify(seen));
+    assert.equal(held, false, 'released after each call');
+  });
 };
 
