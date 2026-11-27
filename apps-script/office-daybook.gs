@@ -61,9 +61,6 @@ function officeDaybookAdd_(ctx, data) {
   if (officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true };
   const waiting = officeRows_(ss, 'Pending').filter(function (r) { return r.id === String(data.id); })[0];
   if (waiting) return { id: waiting.id, duplicate: true, pending: !officeDecision_(ss, waiting.id) };
-  // V2, 27 Nov: a book takes its first entry only after the school's opening is set (the game writes it at Seal: opening.set). A book
-  // that already has entries or a closed day keeps working: opening.set is locked for it (OPENING_LOCKED), so refusing would strand it.
-  if (!officeHasOpening_(ss) && !officeRows_(ss, 'DayBook').length && !officeRows_(ss, 'Closes').length) throw officeCoded_('OPENING_NOT_SEALED');
   // typeof number only: "1,234.50" and other strings never reach arithmetic; floats and 0/negatives fail safe-integer > 0.
   if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise) || data.amount_paise <= 0) throw new Error('BAD_AMOUNT');
   const cat = officeCategory_(data.category);
@@ -200,6 +197,7 @@ function officeLastOdometer_(campus, vehicle, date) {
 }
 
 function officeDaybookWrite_(ss, ctx, row, action, createdBy) {
+  officeAssertOpening_(ss, row);
   officeAssertCashFloor_(ss, row);
   const res = officeAppend_(ss, 'DayBook', row, ctx.caller, { action: action, campus: row.campus, createdBy: createdBy });
   if (row.category === 'fuel' && !res.duplicate) { // feeds the GPS fuel checks; a failure here never loses the entry
@@ -210,6 +208,16 @@ function officeDaybookWrite_(ss, ctx, row, action, createdBy) {
     try { officeServiceMirror_(row.campus, Object.assign({}, row, { id: res.id })); } catch (err) { console.error('Service mirror: ' + err.message); }
   }
   return { id: res.id, duplicate: res.duplicate };
+}
+
+// V2, 27 Nov (G2: the gate sat in daybook.add only, so a deposit, an ERP line or a handover leg could be a book's first row and open it):
+// EVERY Day Book row is written here, so a book takes its first row only after the school's opening is set (the game writes it at Seal:
+// opening.set). A reversal is never refused (it undoes a row already there). A book that already has entries or a closed day keeps
+// working: opening.set is locked for it (OPENING_LOCKED), so refusing would strand it. A retry of a saved row passes (the book has it).
+function officeAssertOpening_(ss, row) {
+  if (row.reverses) return;
+  if (officeHasOpening_(ss) || officeRows_(ss, 'DayBook').length || officeRows_(ss, 'Closes').length) return;
+  throw officeCoded_('OPENING_NOT_SEALED');
 }
 
 // lane-d (G2b FIX): cash never goes below zero, on any day. A cash OUT lowers the closing of its own day and of every later day, so

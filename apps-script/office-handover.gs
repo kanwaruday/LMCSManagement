@@ -81,6 +81,7 @@ function officeCashAccept_(ctx, data) {
   // Dated the acceptance day (today, which day.close never closes; asserted anyway like reversals).
   const today = officeToday_(), ss = officeOpen_(ho.to_campus, officeFy_(today));
   officeAssertOpen_(ss, today);
+  officeAssertOpening_(ss, {}); // before the 'accepted' event: an unsealed receiving book takes no IN leg, so the handover stays pending
   officeHandoverEvent_(ctx, ho, 'accepted');
   officeDaybookWrite_(ss, ctx, {
     id: ho.id + '-in', campus: ho.to_campus, entry_date: today, direction: 'IN', mode: 'cash', bucket: ho.bucket, category: 'cash_received',

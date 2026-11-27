@@ -4,12 +4,13 @@ const assert = require('assert');
 const { boot } = require('./harness');
 
 const fixture = {
-  tokens: { 'clerk-token': 'clerk@example.org', 'fh-token': 'fh@example.org', 'owner-token': 'owner@example.org' },
+  tokens: { 'clerk-token': 'clerk@example.org', 'fh-token': 'fh@example.org', 'owner-token': 'owner@example.org', 'hes-token': 'hes@example.org' },
   allowlist: [
     ['Email', 'Name', 'Campuses', 'Roles'],
     ['clerk@example.org', 'Clerk', 'LMS1', 'FeeClerk'],
     ['fh@example.org', 'Finance Head', 'ALL', 'FinanceHead'],
     ['owner@example.org', 'Owner', 'ALL', 'Owner'],
+    ['hes@example.org', 'HES Office', 'HES', 'AdminManager'],
   ],
 };
 
@@ -52,5 +53,34 @@ module.exports = function run(t) {
     assert.equal(h.call('daybook.add', fee('s4'), 'clerk-token').success, true);
     const again = h.call('daybook.add', fee('s4'), 'clerk-token');
     assert.deepEqual([again.success, again.duplicate], [true, true]);
+  });
+
+  // G2 (27 Nov): deposits, handover legs and fund transfers write the Day Book without daybook.add: the gate is in officeDaybookWrite_
+  const PDF = Buffer.from('%PDF-1.4 synthetic').toString('base64');
+  t.test('seal gate: a deposit into an unsealed new book is OPENING_NOT_SEALED, and no Deposits row or leg is written', () => {
+    const h = fresh();
+    h.call('file.upload', { id: 'slip', campus: 'LMS1', category: 'deposit_proof', mime: 'application/pdf', base64: PDF, name: 's.pdf' }, 'clerk-token');
+    const r = h.call('deposit.add', { id: 'd1', campus: 'LMS1', covers_date: '2026-10-21', amount_paise: 500, bank_ref: 'UTR1', file_id: 'slip' }, 'clerk-token');
+    assert.equal(r.error, 'OPENING_NOT_SEALED');
+    assert.equal(book(h, 'Deposits').length, 0); assert.equal(book(h, 'DayBook').length, 0);
+  });
+
+  t.test('seal gate: a handover into an unsealed receiving book: accept is OPENING_NOT_SEALED, no IN leg, the handover stays pending', () => {
+    const h = boot(fixture); h.addConfig(); h.addBook('LMS1', '2026-27'); h.addBook('HES', '2026-27', { opening: false });
+    h.setNow(new Date('2026-10-21T10:00:00Z'));
+    ['petty', 'fee', 'other'].forEach((b) => h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Opening', { id: 'seed-' + b, campus: 'LMS1', mode: 'cash', bucket: b, amount_paise: 1000000 }));
+    assert.equal(h.call('cash.handover', { id: 'h1', date: '2026-10-21', from_account: 'cash:LMS1', to_account: 'cash:HES', amount_paise: 20000, bucket: 'fee', note: 'x' }, 'clerk-token').success, true);
+    const r = h.call('cash.accept', { id: 'req-h1', handover: 'h1' }, 'hes-token');
+    assert.equal(r.error, 'OPENING_NOT_SEALED');
+    assert.equal(h.ctx.officeRows_(h.ctx.officeOpen_('HES', '2026-27'), 'DayBook').length, 0);
+    assert.equal(JSON.parse(JSON.stringify(h.call('cash.handovers', {}, 'hes-token').handovers))[0].state, 'pending');
+    h.call('opening.set', { id: 'op', campus: 'HES', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 0 }] }, 'fh-token');
+    assert.equal(h.call('cash.accept', { id: 'req-h1', handover: 'h1' }, 'hes-token').success, true, 'accepted once the opening is set');
+  });
+
+  t.test('seal gate: a reversal is never refused by the gate', () => {
+    const h = fresh();
+    assert.doesNotThrow(() => h.ctx.officeAssertOpening_(h.ctx.officeOpen_('LMS1', '2026-27'), { reverses: 'x' }));
+    assert.throws(() => h.ctx.officeAssertOpening_(h.ctx.officeOpen_('LMS1', '2026-27'), {}), /OPENING_NOT_SEALED/);
   });
 };

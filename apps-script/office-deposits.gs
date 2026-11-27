@@ -44,6 +44,7 @@ function officeDepositAdd_(ctx, data) {
   const acct = officeAccount_(bankAccount);
   if (!acct || !acct.active || acct.kind !== 'bank' || acct.campus !== data.campus) throw new Error('BAD_ACCOUNT');
   officeAssertOpen_(ss, today); // covers_date may be a closed day; the deposit itself lands today
+  officeAssertOpening_(ss, {}); // before the Deposits row: an unsealed new book takes no deposit (the legs would be refused after it)
   const book = officeRows_(ss, 'DayBook');
   if (data.amount_paise > officeBalances_(officeOpening_(ss), book, today).closing.cash.fee) throw officeCoded_('INSUFFICIENT_CASH');
   const res = officeAppend_(ss, 'Deposits', {
@@ -210,6 +211,8 @@ function officeFundTransfer_(ctx, data) {
       settles: id + '-' + other, source: 'live',
     }, 'fund.transfer');
   };
+  if (!hasOut) officeAssertOpening_(outSs, {}); // both books before either leg: never half a transfer into an unsealed book
+  if (!hasIn) officeAssertOpening_(inSs, {});
   const a = leg(outSs, 'out', 'in', from, to, 'OUT', 'fund_transfer_out'), b = leg(inSs, 'in', 'out', to, from, 'IN', 'fund_transfer_in');
   return { id: id, duplicate: a.duplicate || b.duplicate };
 }
