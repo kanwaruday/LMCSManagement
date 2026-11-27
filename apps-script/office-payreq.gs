@@ -158,23 +158,32 @@ function officeBillFiles_(q) {
     .filter(function (r) { return want[r.id] && r.file_id; }).map(function (r) { return String(r.file_id); });
 }
 
-// settlement: {id, campus, settles_account (a credit account of this school), bills (ids, list or comma text), amount_paise, narration?, file_id?}
-// amount = the selected open bills' sum exactly (SETTLEMENT_MISMATCH); each bill open on that account (BILL_NOT_OPEN). The payee is the account.
+// settlement: {id, campus, settles_account (a credit account of this school), amount_paise, narration?, file_id?} and EITHER
+//   up_to (ISO date): every open bill of that pump dated on or before it (V2, 28 Nov: the game sends no list; a fortnight can be hundreds
+//                     of fills), OR bills (ids, list or comma text): exactly those (each open on that account, else BILL_NOT_OPEN).
+// amount = the bills' sum exactly (SETTLEMENT_MISMATCH: also catches a bill that arrived after the clerk looked). The payee is the account.
 function officeSettlementAdd_(ctx, data, ss, id) {
   const acct = officeAccount_(String(data.settles_account));
   if (!acct || acct.kind !== 'credit' || acct.campus !== data.campus) throw new Error('SETTLEMENT_ACCOUNT_REQUIRED');
-  const picked = (Array.isArray(data.bills) ? data.bills : String(data.bills || '').split(',')).map(function (b) { return String(b).trim(); }).filter(Boolean);
-  if (!picked.length || picked.some(function (b, i) { return picked.indexOf(b) !== i; })) throw officeCoded_('BILLS_REQUIRED');
-  const open = {};
-  officeCreditBills_(data.campus).forEach(function (x) { if (!x.request && officeRowAccount_(x.row) === acct.id) open[x.row.id] = x.row; });
-  if (picked.some(function (b) { return !open[b]; })) throw officeCoded_('BILL_NOT_OPEN');
+  const open = {}, openIds = [];
+  officeCreditBills_(data.campus).forEach(function (x) { if (!x.request && officeRowAccount_(x.row) === acct.id) { open[x.row.id] = x.row; openIds.push(x.row.id); } });
+  let picked;
+  if (!officeBlank_(data.up_to)) {
+    if (!officeIsoDate_(String(data.up_to))) throw new Error('BAD_DATE');
+    picked = openIds.filter(function (b) { return open[b].entry_date <= String(data.up_to); });
+    if (!picked.length) throw officeCoded_('BILLS_REQUIRED');
+  } else {
+    picked = (Array.isArray(data.bills) ? data.bills : String(data.bills || '').split(',')).map(function (b) { return String(b).trim(); }).filter(Boolean);
+    if (!picked.length || picked.some(function (b, i) { return picked.indexOf(b) !== i; })) throw officeCoded_('BILLS_REQUIRED');
+    if (picked.some(function (b) { return !open[b]; })) throw officeCoded_('BILL_NOT_OPEN');
+  }
   if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise)) throw new Error('BAD_AMOUNT');
   const sum = picked.reduce(function (n, b) { return n + Number(open[b].amount_paise); }, 0);
   if (data.amount_paise !== sum) throw officeCoded_('SETTLEMENT_MISMATCH');
   const fileId = officeBlank_(data.file_id) ? '' : String(data.file_id);
   if (fileId && !officeFileExists_(data.campus, fileId)) throw officeCoded_('FILE_MISSING');
   officeAppend_(ss, 'PayRequests', { id: id, campus: data.campus, entry_date: officeToday_(), payee: acct.label, amount_paise: sum, category: 'credit_settlement',
-    narration: String(data.narration || '').trim().slice(0, 300) || picked.length + ' bill' + (picked.length === 1 ? '' : 's'), file_id: fileId, charged_to: data.campus,
+    narration: String(data.narration || '').trim().slice(0, 300) || picked.length + ' bill' + (picked.length === 1 ? '' : 's') + (officeBlank_(data.up_to) ? '' : ' up to ' + data.up_to), file_id: fileId, charged_to: data.campus,
     settles_account: acct.id, bills: picked.join(',') }, ctx.caller, { action: 'payreq.add', campus: data.campus });
   return { id: id, duplicate: false };
 }

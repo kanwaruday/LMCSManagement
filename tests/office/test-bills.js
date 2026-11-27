@@ -109,5 +109,18 @@ module.exports = function run(t) {
     assert.ok(seen.length >= 3 && seen.every(([, l]) => l === true), JSON.stringify(seen));
     assert.equal(held, false, 'released after each call');
   });
+
+  t.test('settle by pump + up-to date (V2, 28 Nov): the server picks every open bill on or before it; the amount must still match; nothing open is BILLS_REQUIRED', () => {
+    const h = fresh();
+    const up = (o) => settle(h, Object.assign({ id: 'u1', bills: undefined, up_to: '2026-11-20', amount_paise: 1390000 }, o));
+    assert.equal(up({ amount_paise: 1510000 }).code, 'SETTLEMENT_MISMATCH', 'the total the clerk saw must be what the bills add up to');
+    assert.equal(up({ up_to: '2026-11-13' }).code, 'BILLS_REQUIRED', 'no bill that old');
+    assert.equal(up({ up_to: '2026-11-31' }).error, 'BAD_DATE');
+    assert.equal(up({}).duplicate, false);
+    const q = h.call('payreq.list', { campus: 'LMS1' }, 'fh-token').requests[0];
+    assert.deepEqual([q.bills, q.amount_paise, q.narration], [['b1', 'b2'], 1390000, '2 bills up to 2026-11-20']);
+    assert.equal(up({ id: 'u2', up_to: '2026-11-27', amount_paise: 120000 }).duplicate, false, 'the next fortnight picks only what is still open (b3), not pump2\'s c1');
+    assert.deepEqual(h.call('payreq.list', { campus: 'LMS1' }, 'fh-token').requests.find((r) => r.id === 'u2').bills, ['b3']);
+  });
 };
 
