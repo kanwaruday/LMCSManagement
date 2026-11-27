@@ -44,11 +44,7 @@ and fill each `scriptId`. The remote `appsscript.json` and any remote-only files
   was renamed `allowlistDoGet_`, and its actions were renamed `list`/`add`/`edit`/`delete` →
   `allowlist_list`/`allowlist_add`/`allowlist_edit`/`allowlist_delete` — `staff-management-api.gs`'s
   own Directory action is *also* named `list`, a real collision once both share one action
-  namespace. **Security trade-off, accepted by Uday:** this file's OLD standalone deployment was
-  domain-restricted to `lms.org.in`; this project's deployment is `Anyone`, and `allowlist_list`
-  has no token check of its own — so the list of every Principal/Coordinator/Owner's
-  email/name/campusId/role is now fetchable by anyone with the URL (visible in this public repo),
-  not just `lms.org.in` accounts. Writes (`allowlist_add`/`edit`/`delete`) are unaffected — still
+  namespace. **Security (updated 26 Nov, 8a5470f4):** this project's deployment is `Anyone`, but `allowlist_list` is gated in `doGet()` (employee-roster.gs): `ROSTER_GAME_KEY` sees the whole list, a verified Google ID token sees only the caller's own entry, anything else is refused (tests/roster/test-roster-lock.js). Writes (`allowlist_add`/`edit`/`delete`) are unaffected — still
   gated by a verified Google ID token against `ADMIN_EMAILS`, regardless of deployment access
   settings.
 

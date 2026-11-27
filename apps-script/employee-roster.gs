@@ -179,8 +179,8 @@ function empSubjectLabel(code) {
 // was its own project. principal-allowlist.gs's ALLOWLIST_ACTIONS_
 // (allowlist_list/allowlist_add/allowlist_edit/allowlist_delete) go
 // through allowlistDoGet_() -- writes are still gated the same way
-// they always were, but allowlist_list itself has NO token check and
-// this project's deployment is "Anyone", unlike that file's old
+// they always were. allowlist_list is gated in doGet() below (since 26 Nov, 8a5470f4: ROSTER_GAME_KEY, or a verified token that sees only its
+// own entry; tests/roster/test-roster-lock.js). The deployment is "Anyone", unlike that file's old
 // domain-restricted deployment -- see that file's header for the
 // trade-off Uday explicitly accepted merging it in.
 const STAFF_ACTIONS_ = ['nextcode', 'list', 'detail', 'addnewhire', 'starthire', 'joinhire', 'transfer', 'markinactive', 'documentstatus', 'uploadstatus', 'verificationqueue', 'reassigncertificate', 'autoresolvequeue', 'salaryfullrecord', 'installjobrolesync', 'bumpincrement', 'docrules', 'savedocrules'];
@@ -191,8 +191,8 @@ const ROSTER_SUPPORT_READS_ = ['roster', 'employees', 'designations', 'drivechec
 // 26 Nov SECURITY (an unauthenticated GET returned the staff roster): the read actions are no longer public. A data read needs
 // ROSTER_GAME_KEY (?key=, constant-time; server to server only, never in browser JS) or a verified Google ID token of someone on the
 // Allowlist (?idToken=, what the browser pages hold). There is no default action. Open, booleans only: ?op=hrSetupStatus and ?op=ping.
-// The staff-management actions and the allowlist writes keep their own token gates; allowlist_list is the one read left as it was
-// (the sign-in screen reads it before anyone has a token: a separate change, flagged to V2).
+// The staff-management actions and the allowlist writes keep their own token gates; allowlist_list is gated in doGet() below: the key
+// sees all of it, a verified token sees only its own entry (all the sign-in screen reads).
 function rosterSameKey_(want, got) {
   if (!want || typeof got !== 'string' || want.length !== got.length) return false;
   let d = 0;
