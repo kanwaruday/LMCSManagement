@@ -19,10 +19,10 @@ const fixture = {
 const J = (x) => JSON.parse(JSON.stringify(x));
 
 module.exports = function run(t) {
-  const fresh = () => {
+  const fresh = ({ unsealed = [] } = {}) => { // unsealed: schools whose book has no opening yet (the seal gate)
     const h = boot(fixture);
     h.addConfig();
-    ['LMS1', 'LMS2', 'HES'].forEach((c) => h.addBook(c, '2026-27'));
+    ['LMS1', 'LMS2', 'HES'].forEach((c) => h.addBook(c, '2026-27', { opening: !unsealed.includes(c) }));
     h.setNow(new Date('2026-10-21T10:00:00Z'));
     const cfg = h.ctx.officeConfigBook_();
     [['sbi-hes', 'bank', 'HES', 'true'], ['hdfc-lms1', 'bank', 'LMS1', 'true'], ['old-lms2', 'bank', 'LMS2', 'false'], ['pump1', 'credit', 'LMS1', 'true']]
@@ -34,6 +34,18 @@ module.exports = function run(t) {
   const xfer = (h, o, tok) => h.call('fund.transfer', Object.assign({ id: 't1', date: '2026-10-20', from_account: 'bank:LMS1', to_account: 'sbi-hes', amount_paise: 500000, reference: 'UTR123' }, o), tok || 'fh-token');
   const rows = (h, c) => h.ctx.officeRows_(h.ctx.officeOpen_(c, '2026-27'), 'DayBook');
   const bank = (h, c, date) => h.call('daybook.balances', { campus: c, date: date || '2026-10-21' }, 'owner-token').closing;
+
+  t.test('seal gate: a transfer into or out of an unsealed new book is OPENING_NOT_SEALED and writes neither leg (never half a transfer)', () => {
+    const into = fresh({ unsealed: ['HES'] });
+    assert.equal(xfer(into).error, 'OPENING_NOT_SEALED');
+    assert.deepEqual([rows(into, 'LMS1').length, rows(into, 'HES').length], [0, 0], 'the OUT leg is not written before the IN book is checked');
+    const out = fresh({ unsealed: ['LMS1'] });
+    assert.equal(xfer(out).error, 'OPENING_NOT_SEALED');
+    assert.deepEqual([rows(out, 'LMS1').length, rows(out, 'HES').length], [0, 0]);
+    into.call('opening.set', { id: 'op', campus: 'HES', balances: [{ mode: 'bank', amount_paise: 0 }] }, 'fh-token');
+    assert.equal(xfer(into).success, true, 'the same transfer goes through once the opening is set');
+    assert.deepEqual([rows(into, 'LMS1').length, rows(into, 'HES').length], [1, 1]);
+  });
 
   t.test('fund.transfer writes an OUT leg in the from book and an IN leg in the to book, linked', () => {
     const h = fresh();
