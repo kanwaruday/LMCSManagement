@@ -272,6 +272,33 @@ test('the daily sweep trashes only our tagged files that no live message holds, 
   noPii(t);
 });
 
+test('the sweep refuses on an empty list and on a sudden drop, and says which; a normal run sets the baseline; accepting a real drop works', () => {
+  let liveIds = [];
+  const t = setup({ live: () => liveIds });
+  t.rows[U] = t.row({ kind: 'document', mime: 'application/pdf', bytes: 500 });
+  const f1 = t.upload(t.ticket().data.url, bytes(500)).fileId;
+  t.tick(49 * 3600e3);
+  assert.deepStrictEqual(t.J(t.ctx.msgFileDaily()), { orphans: 0, kept: 0, refused: 'empty_list' });   // empty: even an old orphan is left alone
+  assert.ok(!t.store[f1].trashed && t.logs.some((l) => l.startsWith('msg-file: sweep_refused empty_list')));
+  liveIds = Array.from({ length: 10 }, (_, i) => 'DRIVEid' + String(i).padStart(8, '0'));
+  assert.deepStrictEqual(t.J(t.ctx.msgFileDaily()), { orphans: 1, kept: 0 });   // a normal list sweeps, and sets the baseline (10)
+  assert.ok(t.store[f1].trashed);
+  t.rows[U2] = t.row({ kind: 'document', mime: 'application/pdf', bytes: 500 });
+  const f2 = t.upload(t.ticket({ params: { upload: U2 } }).data.url, bytes(500)).fileId; t.tick(49 * 3600e3);
+  liveIds = liveIds.slice(0, 4);   // 10 -> 4: under half
+  assert.deepStrictEqual(t.J(t.ctx.msgFileDaily()), { orphans: 0, kept: 0, refused: 'sudden_drop' });
+  assert.ok(!t.store[f2].trashed && t.logs.some((l) => l.startsWith('msg-file: sweep_refused sudden_drop (4 now, 10 last run)')));
+  liveIds = liveIds.concat(['DRIVEid00000100', 'DRIVEid00000101']);   // 6 of 10: not under half, sweeps
+  assert.strictEqual(t.J(t.ctx.msgFileDaily()).orphans, 1);
+  liveIds = liveIds.slice(0, 2);   // 6 -> 2: refused until accepted
+  assert.strictEqual(t.J(t.ctx.msgFileDaily()).refused, 'sudden_drop');
+  assert.deepStrictEqual(t.J(t.ctx.msgFileAcceptLive()), { ok: true, count: 2 });
+  assert.strictEqual(t.J(t.ctx.msgFileDaily()).refused, undefined);
+  liveIds = [];
+  assert.deepStrictEqual(t.J(t.ctx.msgFileAcceptLive()), { ok: false });   // an empty list is never accepted as normal
+  noPii(t);
+});
+
 test('installMsgFileTriggers: one daily sweep and one 10-minute preview pass, never doubled', () => {
   const t = setup();
   t.ctx.installMsgFileTriggers(); t.ctx.installMsgFileTriggers();

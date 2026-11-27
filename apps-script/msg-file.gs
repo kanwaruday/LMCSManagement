@@ -272,11 +272,20 @@ function gameMsgFileRead_(b) {
 }
 
 // ── 5. the daily sweep ─────────────────────────────────────────────
+/** may the sweep trash on a live list of n ids, when the last good run saw `last`? Never on an empty list, nor one under half the last count (27 Nov
+ *  audit A #8: one bad read must not trash every chat file). Returns the case it hit, or null. A real, lasting drop: run msgFileAcceptLive(). */
+function msgLiveVerdict_(n, last) {
+  if (n === 0) return 'empty_list';
+  if (last > 0 && n < last * 0.5) return 'sudden_drop';
+  return null;
+}
 function msgFileDaily() {
   const out = { orphans: 0, kept: 0 };
   const r = msgDrive_('get', '');
   const live = r && r.code === 200 && r.body && Array.isArray(r.body.ids) && r.body.ids.every(function (x) { return MSG_DRIVE_ID_.test(String(x)); }) ? r.body.ids : null;
   if (!live) { console.error('msg-file: live_list_unavailable'); return out; }   // never trash on a list that can't be read
+  const last = Number(msgProps_().getProperty('MSG_LIVE_LAST') || 0), why = msgLiveVerdict_(live.length, last);
+  if (why) { console.error('msg-file: sweep_refused ' + why + ' (' + live.length + ' now, ' + last + ' last run)'); out.refused = why; return out; }   // counts only; nothing is trashed
   const known = JSON.parse(msgProps_().getProperty('MSG_FOLDERS') || '{}');
   Object.keys(known).forEach(function (k) {
     let folder;
@@ -288,8 +297,17 @@ function msgFileDaily() {
       else out.kept++;
     }
   });
+  msgProps_().setProperty('MSG_LIVE_LAST', String(live.length));   // the baseline for the next run: only a list that was allowed to sweep sets it
   console.log('msg-file: orphans ' + out.orphans + ', kept ' + out.kept);
   return out;
+}
+/** Uday runs this once if sweep_refused sudden_drop is a real, lasting drop (files really were deleted): the next run takes today's count as normal */
+function msgFileAcceptLive() {
+  const r = msgDrive_('get', '');
+  const n = r && r.code === 200 && r.body && Array.isArray(r.body.ids) ? r.body.ids.length : -1;
+  if (n < 1) { console.error('msg-file: accept_failed'); return { ok: false }; }
+  msgProps_().setProperty('MSG_LIVE_LAST', String(n));
+  return { ok: true, count: n };
 }
 
 function installMsgFileTriggers() {
