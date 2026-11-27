@@ -73,6 +73,8 @@ const { PAGES } = env0.window.LMCS_DATASRC;
 // The links live in the backend now (apps-script/principal-allowlist.gs DATASRC_LINKS_), never in the public pages.
 const allowGs = fs.readFileSync(path.join(root, 'apps-script/principal-allowlist.gs'), 'utf8');
 const SRC = vm.runInNewContext('(' + allowGs.match(/const DATASRC_LINKS_ = (\{[\s\S]*?\n\});/)[1] + ')');
+for (const v of Object.values(SRC)) v[1] = v[1].replace('{CLASSIC}', 'https://classic.example.test/'); // as the backend fills it in
+assert.ok(!/github\.com\/kanwaruday/.test(allowGs.replace(/\/\/.*$/gm, '')), 'no runtime link to the (private) repo');
 // the same links as a fake, synchronous datasrcLinks() for the DOM runs below
 const fakeLinks = () => ({ then(f) { f(SRC); return this; } });
 

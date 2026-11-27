@@ -217,7 +217,7 @@ function verifiedTokenEmail_(idToken) {
 
 // Data-source links (Google Sheets and calendars) for the Owner/Coordinator "📄 sheet ↗" rows on the pages. They live HERE, not in the static pages
 // (the pages are public; the repo is private): assets/datasrc.js and three pages fetch them through the datasrc_links action, which answers only a verified
-// Owner/Coordinator. One literal on purpose: tests/datasrc reads it. Add a key here, then use it from PAGES in assets/datasrc.js.
+// Owner/Coordinator. '{CLASSIC}' = the classic host (classicBase_()), filled in when served. One literal on purpose: tests/datasrc reads it. Add a key here, then use it from PAGES in assets/datasrc.js.
 const DATASRC_LINKS_ = {
   approvals: ['Approvals sheet','https://docs.google.com/spreadsheets/d/1Tr4Rfc6DN698eeGVjuCoXfSRR-NhBTWJibR00Ibj6P4/edit'],
   allowlist: ['Access list sheet','https://docs.google.com/spreadsheets/d/1NZu0ElismFytG395Nxjz29vAz7OfkmJtZhs70bOwT58/edit'],
@@ -238,7 +238,7 @@ const DATASRC_LINKS_ = {
   cal4: ['LMS 4 calendar','https://calendar.google.com/calendar/u/0/r?cid=lms.org.in_snflpd3f357jv8l380s8sc4ju0%40group.calendar.google.com'],
   cal5: ['LMS 5 calendar','https://calendar.google.com/calendar/u/0/r?cid=c_d367ca2cb9bbab4f6a5b6864d6e03c28fbfccf02b5212621e89daf2f9f3f8523%40group.calendar.google.com'],
   cal6: ['LMS 6 calendar','https://calendar.google.com/calendar/u/0/r?cid=c_3db6cb2edb78d889cf166771c426f0fe3ba78b04cf9ca8e566329c888d023635%40group.calendar.google.com'],
-  timetable: ['Timetable data','https://github.com/kanwaruday/LMCSManagement/blob/main/teacher/data/timetable.json'],
+  timetable: ['Timetable data','{CLASSIC}teacher/data/timetable.json'],
   calSchoolLMS1: ["School's calendar",'https://calendar.google.com/calendar/u/0/r?cid=c_88402c40e6c9a435cbed4810bfae632d781ac9e7ca167b5435e4a9586bda7595%40group.calendar.google.com'],
   calSchoolLMS2: ["School's calendar",'https://calendar.google.com/calendar/u/0/r?cid=c_25n5qbggh7u9s5o6vq31iho4vc%40group.calendar.google.com'],
   calSchoolLMS3: ["School's calendar",'https://calendar.google.com/calendar/u/0/r?cid=c_25n5qbggh7u9s5o6vq31iho4vc%40group.calendar.google.com'],
@@ -263,7 +263,10 @@ function datasrcLinksFor_(idToken) {
       if (en.email === email && /(^|,)\s*(owner|coordinator)\s*(,|$)/i.test(en.role)) ok = true;
     });
   }
-  return ok ? { success: true, links: DATASRC_LINKS_ } : { success: false, error: 'Not authorized' };
+  if (!ok) return { success: false, error: 'Not authorized' };
+  const base = classicBase_(), links = {};
+  Object.keys(DATASRC_LINKS_).forEach(function (k) { links[k] = [DATASRC_LINKS_[k][0], DATASRC_LINKS_[k][1].replace('{CLASSIC}', base)]; });
+  return { success: true, links: links };
 }
 
 // jsonOut() is NOT redefined here -- employee-roster.gs's identical
