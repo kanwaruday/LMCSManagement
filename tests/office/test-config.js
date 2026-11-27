@@ -20,7 +20,7 @@ module.exports = function run(t) {
   const fresh = () => {
     const h = boot(fixture);
     h.addConfig();
-    h.addBook('LMS1', '2026-27');
+    h.addBook('LMS1', '2026-27', { opening: false }); // these tests set the opening themselves
     h.setNow(new Date('2026-10-21T10:00:00Z'));
     return h;
   };

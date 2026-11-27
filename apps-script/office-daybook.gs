@@ -61,6 +61,9 @@ function officeDaybookAdd_(ctx, data) {
   if (officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); })) return { id: String(data.id), duplicate: true };
   const waiting = officeRows_(ss, 'Pending').filter(function (r) { return r.id === String(data.id); })[0];
   if (waiting) return { id: waiting.id, duplicate: true, pending: !officeDecision_(ss, waiting.id) };
+  // V2, 27 Nov: a book takes its first entry only after the school's opening is set (the game writes it at Seal: opening.set). A book
+  // that already has entries or a closed day keeps working: opening.set is locked for it (OPENING_LOCKED), so refusing would strand it.
+  if (!officeHasOpening_(ss) && !officeRows_(ss, 'DayBook').length && !officeRows_(ss, 'Closes').length) throw officeCoded_('OPENING_NOT_SEALED');
   // typeof number only: "1,234.50" and other strings never reach arithmetic; floats and 0/negatives fail safe-integer > 0.
   if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise) || data.amount_paise <= 0) throw new Error('BAD_AMOUNT');
   const cat = officeCategory_(data.category);

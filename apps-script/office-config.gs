@@ -402,6 +402,11 @@ function officeOpeningSet_(ctx, data) {
   return { opening: officeOpening_(ss) };
 }
 
+// The school's own opening (opening.set rows; per-account openings don't count) is in this book.
+function officeHasOpening_(ss) {
+  return officeRows_(ss, 'Opening').some(function (r) { return !r.account; });
+}
+
 // Opening balances in paise; zero when absent, the latest row per mode/bucket wins.
 function officeOpening_(ss) {
   const o = { cash: { petty: 0, fee: 0, other: 0 }, bank: 0, upi: 0 };

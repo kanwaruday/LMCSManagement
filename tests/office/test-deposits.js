@@ -214,7 +214,7 @@ module.exports = function run(t) {
     const again = h.call('daybook.reverse', rev, 'clerk-token');
     assert.deepEqual([again.success, again.duplicate], [true, true], 'not ALREADY_REVERSED (M4)');
     // opening.set saved on the last day of a fresh year book, retried after 1 April.
-    const g = boot(fixture); g.addConfig(); g.addBook('LMS1', '2026-27'); g.addBook('LMS1', '2027-28');
+    const g = boot(fixture); g.addConfig(); g.addBook('LMS1', '2026-27', { opening: false }); g.addBook('LMS1', '2027-28', { opening: false });
     g.setNow(new Date('2027-03-31T06:00:00Z'));
     const op = { id: 'op1', campus: 'LMS1', balances: [{ mode: 'bank', amount_paise: 700 }] };
     assert.equal(g.call('opening.set', op, 'fh-token').success, true);

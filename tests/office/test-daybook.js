@@ -19,9 +19,9 @@ const J = (x) => JSON.parse(JSON.stringify(x));
 
 module.exports = function run(t) {
   // lane-d: cash can't go below zero now, so each school's cash buckets start with money in them (seed: false for exact-balance tests)
-  const fresh = ({ seed = true } = {}) => {
+  const fresh = ({ seed = true, opening = true } = {}) => {
     const h = boot(fixture);
-    h.addConfig(); h.addBook('LMS1', '2026-27'); h.addBook('LMS1', '2025-26');
+    h.addConfig(); h.addBook('LMS1', '2026-27', { opening }); h.addBook('LMS1', '2025-26');
     h.setNow(new Date('2026-10-21T10:00:00Z'));
     h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Files', { id: 'slip', campus: 'LMS1', drive_id: 'D1', name: 's.jpg' });
     if (seed) ['petty', 'fee', 'other'].forEach((b) => h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'Opening', { id: 'seed-' + b, campus: 'LMS1', mode: 'cash', bucket: b, amount_paise: 1000000000 }));
@@ -698,10 +698,11 @@ module.exports = function run(t) {
   });
 
   t.test('lane-d go-live: officeGoLiveCheck counts rows per school book (no amounts) and says which can still take an opening', () => {
-    const h = fresh({ seed: false });
+    const h = fresh({ seed: false, opening: false });
     let out = h.ctx.officeGoLiveCheck();
     assert.ok(out.some((l) => /^LMS1_2026-27: DayBook rows 0 \(money out 0\), Closes 0, school Opening rows 0 → opening can be set$/.test(l)), out.join('\n'));
-    assert.equal(add(h, { id: 'g1', entry_date: '2026-10-20' }).success, true);
+    // a book from before the seal gate: an entry already in it with no opening (daybook.add now refuses that first entry)
+    h.ctx.officeAppend_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook', { id: 'g1', campus: 'LMS1', entry_date: '2026-10-20', direction: 'IN', amount_paise: 100 }, { email: 'clerk@example.org' }, {});
     out = h.ctx.officeGoLiveCheck();
     const line = out.find((l) => l.startsWith('LMS1_2026-27'));
     assert.match(line, /DayBook rows 1 \(money out 0\).*entries 2026-10-20 to 2026-10-20 → OPENING LOCKED/);

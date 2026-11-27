@@ -150,8 +150,13 @@ function boot(fixture, opts) {
   const call = (action, data, token) => JSON.parse(ctx.officeHandle_(action, token === undefined ? 'owner-token' : token, data || {}));
   return {
     ctx, call, books, counter, locks, props, drive, mail, triggers,
-    // Registers an empty fake book as the Script Property OFFICE_SS_<CAMPUS>_<FY>; returns it.
-    addBook: (campus, fy) => { const id = 'BOOK-' + campus + '-' + fy; props['OFFICE_SS_' + campus + '_' + fy] = id; return (books[id] = makeOfficeBook(counter)); },
+    // Registers a fake book as the Script Property OFFICE_SS_<CAMPUS>_<FY>; returns it. It holds a ₹0 UPI opening row (the school's opening
+    // is set, so daybook.add takes entries: V2 27 Nov) unless { opening: false } (a book before its opening, e.g. the seal gate or go-live tests).
+    addBook: (campus, fy, { opening = true } = {}) => {
+      const id = 'BOOK-' + campus + '-' + fy; props['OFFICE_SS_' + campus + '_' + fy] = id; books[id] = makeOfficeBook(counter);
+      if (opening) ctx.officeWriteRow_(ctx.officeOpen_(campus, fy), 'Opening', { id: 'harness-opening', campus, mode: 'upi', bucket: '', amount_paise: 0 });
+      return books[id];
+    },
     // Registers an empty fake Office Config book as OFFICE_CONFIG_SS; returns it.
     addConfig: () => { props.OFFICE_CONFIG_SS = 'CONFIG-FAKE'; return (books['CONFIG-FAKE'] = makeOfficeBook(counter)); },
     // Registers an empty fake book under an id only (for fakes of SpreadsheetApp.create).

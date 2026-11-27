@@ -92,7 +92,7 @@ module.exports = function run(t) {
   });
 
   t.test('officeImportRows_ appends once, idempotently, and imported days read as closed', () => {
-    const h = boot(); h.addConfig(); const book = h.addBook('LMS1', '2026-27'); h.setNow(new Date('2026-10-21T10:00:00Z'));
+    const h = boot(); h.addConfig(); const book = h.addBook('LMS1', '2026-27', { opening: false }); h.setNow(new Date('2026-10-21T10:00:00Z'));
     const b = build();
     assert.throws(() => h.ctx.officeImportRows_('LMS1', '2026-27', 'DayBook', b.daybook), /OPENING_FIRST/, 'opening must be loaded first');
     assert.strictEqual(h.ctx.officeImportRows_('LMS1', '2026-27', 'Opening', b.openings['2026-27']).appended, 5);
