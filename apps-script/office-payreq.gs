@@ -33,7 +33,8 @@ function officePayRequests_(campus) {
         if (e.state === 'proof') proof = e.proof_file_id;
       });
       out.push({ id: r.id, campus: r.campus, entry_date: r.entry_date, payee: r.payee, amount_paise: r.amount_paise, category: r.category, narration: r.narration,
-        file_id: r.file_id, charged_to: r.charged_to, created_at: r.created_at, created_by: r.created_by, state: state, decided_by: decidedBy, reason: reason,
+        file_id: r.file_id, charged_to: r.charged_to, created_at: r.created_at, created_by: r.created_by, settles_account: r.settles_account || '',
+        bills: String(r.bills || '').split(',').filter(Boolean), state: state, decided_by: decidedBy, reason: reason,
         bank_ref: bankRef, proof_file_id: proof, entry_id: entry, paid_date: paidDate, proof_pending: state === 'paid' && !proof, _book: b });
     });
   });
@@ -51,6 +52,7 @@ function officePayRequestAdd_(ctx, data) {
   if (!data.id) throw new Error('MISSING_ID');
   const ss = officeRecentBooks_(data.campus)[0], id = String(data.id);
   if (officePayRequests_(data.campus).some(function (r) { return r.id === id; })) return { id: id, duplicate: true };
+  if (!officeBlank_(data.settles_account)) return officeSettlementAdd_(ctx, data, ss, id);
   const payee = String(data.payee || '').trim();
   if (payee.length < 2 || payee.length > 200) throw officeCoded_('PAYEE_REQUIRED');
   if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise) || data.amount_paise < 100) throw new Error('BAD_AMOUNT');
@@ -104,14 +106,16 @@ function officePayRequestPaid_(ctx, data) {
   const proof = officeBlank_(data.proof_file_id) ? '' : String(data.proof_file_id);
   // audit #9 (V2, 28 Nov): every payment has its bank proof when it is marked paid, and the proof is not the bill (payreq.proof only replaces one)
   if (!proof) throw officeCoded_('FILE_REQUIRED');
-  if (proof === String(r.file_id)) throw officeCoded_('PROOF_IS_BILL');
+  if (proof === String(r.file_id) || (r.bills.length && officeBillFiles_(r).indexOf(proof) !== -1)) throw officeCoded_('PROOF_IS_BILL');
   if (!officeFileExists_(data.campus, proof)) throw officeCoded_('FILE_MISSING');
   const date = officeBlank_(data.paid_date) ? officeToday_() : String(data.paid_date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('BAD_DATE');
   if (date > officeToday_()) throw new Error('FUTURE_DATE');
   const ss = officeOpen_(data.campus, officeFy_(date)), entryId = 'pay-' + r.id;
-  officeDaybookWrite_(ss, ctx, { id: entryId, campus: data.campus, entry_date: date, direction: 'OUT', mode: 'bank', bucket: '', category: r.category, amount_paise: r.amount_paise,
-    payee: r.payee, narration: (r.narration ? r.narration + ' · ' : '') + 'paid by bank, ref ' + ref, file_id: r.file_id, reverses: '', account: acct.id, charged_to: r.charged_to, source: 'live' }, 'payreq.paid', r.created_by);
+  // a pump settlement settles its pump's credit account (ledger owed drops); the request id names the bills it settled
+  const settle = r.settles_account ? { settles_account: r.settles_account, settles: r.id } : {};
+  officeDaybookWrite_(ss, ctx, Object.assign({ id: entryId, campus: data.campus, entry_date: date, direction: 'OUT', mode: 'bank', bucket: '', category: r.category, amount_paise: r.amount_paise,
+    payee: r.payee, narration: (r.narration ? r.narration + ' · ' : '') + 'paid by bank, ref ' + ref, file_id: r.file_id, reverses: '', account: acct.id, charged_to: r.charged_to, source: 'live' }, settle), 'payreq.paid', r.created_by);
   officePayEvent_(ctx, r, data.id, 'paid', { bank_ref: ref, proof_file_id: proof, paid_date: date, entry_id: entryId });
   return { request_id: r.id, entry_id: entryId, proof_pending: !proof, duplicate: false };
 }
@@ -132,3 +136,66 @@ function officePayRequestProof_(ctx, data) {
 function officeProofPending_(campus, date) {
   return officePayRequests_(campus).some(function (r) { return r.proof_pending && r.paid_date <= date; });
 }
+
+// ── Bills to pay (Uday, 27 Nov: fuel on credit, settled fortnightly by Pawan Sir) ──────────────────────────────────────────────
+// A bill is a live credit row on one of the school's supplier accounts (a pump first): OUT, not a reversal, not reversed. It is OPEN
+// until a live payment request (requested / approved) names it, IN A REQUEST while one does, and SETTLED once that request is paid.
+// Nothing is rewritten: the settlement is the request (PayRequests.bills) and its paid event.
+
+// every credit bill of this school in the recent books, with its request (if any), oldest first
+function officeCreditBills_(campus) {
+  const rows = officeRecentBooks_(campus).reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, []);
+  const reversed = {}; rows.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
+  const inReq = {};
+  officePayRequests_(campus).forEach(function (q) { if (q.state !== 'rejected') q.bills.forEach(function (b) { inReq[b] = q; }); });
+  return rows.filter(function (r) { return r.campus === campus && r.direction === 'OUT' && r.mode === 'credit' && !r.reverses && !reversed[r.id]; })
+    .map(function (r) { const q = inReq[r.id]; return { row: r, request: q || null }; })
+    .sort(function (a, b) { return a.row.entry_date < b.row.entry_date ? -1 : a.row.entry_date > b.row.entry_date ? 1 : 0; });
+}
+function officeBillFiles_(q) {
+  const want = {}; q.bills.forEach(function (b) { want[b] = true; });
+  return officeRecentBooks_(q.campus).reduce(function (acc, b) { return acc.concat(officeRows_(b, 'DayBook')); }, [])
+    .filter(function (r) { return want[r.id] && r.file_id; }).map(function (r) { return String(r.file_id); });
+}
+
+// settlement: {id, campus, settles_account (a credit account of this school), bills (ids, list or comma text), amount_paise, narration?, file_id?}
+// amount = the selected open bills' sum exactly (SETTLEMENT_MISMATCH); each bill open on that account (BILL_NOT_OPEN). The payee is the account.
+function officeSettlementAdd_(ctx, data, ss, id) {
+  const acct = officeAccount_(String(data.settles_account));
+  if (!acct || acct.kind !== 'credit' || acct.campus !== data.campus) throw new Error('SETTLEMENT_ACCOUNT_REQUIRED');
+  const picked = (Array.isArray(data.bills) ? data.bills : String(data.bills || '').split(',')).map(function (b) { return String(b).trim(); }).filter(Boolean);
+  if (!picked.length || picked.some(function (b, i) { return picked.indexOf(b) !== i; })) throw officeCoded_('BILLS_REQUIRED');
+  const open = {};
+  officeCreditBills_(data.campus).forEach(function (x) { if (!x.request && officeRowAccount_(x.row) === acct.id) open[x.row.id] = x.row; });
+  if (picked.some(function (b) { return !open[b]; })) throw officeCoded_('BILL_NOT_OPEN');
+  if (typeof data.amount_paise !== 'number' || !Number.isSafeInteger(data.amount_paise)) throw new Error('BAD_AMOUNT');
+  const sum = picked.reduce(function (n, b) { return n + Number(open[b].amount_paise); }, 0);
+  if (data.amount_paise !== sum) throw officeCoded_('SETTLEMENT_MISMATCH');
+  const fileId = officeBlank_(data.file_id) ? '' : String(data.file_id);
+  if (fileId && !officeFileExists_(data.campus, fileId)) throw officeCoded_('FILE_MISSING');
+  officeAppend_(ss, 'PayRequests', { id: id, campus: data.campus, entry_date: officeToday_(), payee: acct.label, amount_paise: sum, category: 'credit_settlement',
+    narration: String(data.narration || '').trim().slice(0, 300) || picked.length + ' bill' + (picked.length === 1 ? '' : 's'), file_id: fileId, charged_to: data.campus,
+    settles_account: acct.id, bills: picked.join(',') }, ctx.caller, { action: 'payreq.add', campus: data.campus });
+  return { id: id, duplicate: false };
+}
+
+// {campus} -> the bills-to-pay register: per credit account of the school, open / in-request bills, owed and age (counts in paise, IST days)
+function officeBillsOpen_(ctx, data) {
+  const today = officeToday_(), day = function (d) { return Math.round((Date.parse(today + 'T00:00:00Z') - Date.parse(d + 'T00:00:00Z')) / 86400000); };
+  const bills = officeCreditBills_(data.campus).filter(function (x) { return !x.request || x.request.state !== 'paid'; });
+  const ledger = officeLedgerSummary_(ctx, { campus: data.campus, from: officeFy_(today).slice(0, 4) + '-04-01', to: today }).accounts;
+  let totalOpen = 0, totalReq = 0;
+  const accounts = officeAccounts_().filter(function (a) { return a.kind === 'credit' && a.campus === data.campus; }).map(function (a) {
+    const mine = bills.filter(function (x) { return officeRowAccount_(x.row) === a.id; });
+    const open = mine.filter(function (x) { return !x.request; }), req = mine.filter(function (x) { return x.request; });
+    const sum = function (xs) { return xs.reduce(function (n, x) { return n + Number(x.row.amount_paise); }, 0); };
+    const l = ledger.filter(function (y) { return y.id === a.id; })[0];
+    totalOpen += sum(open); totalReq += sum(req);
+    return { account: a.id, label: a.label, kind: 'credit', active: a.active !== false && a.active !== 'false', owed_paise: l ? l.owed_paise : null,
+      open_paise: sum(open), in_request_paise: sum(req), oldest_open_days: open.length ? day(open[0].row.entry_date) : null,
+      bills: mine.map(function (x) { const r = x.row; return { id: r.id, entry_date: r.entry_date, amount_paise: Number(r.amount_paise), vehicle: r.vehicle || '', litres_ml: r.litres_ml === '' ? null : Number(r.litres_ml),
+        supplier_bill_no: r.supplier_bill_no || '', file_id: r.file_id || '', age_days: day(r.entry_date), request_id: x.request ? x.request.id : '', request_state: x.request ? x.request.state : '' }; }) };
+  });
+  return { accounts: accounts, total_open_paise: totalOpen, total_in_request_paise: totalReq, as_of: today };
+}
+

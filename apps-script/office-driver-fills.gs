@@ -9,8 +9,7 @@
 // OFF until after the 31 Oct count: Script Property OFFICE_DRIVER_FILLS_TO_DAYBOOK must be 'on'. Otherwise the action refuses
 // (code DRIVER_FILLS_OFF) before it reads or writes anything.
 //
-// driverfill.daybook {campus, fill_id, account, bucket?} -> {id, duplicate}. account/bucket: the money account it was paid from
-// (a pump's credit account, or campus cash with its bucket), as daybook.add takes them.
+// driverfill.daybook {campus, fill_id, account} -> {id, duplicate}. account: the school's pump credit account (FUEL_ON_CREDIT otherwise).
 
 var OFFICE_DFL_TAB = 'Driver Fills';
 
@@ -41,16 +40,20 @@ function officeDriverFillDaybook_(ctx, data) {
   if (String(cell('Campus')) !== data.campus) throw new Error('NOT_FOUND'); // another campus's fill: as if absent
   if (String(cell('Status')) !== 'confirmed') throw officeCoded_('NOT_CONFIRMED');
   if (String(cell('Day Book Entry ID') || '')) return { id: String(cell('Day Book Entry ID')), duplicate: true };
+  // Uday, 27 Nov: "usually fuel is taken on credit, so the bills are submitted at the office but the payment is done together every
+  // fortnight by Pawan Sir". A fill is a credit bill on the school's pump account (never cash); the pump is settled by a payment request.
+  const pump = officeAccount_(String(data.account));
+  if (!pump || pump.kind !== 'credit' || !pump.active || pump.campus !== data.campus) throw officeCoded_('FUEL_ON_CREDIT');
 
   const id = 'dfl-' + fillId, when = cell('Filled At') instanceof Date ? cell('Filled At') : cell('Received');
   if (!(when instanceof Date) || !isFinite(when.getTime())) throw new Error('BAD_DATE');
   const entryDate = Utilities.formatDate(when, 'Asia/Kolkata', 'yyyy-MM-dd'), name = String(cell('Driver Name'));
   const fileId = officeDriverFillFile_(ctx, data.campus, id + '-bill', String(cell('Bill File ID')), 'bill', 'fuel-bill');
   const videoId = officeDriverFillFile_(ctx, data.campus, id + '-video', String(cell('Video File ID')), 'fuel_video', 'fuel-video');
-  const res = officeDaybookAdd_(Object.assign({}, ctx, { driverFill: true }), {   // a fill already pumped and billed: recorded, never refused for its size (see the limit check in daybook.add)
-    id: id, campus: data.campus, entry_date: entryDate, direction: 'OUT', category: 'fuel', account: data.account, mode: '', bucket: data.bucket || '',
+  const res = officeDaybookAdd_(ctx, {   // a credit bill: not a payment, so the cash limit never applies (credit is exempt in daybook.add)
+    id: id, campus: data.campus, entry_date: entryDate, direction: 'OUT', category: 'fuel', account: pump.id, mode: '', bucket: '',
     amount_paise: Math.round(Number(cell('Amount')) * 100), litres_ml: Math.round(Number(cell('Litres')) * 1000), odometer_km: Number(cell('Odometer')),
-    vehicle: String(cell('Reg')), file_id: fileId, video_file_id: videoId, payee: '', narration: 'Driver fill ' + fillId + (name ? ' (' + name + ')' : ''),
+    vehicle: String(cell('Reg')), file_id: fileId, video_file_id: videoId, payee: pump.label, narration: 'Driver fill ' + fillId + (name ? ' (' + name + ')' : ''),
   });
   sh.getRange(at + 1, col('Day Book Entry ID') + 1).setValue(res.id); // 'dfl-...': starts with a letter, never a formula
   return res;

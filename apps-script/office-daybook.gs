@@ -16,6 +16,7 @@ function officeDaybookActions_() {
     // lane-d (Uday, 26 Nov): payments above the cash limit are requests the Finance Head approves and pays by bank
     'payreq.add': { roles: ['FeeClerk', 'AdminManager', 'Principal', 'Owner'], write: true, run: officePayRequestAdd_ },
     'payreq.list': { roles: OFFICE_ALL_ROLES, write: false, run: officePayRequestList_ },
+    'bills.open': { roles: ['FeeClerk', 'AdminManager', 'FinanceHead', 'Owner'], write: false, run: officeBillsOpen_ },
     'payreq.decide': { roles: ['FinanceHead', 'Owner'], write: true, run: officePayRequestDecide_ },
     'payreq.paid': { roles: ['FinanceHead', 'Owner'], write: true, run: officePayRequestPaid_ },
     'payreq.proof': { roles: ['FinanceHead', 'Owner'], write: true, run: officePayRequestProof_ },
@@ -159,11 +160,11 @@ function officeDaybookAdd_(ctx, data) {
   // day's other cash to the same payee (no splitting a bill in two). The only way is a payment request (office-payreq.gs): the Finance Head approves,
   // pays by bank outside the portal and marks it paid with the bank ref and proof. (payreq.paid writes its row itself, not through here.)
   // audit #5 (V2, 28 Nov): the day's payments to the same payee add up across cash, bank and UPI, with the payee compared as one key.
-  const driverFill = !!(ctx && ctx.driverFill); // a driver's fuel fill is a record of fuel already pumped (office-driver-fills.gs), not a new payment
-  if (data.direction === 'OUT' && mode === 'cash' && !driverFill && !officePayeeKey_(data.payee)) throw officeCoded_('PAYEE_REQUIRED'); // every cash payment names who it is to (V2: cash outflows; bank is the Finance Head's or Owner's)
-  if (!driverFill) officeAssertWithinLimit_(ss, row);
+  // (28 Nov: no driver-fill bypass any more: a fill is a credit bill, and credit is not a payment, so neither check touches it)
+  if (data.direction === 'OUT' && mode === 'cash' && !officePayeeKey_(data.payee)) throw officeCoded_('PAYEE_REQUIRED'); // every cash payment names who it is to (V2: cash outflows; bank is the Finance Head's or Owner's)
+  officeAssertWithinLimit_(ss, row);
   // the approver's 7-day view: this payee paid above the limit over this day and the 6 before (still saved; the Finance Head sees it)
-  if (data.direction === 'OUT' && mode !== 'credit' && !driverFill
+  if (data.direction === 'OUT' && mode !== 'credit'
       && officeWeekOverLimit_(ss, row)) warnings.push('payee_week_over_limit');
   const saved = officeDaybookWrite_(ss, ctx, row, 'daybook.add');
   return warnings.length ? Object.assign({}, saved, { warnings: warnings }) : saved;

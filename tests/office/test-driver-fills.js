@@ -75,9 +75,21 @@ module.exports = function run(t) {
     assert.equal(go(h, { fill_id: 'Fnothere1' }).error, 'NOT_FOUND');
     assert.equal(go(h, { campus: 'LMS2' }, 'other-token').error, 'NOT_FOUND', 'another campus\'s fill');
     assert.equal(go(h, { campus: 'LMS2' }).error, 'FORBIDDEN_CAMPUS');
-    assert.equal(go(h, { account: 'nope' }).error, 'BAD_ACCOUNT');
+    assert.equal(go(h, { account: 'nope' }).error, 'FUEL_ON_CREDIT', 'not a pump credit account');
     assert.equal(go(h, { account: '' }).error, 'BAD_ACCOUNT', 'a blank account is never the campus bank');
     assert.equal(h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook').length, 0);
     assert.equal(h.dfl[1][15], '');
   });
+
+  t.test('fuel on credit (Uday, 27 Nov): a fill posts only to the school\'s pump account, payee = the pump; cash is FUEL_ON_CREDIT; above ₹5,000 is fine', () => {
+    const h = fresh(); h.props.OFFICE_DRIVER_FILLS_TO_DAYBOOK = 'on';
+    assert.equal(go(h, { account: 'cash:LMS1', bucket: 'petty' }).code, 'FUEL_ON_CREDIT', 'never cash');
+    assert.equal(go(h, { account: 'bank:LMS1' }).code, 'FUEL_ON_CREDIT', 'never the bank');
+    assert.equal(h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook').length, 0);
+    h.dfl[1][7] = 9800; // a full bus tank: ₹9,800
+    assert.equal(go(h, {}).success, true, 'a credit bill is not a cash payment: no ₹5,000 check');
+    const e = h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook')[0];
+    assert.deepEqual([e.account, e.mode, e.payee, e.amount_paise], ['pump1', 'credit', 'Pump', 980000]);
+  });
 };
+

@@ -23,7 +23,7 @@ var OFFICE_TABLES = {
   Pending: ['id', 'campus', 'entry_date', 'direction', 'mode', 'bucket', 'category', 'amount_paise', 'payee', 'narration', 'file_id', 'account', 'row', 'created_at', 'created_by'],
   Decisions: ['id', 'campus', 'entry_id', 'state', 'reason', 'created_at', 'created_by'],
   // lane-d (Uday, 26 Nov): a payment above the cash limit is a request to the Finance Head (Pawan), who pays it by bank outside the portal; see office-payreq.gs
-  PayRequests: ['id', 'campus', 'entry_date', 'payee', 'amount_paise', 'category', 'narration', 'file_id', 'charged_to', 'created_at', 'created_by'],
+  PayRequests: ['id', 'campus', 'entry_date', 'payee', 'amount_paise', 'category', 'narration', 'file_id', 'charged_to', 'created_at', 'created_by', 'settles_account', 'bills'],
   PayEvents: ['id', 'campus', 'request_id', 'state', 'reason', 'bank_ref', 'proof_file_id', 'paid_date', 'entry_id', 'created_at', 'created_by'],
   Audit: ['id', 'ts', 'who', 'action', 'tab', 'row_id', 'campus', 'after'],
 };

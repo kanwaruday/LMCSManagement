@@ -74,6 +74,10 @@ export const CODES = {
   NOT_APPROVED: 'That payment request is not approved yet.',
   NOT_PAID: 'That payment is not marked paid yet.',
   PAYEE_REQUIRED: 'Write who is being paid.',
+  FUEL_ON_CREDIT: 'Fuel goes on the pump’s credit account, not cash or bank. Pawan Sir settles each pump every fortnight.',
+  SETTLEMENT_MISMATCH: 'The amount must be exactly the total of the bills you picked.',
+  BILL_NOT_OPEN: 'One of those bills is already in another payment request, settled, reversed, or belongs to another pump. Reload and pick again.',
+  BILLS_REQUIRED: 'Pick the bills this payment settles.',
   PROOF_IS_BILL: 'That is the bill photo. Attach the bank proof (UTR / ICICI confirmation / statement line) instead.',
   PENDING_APPROVALS: 'Payments from this day are waiting for the Principal’s approval. Close the day after they are decided.', // lane-d slice 2
   REVERSAL_PENDING: 'A reversal of this entry is already waiting for the Principal’s approval.',

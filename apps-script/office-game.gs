@@ -69,6 +69,7 @@ var OFFICE_GAME_ACTIONS = {
   // lane-d (Uday, 26 Nov): payments above the cash limit are requests; the clerk raises, the Finance Head (verifier) or the Owner decides, pays by bank outside the portal, marks paid, attaches the proof
   gamePayReqAdd: { act: 'payreq.add', write: true, num: ['amount_paise'] },
   gamePayReqList: { act: 'payreq.list', verifier: true },
+  gameBillsOpen: { act: 'bills.open', verifier: true }, // bills to pay (fuel on credit): the register; a settlement is gamePayReqAdd with settles_account + bills
   gamePayReqDecide: { act: 'payreq.decide', write: true, owner: true, verifier: true, bool: ['approve'] },
   gamePayReqPaid: { act: 'payreq.paid', write: true, owner: true, verifier: true },
   gamePayReqProof: { act: 'payreq.proof', write: true, owner: true, verifier: true },
