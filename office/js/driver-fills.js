@@ -4,7 +4,6 @@
 // apps-script/office-driver-fills.gs), which stays off until after the 31 Oct count and then answers DRIVER_FILLS_OFF.
 import { h, setKids } from './dom.js';
 import { formatInr } from './format.js';
-import { BUCKETS } from './daybook.js';
 
 export const ROSTER_URL = 'https://script.google.com/macros/s/AKfycbyHiaZY_iWK2VTKKFJcCsBNnIbUndJYUSjnPkxvJ-dYavaihiul2xBJuJohPRsP9Spf/exec'; // = coordinator/capture/drivers.js
 const PAY_KEY = 'lmcs-office-dfl-pay:';
@@ -43,14 +42,14 @@ export async function showDriverFills(root, session, api) {
   const msg = h('p', { role: 'status', 'aria-live': 'polite' });
   const paySel = h('select', { id: 'dfl-pay' });
   const list = h('ul', { class: 'office-list' }), done = h('ul', { class: 'office-list' });
-  setKids(root, h('div', { class: 'office-form' }, h('label', { for: 'dfl-pay' }, 'Paid from (for the Day Book)'), paySel), msg,
+  setKids(root, h('div', { class: 'office-form' }, h('label', { for: 'dfl-pay' }, 'Pump (fuel goes on its credit account; Pawan Sir’s fortnightly payment settles it)'), paySel), msg,
     h('h2', {}, 'Waiting for you'), list, h('h2', {}, 'Decided in the last 14 days'), done);
   let fills = [];
 
   const conf = await api.read('config.get', {}).catch(() => null);
   const accts = ((conf && conf.success && conf.accounts) || []).filter((a) => a.active && a.campus === campus);
-  setKids(paySel, h('option', { value: '' }, 'Choose…'), ...accts.filter((a) => a.kind === 'credit').map((a) => h('option', { value: a.id + '|' }, a.label)),
-    ...accts.filter((a) => a.kind === 'cash').flatMap((a) => Object.entries(BUCKETS).map(([k, v]) => h('option', { value: a.id + '|' + k }, v))));
+  // Uday, 27 Nov: fuel is on credit, settled fortnightly; the office refuses a fill on cash or bank (FUEL_ON_CREDIT), so only pumps are offered
+  setKids(paySel, h('option', { value: '' }, 'Choose the pump…'), ...accts.filter((a) => a.kind === 'credit').map((a) => h('option', { value: a.id + '|' }, a.label)));
   try { const saved = localStorage.getItem(PAY_KEY + campus); if ([...paySel.options].some((o) => o.value === saved)) paySel.value = saved; } catch (_) {}
   paySel.onchange = () => { try { localStorage.setItem(PAY_KEY + campus, paySel.value); } catch (_) {} };
 
