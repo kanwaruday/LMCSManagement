@@ -173,7 +173,7 @@ module.exports = function run(t) {
   t.test('opening.set is locked once any day is closed, even with no entries', () => {
     const h = fresh();
     close(h, '2026-10-20');
-    const r = h.call('opening.set', { id: 'op', campus: 'LMS1', balances: [{ mode: 'bank', amount_paise: 5 }] }, 'fh-token');
+    const r = h.seal({ id: 'op', campus: 'LMS1', balances: [{ mode: 'bank', amount_paise: 5 }] }, 'fh-token');
     assert.equal(r.error, 'OPENING_LOCKED');
   });
   // Review Focus 4: a day close is the cash count; bank, UPI and credit rows keep their real date.

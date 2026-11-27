@@ -161,6 +161,11 @@ function boot(fixture, opts) {
     addConfig: () => { props.OFFICE_CONFIG_SS = 'CONFIG-FAKE'; return (books['CONFIG-FAKE'] = makeOfficeBook(counter)); },
     // Registers an empty fake book under an id only (for fakes of SpreadsheetApp.create).
     addBookById: (id) => (books[id] = makeOfficeBook(counter)),
+    // opening.set as the game's Seal sends it (audit #7): the token's caller through the game key, with a seal id unless the test gives one
+    seal: (data, token) => JSON.parse(JSON.stringify((() => { const c = ctx.officeCaller_(token === undefined ? 'owner-token' : token);
+      if (!c) return { success: false, error: 'Not authorized' };
+      try { return ctx.officeDispatch_(Object.assign({}, c, { viaGame: true }), 'opening.set', Object.assign({ seal: 'ob:00000000-0000-4000-8000-000000000001:2026-10-21T10:00:00Z' }, data)); }
+      catch (e) { return e.code ? { success: false, code: e.code, error: e.message } : { success: false, error: e.message }; } })())),
     setNow: (d) => { ctx.officeClock_ = d; },
     run: (code) => vm.runInContext(code, ctx),
   };

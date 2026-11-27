@@ -191,21 +191,21 @@ module.exports = function run(t) {
 
   t.test('opening.set by FeeClerk refused', () => {
     const h = fresh();
-    assert.equal(h.call('opening.set', { id: 'o1', campus: 'LMS1', balances: bal }, 'clerk-token').error, 'FORBIDDEN_ROLE');
+    assert.equal(h.seal({ id: 'o1', campus: 'LMS1', balances: bal }, 'clerk-token').error, 'FORBIDDEN_ROLE');
   });
 
   t.test('opening.set by FinanceHead stores balances and audits', () => {
     const h = fresh();
-    const r = h.call('opening.set', { id: 'o1', campus: 'lms1', balances: bal }, 'fh-token');
+    const r = h.seal({ id: 'o1', campus: 'lms1', balances: bal }, 'fh-token');
     assert.equal(r.success, true);
     assert.deepEqual(J(r.opening), { cash: { petty: 500000, fee: 1200, other: 0 }, bank: 9000000, upi: 77 });
     const ss = h.ctx.officeOpen_('LMS1', '2026-27');
     assert.deepEqual(h.ctx.officeRows_(ss, 'Opening').map((x) => x.id), ['o1:0', 'o1:1', 'o1:2', 'o1:3']);
     const a = h.ctx.officeRows_(ss, 'Audit');
     assert.equal(a.length, 4); assert.equal(a[0].action, 'opening.set'); assert.equal(a[0].who, 'fh@example.org');
-    h.call('opening.set', { id: 'o1', campus: 'LMS1', balances: bal }, 'fh-token');
+    h.seal({ id: 'o1', campus: 'LMS1', balances: bal }, 'fh-token');
     assert.equal(h.ctx.officeRows_(ss, 'Opening').length, 4, 'retry is idempotent');
-    h.call('opening.set', { id: 'o2', campus: 'LMS1', balances: [{ mode: 'bank', bucket: '', amount_paise: 5 }] }, 'owner-token');
+    h.seal({ id: 'o2', campus: 'LMS1', balances: [{ mode: 'bank', bucket: '', amount_paise: 5 }] }, 'owner-token');
     assert.equal(h.ctx.officeOpening_(ss).bank, 5, 'latest row wins');
     assert.equal(h.ctx.officeOpening_(ss).upi, 77);
   });
@@ -214,16 +214,16 @@ module.exports = function run(t) {
     const h = fresh();
     const ss = h.ctx.officeOpen_('LMS1', '2026-27');
     h.ctx.officeAppend_(ss, 'DayBook', { id: 'd1', campus: 'LMS1', entry_date: '2026-10-21', direction: 'IN', amount_paise: 100 }, { email: 'clerk@example.org' }, {});
-    const r = h.call('opening.set', { id: 'o1', campus: 'LMS1', balances: bal }, 'fh-token');
+    const r = h.seal({ id: 'o1', campus: 'LMS1', balances: bal }, 'fh-token');
     assert.equal(r.success, false); assert.equal(r.error, 'OPENING_LOCKED');
     assert.equal(h.ctx.officeRows_(ss, 'Opening').length, 0);
   });
 
   t.test('bucket is required when mode is cash', () => {
     const h = fresh();
-    const r = h.call('opening.set', { id: 'o1', campus: 'LMS1', balances: [{ mode: 'cash', bucket: '', amount_paise: 100 }] }, 'fh-token');
+    const r = h.seal({ id: 'o1', campus: 'LMS1', balances: [{ mode: 'cash', bucket: '', amount_paise: 100 }] }, 'fh-token');
     assert.equal(r.error, 'BUCKET_REQUIRED');
-    assert.equal(h.call('opening.set', { id: 'o1', campus: 'LMS1', balances: [{ mode: 'bank', bucket: '', amount_paise: 1.5 }] }, 'fh-token').error, 'BAD_AMOUNT');
+    assert.equal(h.seal({ id: 'o1', campus: 'LMS1', balances: [{ mode: 'bank', bucket: '', amount_paise: 1.5 }] }, 'fh-token').error, 'BAD_AMOUNT');
   });
 
   t.test('officeOpening_ is all zero for an empty book', () => {

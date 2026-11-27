@@ -77,19 +77,18 @@ module.exports = function run(t) {
     const q = one(h, 'a'); assert.equal(q.state, 'paid'); assert.equal(q.bank_ref, 'UTR123456'); assert.equal(q.proof_file_id, 'proof'); assert.equal(q.proof_pending, false);
   });
 
-  t.test('payreq (proof): paid without the bank proof is "proof pending" and the day can\'t close until it is attached', () => {
+  t.test('payreq (proof, audit #9): paid needs the bank proof (FILE_REQUIRED), never the bill itself (PROOF_IS_BILL); nothing written until it has one', () => {
     const h = fresh(); ask(h, { id: 'a' }); decide(h, 'a', true);
-    const r = paid(h, 'a', { proof_file_id: '', paid_date: '2026-10-20' }); assert.equal(r.proof_pending, true);
-    assert.equal(one(h, 'a').proof_pending, true);
-    assert.equal(h.call('payreq.list', { campus: 'LMS1', state: 'proof_pending' }, 'fh-token').requests.length, 1);
-    const close = (id) => h.call('day.close', { id, campus: 'LMS1', close_date: '2026-10-20' }, 'fh-token');
-    assert.equal(close('c1').error, 'PROOF_PENDING');
-    assert.equal(h.call('payreq.proof', { id: 'pr0', campus: 'LMS1', request_id: 'a' }, 'fh-token').error, 'FILE_REQUIRED');
-    assert.equal(h.call('payreq.proof', { id: 'pr0', campus: 'LMS1', request_id: 'a', proof_file_id: 'nope' }, 'fh-token').error, 'FILE_MISSING');
-    assert.equal(h.call('payreq.proof', { id: 'pr1', campus: 'LMS1', request_id: 'a', proof_file_id: 'proof2' }, 'fh-token').error, undefined);
-    assert.equal(h.call('payreq.proof', { id: 'pr2', campus: 'LMS1', request_id: 'a', proof_file_id: 'proof2' }, 'fh-token').duplicate, true);
-    assert.equal(one(h, 'a').proof_pending, false);
-    assert.equal(close('c2').success, true, 'closes once the proof is in');
+    const book = () => h.ctx.officeRows_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook');
+    assert.equal(paid(h, 'a', { proof_file_id: '', paid_date: '2026-10-20' }).error, 'FILE_REQUIRED');
+    assert.equal(paid(h, 'a', { proof_file_id: 'slip', paid_date: '2026-10-20' }).error, 'PROOF_IS_BILL', 'the bill photo is not a bank proof');
+    assert.equal(paid(h, 'a', { proof_file_id: 'nope', paid_date: '2026-10-20' }).error, 'FILE_MISSING');
+    assert.equal(book().length, 0); assert.equal(one(h, 'a').state, 'approved');
+    const r = paid(h, 'a', { paid_date: '2026-10-20' }); assert.equal(r.proof_pending, false);
+    assert.equal(one(h, 'a').state, 'paid'); assert.equal(book().length, 1);
+    // payreq.proof now only completes a request paid before this rule (proof pending); one with its proof answers duplicate
+    assert.equal(h.call('payreq.proof', { id: 'pr1', campus: 'LMS1', request_id: 'a', proof_file_id: 'proof2' }, 'fh-token').duplicate, true);
+    assert.equal(h.call('day.close', { id: 'c2', campus: 'LMS1', close_date: '2026-10-20' }, 'fh-token').success, true);
     ask(h, { id: 'b' }); assert.equal(h.call('payreq.proof', { id: 'pr3', campus: 'LMS1', request_id: 'b', proof_file_id: 'proof' }, 'fh-token').error, 'NOT_PAID');
   });
 };

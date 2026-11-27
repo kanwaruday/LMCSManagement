@@ -29,7 +29,7 @@ module.exports = function run(t) {
     assert.deepEqual([r.success, r.error, r.code], [false, 'OPENING_NOT_SEALED', 'OPENING_NOT_SEALED']);
     assert.equal(h.call('daybook.add', fee('s2', { account: 'bank:LMS1', mode: 'bank', bucket: '', category: 'fee_online' }), 'owner-token').error, 'OPENING_NOT_SEALED', 'bank and the Owner too');
     assert.equal(book(h, 'DayBook').length, 0);
-    assert.equal(h.call('opening.set', { id: 'op', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 0 }] }, 'fh-token').success, true);
+    assert.equal(h.seal({ id: 'op', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 0 }] }, 'fh-token').success, true);
     assert.equal(h.call('daybook.add', fee('s1'), 'clerk-token').success, true, 'the same id, now saved');
     assert.equal(book(h, 'DayBook').length, 1);
   });
@@ -44,7 +44,7 @@ module.exports = function run(t) {
     const h = fresh();
     h.ctx.officeAppend_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook', { id: 'old', campus: 'LMS1', entry_date: '2026-10-20', direction: 'IN', mode: 'bank', account: 'bank:LMS1', category: 'fee_online', amount_paise: 100 }, { email: 'clerk@example.org' }, {});
     assert.equal(h.call('daybook.add', fee('s3'), 'clerk-token').success, true);
-    assert.equal(h.call('opening.set', { id: 'op', campus: 'LMS1', balances: [{ mode: 'bank', amount_paise: 1 }] }, 'fh-token').error, 'OPENING_LOCKED');
+    assert.equal(h.seal({ id: 'op', campus: 'LMS1', balances: [{ mode: 'bank', amount_paise: 1 }] }, 'fh-token').error, 'OPENING_LOCKED');
   });
 
   t.test('seal gate: a retry of an entry already saved is still a duplicate (P9)', () => {
@@ -74,7 +74,7 @@ module.exports = function run(t) {
     assert.equal(r.error, 'OPENING_NOT_SEALED');
     assert.equal(h.ctx.officeRows_(h.ctx.officeOpen_('HES', '2026-27'), 'DayBook').length, 0);
     assert.equal(JSON.parse(JSON.stringify(h.call('cash.handovers', {}, 'hes-token').handovers))[0].state, 'pending');
-    h.call('opening.set', { id: 'op', campus: 'HES', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 0 }] }, 'fh-token');
+    h.seal({ id: 'op', campus: 'HES', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 0 }] }, 'fh-token');
     assert.equal(h.call('cash.accept', { id: 'req-h1', handover: 'h1' }, 'hes-token').success, true, 'accepted once the opening is set');
   });
 
@@ -82,5 +82,19 @@ module.exports = function run(t) {
     const h = fresh();
     assert.doesNotThrow(() => h.ctx.officeAssertOpening_(h.ctx.officeOpen_('LMS1', '2026-27'), { reverses: 'x' }));
     assert.throws(() => h.ctx.officeAssertOpening_(h.ctx.officeOpen_('LMS1', '2026-27'), {}), /OPENING_NOT_SEALED/);
+  });
+
+  // audit #7 (V2, 28 Nov): the opening is set only by the game's Seal
+  t.test('seal only: opening.set from a portal page or without a seal id is SEAL_REQUIRED and writes nothing; the game path records the seal', () => {
+    const h = fresh();
+    const bal = [{ mode: 'cash', bucket: 'fee', amount_paise: 0 }];
+    const portal = h.call('opening.set', { id: 'p1', campus: 'LMS1', balances: bal, seal: 'ob:00000000-0000-4000-8000-000000000001:2026-10-21T10:00:00Z' }, 'owner-token');
+    assert.deepEqual([portal.success, portal.code], [false, 'SEAL_REQUIRED'], 'the portal Opening page, even with a seal-shaped id');
+    assert.equal(h.seal({ id: 'p2', campus: 'LMS1', balances: bal, seal: '' }, 'fh-token').code, 'SEAL_REQUIRED', 'the game path with no seal');
+    assert.equal(h.seal({ id: 'p3', campus: 'LMS1', balances: bal, seal: 'ob:not-a-uuid:x' }, 'fh-token').code, 'SEAL_REQUIRED', 'a malformed seal');
+    assert.equal(book(h, 'Opening').length, 0);
+    assert.equal(h.seal({ id: 'p4', campus: 'LMS1', balances: bal }, 'fh-token').success, true);
+    assert.deepEqual(book(h, 'Opening').map((r) => r.seal), ['ob:00000000-0000-4000-8000-000000000001:2026-10-21T10:00:00Z']);
+    assert.equal(h.call('daybook.add', fee('s9'), 'clerk-token').success, true, 'the book opens');
   });
 };

@@ -217,9 +217,9 @@ module.exports = function run(t) {
     const g = boot(fixture); g.addConfig(); g.addBook('LMS1', '2026-27', { opening: false }); g.addBook('LMS1', '2027-28', { opening: false });
     g.setNow(new Date('2027-03-31T06:00:00Z'));
     const op = { id: 'op1', campus: 'LMS1', balances: [{ mode: 'bank', amount_paise: 700 }] };
-    assert.equal(g.call('opening.set', op, 'fh-token').success, true);
+    assert.equal(g.seal(op, 'fh-token').success, true);
     g.setNow(new Date('2027-04-01T06:00:00Z'));
-    const r = g.call('opening.set', op, 'fh-token');
+    const r = g.seal(op, 'fh-token');
     assert.deepEqual([r.success, r.duplicate], [true, true]);
     assert.equal(g.ctx.officeRows_(g.ctx.officeOpen_('LMS1', '2027-28'), 'Opening').length, 0);
   });

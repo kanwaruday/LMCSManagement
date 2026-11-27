@@ -68,11 +68,13 @@ export const CODES = {
   HANDOVER_ACCEPTED: 'This cash handover was accepted by the receiving school, so it cannot be reversed. Tell Uday if it is wrong.',
   ALREADY_REVERSED: 'This entry was already reversed.',
   ABOVE_LIMIT_USE_REQUEST: 'Payments above the school’s limit (₹5,000 unless the Owner set another) cannot be entered here, in cash or by bank. Raise a payment request: the Finance Head approves it, pays by bank and attaches the proof.', // lane-d 26 Nov
+  SEAL_REQUIRED: 'Opening balances are set by sealing the opening books in the game (the Finance Head or the Owner), not on this page.',
   OPENING_NOT_SEALED: 'The day book takes entries once this school’s opening is set. The Finance Head or the Owner seals the opening books in the game first.',
   PROOF_PENDING: 'A bank payment from this day has no proof yet. Attach the bank proof (UTR or ICICI confirmation), then close the day.', // lane-d 26 Nov
   NOT_APPROVED: 'That payment request is not approved yet.',
   NOT_PAID: 'That payment is not marked paid yet.',
   PAYEE_REQUIRED: 'Write who is being paid.',
+  PROOF_IS_BILL: 'That is the bill photo. Attach the bank proof (UTR / ICICI confirmation / statement line) instead.',
   PENDING_APPROVALS: 'Payments from this day are waiting for the Principal’s approval. Close the day after they are decided.', // lane-d slice 2
   REVERSAL_PENDING: 'A reversal of this entry is already waiting for the Principal’s approval.',
   ALREADY_SIGNED: 'This deposit was already signed.',

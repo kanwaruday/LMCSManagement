@@ -158,9 +158,13 @@ function officeDaybookAdd_(ctx, data) {
   // the school's limit goes through here, whatever the mode (cash, bank or UPI; a bill on a supplier's credit account is not a payment). Cash counts with the
   // day's other cash to the same payee (no splitting a bill in two). The only way is a payment request (office-payreq.gs): the Finance Head approves,
   // pays by bank outside the portal and marks it paid with the bank ref and proof. (payreq.paid writes its row itself, not through here.)
-  const limit = officeApprovalLimit_(data.campus), payment = data.direction === 'OUT' && mode !== 'credit' && !(ctx && ctx.driverFill); // a driver's fuel fill is a record of fuel already pumped (office-driver-fills.gs), not a new payment
-  if (payment && !officeRows_(ss, 'DayBook').some(function (r) { return r.id === String(data.id); })
-      && data.amount_paise + (mode === 'cash' ? officeSameDayPayee_(ss, row) : 0) > limit) throw officeCoded_('ABOVE_LIMIT_USE_REQUEST');
+  // audit #5 (V2, 28 Nov): the day's payments to the same payee add up across cash, bank and UPI, with the payee compared as one key.
+  const driverFill = !!(ctx && ctx.driverFill); // a driver's fuel fill is a record of fuel already pumped (office-driver-fills.gs), not a new payment
+  if (data.direction === 'OUT' && mode === 'cash' && !driverFill && !officePayeeKey_(data.payee)) throw officeCoded_('PAYEE_REQUIRED'); // every cash payment names who it is to (V2: cash outflows; bank is the Finance Head's or Owner's)
+  if (!driverFill) officeAssertWithinLimit_(ss, row);
+  // the approver's 7-day view: this payee paid above the limit over this day and the 6 before (still saved; the Finance Head sees it)
+  if (data.direction === 'OUT' && mode !== 'credit' && !driverFill
+      && officeWeekOverLimit_(ss, row)) warnings.push('payee_week_over_limit');
   const saved = officeDaybookWrite_(ss, ctx, row, 'daybook.add');
   return warnings.length ? Object.assign({}, saved, { warnings: warnings }) : saved;
 }
@@ -257,19 +261,30 @@ function officeAssertCashFloor_(ss, row) {
 // A gated payment is saved to Pending with the exact DayBook row it becomes. Approving writes that row (same id, dated as entered,
 // still the clerk's) through officeDaybookWrite_, so the cash floor and the day's close apply at approval time; rejecting needs a
 // reason. Either way one Decisions row; the entry is decided once. The entry stays listed (pending / rejected) in daybook.list.
-// The day's other cash payments to this payee (live, not reversed; or waiting for approval), in paise. Payee compared trimmed,
-// lower-case, spaces collapsed; a blank payee matches nothing.
-function officePayeeKey_(s) { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
-function officeSameDayPayee_(ss, row) {
+// audit #5 (V2, 28 Nov): who a payment is to, as one key, so a bill can't be split by spelling: lower-case, punctuation out, honorifics
+// out, spaces out ("Ram ji", "Shri Ram", "RAM." -> "ram"; "M/s Sharma Traders" -> "sharmatraders"). Blank or only honorifics -> ''.
+function officePayeeKey_(s) {
+  const honorific = ['ji', 'shri', 'sri', 'shree', 'sh', 'smt', 'mr', 'mrs', 'ms', 'm', 's', 'sir', 'madam', 'bhai', 'sahab', 'saheb', 'babu', 'dr'];
+  return String(s || '').toLowerCase().replace(/[^a-z0-9\u0900-\u097f\s]/g, ' ').split(/\s+/)
+    .filter(function (w) { return w && honorific.indexOf(w) === -1; }).join('');
+}
+// audit #5: what this payee was already paid from `from` to `to` (ISO dates, inclusive), every mode but credit (cash, bank, UPI), live rows
+// not reversed, this row excluded, in paise. One financial year's book. ponytail: a 7-day window across 1 April misses last year's days.
+function officePayeeTotal_(ss, row, from, to) {
   const key = officePayeeKey_(row.payee);
   if (!key) return 0;
-  const same = function (r) { return r.entry_date === row.entry_date && r.mode === 'cash' && r.direction === 'OUT' && !r.reverses && officePayeeKey_(r.payee) === key; };
-  const book = officeRows_(ss, 'DayBook'), reversed = {}, decided = {};
+  const book = officeRows_(ss, 'DayBook'), reversed = {};
   book.forEach(function (r) { if (r.reverses) reversed[r.reverses] = true; });
-  officeRows_(ss, 'Decisions').forEach(function (d) { decided[d.entry_id] = true; });
-  const live = book.filter(function (r) { return same(r) && !reversed[r.id]; });
-  const waiting = officeRows_(ss, 'Pending').filter(function (p) { return !decided[p.id]; }).map(function (p) { return JSON.parse(p.row); }).filter(same);
-  return live.concat(waiting).reduce(function (n, r) { return n + r.amount_paise; }, 0);
+  return book.filter(function (r) {
+    return r.id !== String(row.id) && r.direction === 'OUT' && r.mode !== 'credit' && !r.reverses && !reversed[r.id]
+      && r.entry_date >= from && r.entry_date <= to && officePayeeKey_(r.payee) === key;
+  }).reduce(function (n, r) { return n + Number(r.amount_paise || 0); }, 0);
+}
+// audit #4/#5: the one limit rule, for daybook.add and for approving an old Pending row: this payment plus the day's other payments to
+// the same payee (any mode) above the school's limit is a payment request. A credit bill and a reversal are not payments.
+function officeAssertWithinLimit_(ss, row) {
+  if (row.direction !== 'OUT' || row.mode === 'credit' || row.reverses) return;
+  if (row.amount_paise + officePayeeTotal_(ss, row, row.entry_date, row.entry_date) > officeApprovalLimit_(row.campus)) throw officeCoded_('ABOVE_LIMIT_USE_REQUEST');
 }
 
 function officePendingAdd_(ss, ctx, row, extra) {
@@ -315,6 +330,9 @@ function officeDaybookDecide_(ctx, data) {
   if (!data.approve && reason.length < 3) throw officeCoded_('REASON_REQUIRED');
   if (data.approve) {
     officeAssertOpen_(book, p.entry_date); // a closed day takes no cash row: the Owner reopens it first
+    // audit #4 (V2, 28 Nov): an old held payment is approved only under today's rule (payee total for the day within the limit); above it
+    // the approver rejects it and the clerk raises a payment request. A held reversal is not a payment and still goes through.
+    officeAssertWithinLimit_(book, JSON.parse(p.row));
     officeDaybookWrite_(book, ctx, JSON.parse(p.row), 'daybook.approve', p.created_by); // INSUFFICIENT_CASH here if the cash isn't there now
   }
   officeAppend_(book, 'Decisions', { id: String(data.id), campus: p.campus, entry_id: p.id, state: data.approve ? 'approved' : 'rejected', reason: reason.slice(0, 300) },
@@ -415,7 +433,15 @@ function officeDaybookList_(ctx, data) {
     .concat(waiting)
     .map(function (r) { const x = rev[r.id]; return x ? Object.assign({}, r, { reversed_by: x.created_by, reversed_on: x.entry_date, reversal_reason: x.narration }) : r; })
     .map(function (r) { return links[r.id] ? Object.assign({}, r, { video_file_id: links[r.id] }) : r; })
-    .map(function (r) { return noBus && r.vehicle ? Object.assign({}, r, { vehicle: '', litres_ml: '', odometer_km: '', odometer_note: '' }) : r; }) };
+    .map(function (r) { return noBus && r.vehicle ? Object.assign({}, r, { vehicle: '', litres_ml: '', odometer_km: '', odometer_note: '' }) : r; })
+    // audit #5: the approver's 7-day view: a live payment whose payee was paid above the limit over its day and the 6 before is flagged
+    .map(function (r) { return officeWeekOverLimit_(ss, r) ? Object.assign({}, r, { payee_week_over_limit: true }) : r; }) };
+}
+
+// audit #5: this live payment plus the same payee's other payments over its day and the 6 days before are above the school's limit
+function officeWeekOverLimit_(ss, r) {
+  if (r.direction !== 'OUT' || r.mode === 'credit' || r.reverses || r.approval || r.reversed_by) return false;
+  return Number(r.amount_paise) + officePayeeTotal_(ss, r, officeAddDays_(r.entry_date, -6), r.entry_date) > officeApprovalLimit_(r.campus);
 }
 
 function officeDaybookBalances_(ctx, data) {

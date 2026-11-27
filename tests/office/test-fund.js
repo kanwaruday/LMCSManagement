@@ -42,7 +42,7 @@ module.exports = function run(t) {
     const out = fresh({ unsealed: ['LMS1'] });
     assert.equal(xfer(out).error, 'OPENING_NOT_SEALED');
     assert.deepEqual([rows(out, 'LMS1').length, rows(out, 'HES').length], [0, 0]);
-    into.call('opening.set', { id: 'op', campus: 'HES', balances: [{ mode: 'bank', amount_paise: 0 }] }, 'fh-token');
+    into.seal({ id: 'op', campus: 'HES', balances: [{ mode: 'bank', amount_paise: 0 }] }, 'fh-token');
     assert.equal(xfer(into).success, true, 'the same transfer goes through once the opening is set');
     assert.deepEqual([rows(into, 'LMS1').length, rows(into, 'HES').length], [1, 1]);
   });

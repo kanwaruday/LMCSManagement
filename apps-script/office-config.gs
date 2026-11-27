@@ -381,6 +381,9 @@ function officeOpeningSet_(ctx, data) {
   const id = String(data.id || '');
   if (!id) throw new Error('MISSING_ID');
   if (!data.campus) throw new Error('MISSING_CAMPUS');
+  // audit #7 (V2, 28 Nov): the school's opening is set only by the game's Seal. The game's server checks the sealed-to-be books and the
+  // split, then sends their seal id (ob:<campus uuid>:<entered_at>) through the game key; the portal's Opening page and a bare call can't.
+  if (!ctx.caller.viaGame || !/^ob:[0-9a-f-]{36}:[0-9TZ:.+ -]{10,40}$/.test(String(data.seal || ''))) throw officeCoded_('SEAL_REQUIRED');
   if (!Array.isArray(data.balances) || !data.balances.length) throw new Error('NO_BALANCES');
   const bucketOk = { petty: 1, fee: 1, other: 1 };
   const rows = data.balances.map(function (b, i) {
@@ -388,7 +391,7 @@ function officeOpeningSet_(ctx, data) {
     if (b.mode === 'cash' && !bucketOk[b.bucket]) throw new Error('BUCKET_REQUIRED');
     if (b.mode !== 'cash' && b.bucket) throw new Error('BUCKET_NOT_ALLOWED');
     if (!Number.isInteger(b.amount_paise) || b.amount_paise < 0) throw new Error('BAD_AMOUNT');
-    return { id: id + ':' + i, campus: data.campus, mode: b.mode, bucket: b.bucket || '', amount_paise: b.amount_paise };
+    return { id: id + ':' + i, campus: data.campus, mode: b.mode, bucket: b.bucket || '', amount_paise: b.amount_paise, seal: String(data.seal) };
   });
   // A retry (same id) is a duplicate wherever it landed, even in last year's book after 1 April (R41).
   const prior = officeRecentBooks_(data.campus).filter(function (b) {

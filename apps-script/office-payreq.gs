@@ -90,7 +90,8 @@ function officePayRequestDecide_(ctx, data) {
 }
 
 // {id (this step's), request_id, bank_ref, account (the school's bank account it was paid from), proof_file_id?, paid_date?} -> {request_id, entry_id, proof_pending}
-// Writes the bank OUT row. Without a proof file the row is "proof pending" until payreq.proof (the day cannot close meanwhile).
+// Writes the bank OUT row. The bank proof is required (audit #9); "proof pending" is left only on requests paid before that rule, which
+// payreq.proof completes (the day cannot close meanwhile).
 function officePayRequestPaid_(ctx, data) {
   if (!data.id) throw new Error('MISSING_ID');
   const r = officePayRequestFind_(data.campus, data.request_id);
@@ -101,7 +102,10 @@ function officePayRequestPaid_(ctx, data) {
   const acct = officeAccount_(data.account);
   if (!acct || acct.kind !== 'bank' || acct.campus !== data.campus) throw officeCoded_('BAD_ACCOUNT');
   const proof = officeBlank_(data.proof_file_id) ? '' : String(data.proof_file_id);
-  if (proof && !officeFileExists_(data.campus, proof)) throw officeCoded_('FILE_MISSING');
+  // audit #9 (V2, 28 Nov): every payment has its bank proof when it is marked paid, and the proof is not the bill (payreq.proof only replaces one)
+  if (!proof) throw officeCoded_('FILE_REQUIRED');
+  if (proof === String(r.file_id)) throw officeCoded_('PROOF_IS_BILL');
+  if (!officeFileExists_(data.campus, proof)) throw officeCoded_('FILE_MISSING');
   const date = officeBlank_(data.paid_date) ? officeToday_() : String(data.paid_date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('BAD_DATE');
   if (date > officeToday_()) throw new Error('FUTURE_DATE');

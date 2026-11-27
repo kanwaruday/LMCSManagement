@@ -47,7 +47,7 @@ module.exports = function run(t) {
 
   t.test('balances = opening + in - out per mode and cash bucket', () => {
     const h = fresh({ seed: false });
-    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }, { mode: 'cash', bucket: 'petty', amount_paise: 500 }, { mode: 'bank', amount_paise: 5000 }] }, 'owner-token');
+    h.seal({ id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }, { mode: 'cash', bucket: 'petty', amount_paise: 500 }, { mode: 'bank', amount_paise: 5000 }] }, 'owner-token');
     add(h, { entry_date: '2026-10-19', amount_paise: 300 });
     add(h, { amount_paise: 700 });
     add(h, { direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 200 });
@@ -186,8 +186,8 @@ module.exports = function run(t) {
     const h = v2();
     ['fh-token', 'owner-token', 'acct-token'].forEach((tok) => {
       assert.equal(as(h, tok, { account: 'bank:LMS1', mode: 'bank', bucket: '' }).success, true, tok + ' bank');
-      assert.equal(as(h, tok, { account: 'sbi1', mode: 'upi', bucket: '', direction: 'OUT', category: 'credit_settlement', settles_account: 'pump1', settles: 'B1-B4' }).success, true, tok + ' settlement');
-      assert.equal(as(h, tok, { direction: 'OUT', category: 'cash_transfer', bucket: 'fee' }).success, true, tok + ' cash transfer');
+      assert.equal(as(h, tok, { account: 'sbi1', mode: 'upi', bucket: '', direction: 'OUT', category: 'credit_settlement', settles_account: 'pump1', settles: 'B1-B4', payee: 'Pump ' + tok }).success, true, tok + ' settlement');
+      assert.equal(as(h, tok, { direction: 'OUT', category: 'cash_transfer', bucket: 'fee', payee: 'HES ' + tok }).success, true, tok + ' cash transfer');
       assert.equal(as(h, tok, { account: 'pump1', mode: '', bucket: '', direction: 'OUT', category: 'stationery' }).success, true, tok + ' credit stationery');
     });
   });
@@ -610,7 +610,7 @@ module.exports = function run(t) {
 
   t.test('lane-d: a cash payment above what its bucket holds that day is INSUFFICIENT_CASH; bank is not checked', () => {
     const h = fresh({ seed: false });
-    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'petty', amount_paise: 100 }, { mode: 'bank', amount_paise: 0 }] }, 'owner-token');
+    h.seal({ id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'petty', amount_paise: 100 }, { mode: 'bank', amount_paise: 0 }] }, 'owner-token');
     assert.equal(add(h, { direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 150 }).error, 'INSUFFICIENT_CASH');
     assert.equal(add(h, { direction: 'OUT', category: 'stationery', bucket: 'fee', amount_paise: 1 }).error, 'INSUFFICIENT_CASH', 'another bucket has nothing');
     assert.equal(add(h, { direction: 'OUT', category: 'stationery', bucket: 'petty', amount_paise: 100 }).success, true, 'exactly what it holds');
@@ -619,7 +619,7 @@ module.exports = function run(t) {
 
   // G2/G2b FIX on 50aa02db: no day's cash may drop below zero, whichever path writes the row or whatever date it carries
   const petty100 = (amount = 1000) => { const h = fresh({ seed: false });
-    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'petty', amount_paise: amount }] }, 'owner-token'); return h; };
+    h.seal({ id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'petty', amount_paise: amount }] }, 'owner-token'); return h; };
   const pettyAt = (h, d) => h.call('daybook.balances', { campus: 'LMS1', date: d }, 'clerk-token').closing.cash.petty;
   const spend = (o) => e(Object.assign({ direction: 'OUT', category: 'stationery', bucket: 'petty' }, o));
   t.test('lane-d: a backdated cash OUT that would push a later day below zero is INSUFFICIENT_CASH (G2b / G2 probe A)', () => {
@@ -648,7 +648,7 @@ module.exports = function run(t) {
   });
   t.test('lane-d: the end-of-day cash count saves the difference; a difference needs a reason; the latest count per bucket is read', () => {
     const h = fresh({ seed: false });
-    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }] }, 'owner-token');
+    h.seal({ id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }] }, 'owner-token');
     const c = (o) => h.call('daybook.count', Object.assign({ id: 'c' + (++n), campus: 'LMS1', count_date: '2026-10-20', bucket: 'fee', counted_paise: 1000 }, o), 'clerk-token');
     assert.deepEqual([c({}).difference_paise], [0], 'matches: no reason needed');
     assert.equal(c({ counted_paise: 900 }).error, 'REASON_REQUIRED');

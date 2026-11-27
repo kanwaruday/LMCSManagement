@@ -112,7 +112,7 @@ function officeGame_(b) {
   const campus = String(b.campus || '').trim().toUpperCase();
   if (!/^[A-Z0-9]{2,8}$/.test(campus)) return officeGameRefuse_('campus_needed');
   if (spec.write && !(typeof b.email === 'string' && /^[^\s@]+@[^\s@]+$/.test(b.email))) return officeGameRefuse_('who');
-  const caller = { email: spec.write ? String(b.email).toLowerCase() : 'game:' + b.role, name: '', roles: [role], campuses: [campus], functions: [] };
+  const caller = { email: spec.write ? String(b.email).toLowerCase() : 'game:' + b.role, name: '', roles: [role], campuses: [campus], functions: [], viaGame: true }; // viaGame: only the game key gets here (opening.set needs it)
   const data = {};
   const p = b.params && typeof b.params === 'object' ? b.params : {};
   try {

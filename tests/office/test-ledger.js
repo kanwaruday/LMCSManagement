@@ -35,7 +35,7 @@ module.exports = function run(t) {
   const SEEDS = 3 * SEED;   // the cash account holds the three buckets' seeds
   let n = 0;
   const add = (h, o) => {
-    const r = h.call('daybook.add', Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-10', account: 'cash:LMS1', direction: 'OUT', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 100, file_id: 'slipLMS1' }, o), 'owner-token');
+    const r = h.call('daybook.add', Object.assign({ id: 'e' + (++n), campus: 'LMS1', entry_date: '2026-10-10', account: 'cash:LMS1', direction: 'OUT', mode: 'cash', bucket: 'petty', category: 'stationery', amount_paise: 100, file_id: 'slipLMS1', payee: 'Shop ' + n }, o), 'owner-token'); // audit #5: a cash payment names its payee
     assert.equal(r.success, true, JSON.stringify(r));
     return r.id;
   };
@@ -100,7 +100,7 @@ module.exports = function run(t) {
 
   t.test('owed and balances start from the account openings; cash = opening + in - out with buckets', () => {
     const h = fresh({ seed: false });
-    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }, { mode: 'cash', bucket: 'petty', amount_paise: 50 }, { mode: 'bank', amount_paise: 7000 }, { mode: 'upi', amount_paise: 3 }] }, 'owner-token');
+    h.seal({ id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }, { mode: 'cash', bucket: 'petty', amount_paise: 50 }, { mode: 'bank', amount_paise: 7000 }, { mode: 'upi', amount_paise: 3 }] }, 'owner-token');
     assert.equal(h.call('account.opening', { id: 'ao1', campus: 'LMS1', account: 'pump1', amount_paise: 900 }, 'owner-token').success, true);
     assert.equal(h.call('account.opening', { id: 'ao2', campus: 'LMS1', account: 'sbi1', amount_paise: 400 }, 'owner-token').success, true);
     add(h, { direction: 'IN', bucket: 'fee', category: 'fee_collection', amount_paise: 250 });
@@ -189,7 +189,7 @@ module.exports = function run(t) {
 
   t.test('P12: cash balance = opening + signed rows, so a blank-bucket row still counts', () => {
     const h = fresh({ seed: false });
-    h.call('opening.set', { id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }] }, 'owner-token');
+    h.seal({ id: 'o', campus: 'LMS1', balances: [{ mode: 'cash', bucket: 'fee', amount_paise: 1000 }] }, 'owner-token');
     h.ctx.officeWriteRow_(h.ctx.officeOpen_('LMS1', '2026-27'), 'DayBook', { id: 'x', campus: 'LMS1', entry_date: '2026-10-01', direction: 'OUT', mode: 'cash', bucket: '', category: 'stationery', amount_paise: 300 });
     const c = acct(sum(h), 'cash:LMS1');
     assert.equal(c.balance_paise, 700);
