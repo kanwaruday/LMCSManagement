@@ -4,8 +4,8 @@
 // Called only by lms-game's `classic` Edge Function (classic-proxy-contract.md), POST text/plain:
 //   { action, key, role, campus, campuses, email, params }
 // Same gate as game-approvals.gs (gameKeyOk_, gameOk_, gameNo_ live there, same project): the PDR GAME_KEY; the person is the game's
-// verified email, re-checked against this project's own Allowlist (pdrCallerForEmail_), acting as body.role (Owner, Principal or
-// FeeClerk, W7 S2): that role must be on the person's own row, and it picks the allowed steps (GAME_HR_ROLE_OPS). Anyone else: not_authorized.
+// verified email, re-checked against this project's own Allowlist (pdrCallerForEmail_), acting as body.role (Owner, Principal, FeeClerk or
+// Hr: W7 S2, 28 Nov): that role must be on the person's own row, and it picks the allowed steps (GAME_HR_ROLE_OPS). Anyone else: not_authorized.
 // Tenant scope: applicants are limited to the proxy's school list (`campuses`); missing = none (fails closed).
 // Nothing personal leaves unmasked: phones come back as last 4, no salary figure, no report contents, no emails.
 // gameHrReveal is the one way to see a full phone number or the offer breakdown; every reveal is written to the "Game Reveals" tab
@@ -34,12 +34,24 @@ const GAME_HR_OPS = ['shortlist', 'unshortlist', 'markstage', 'propose', 'held',
 // page's own function, so hiring.gs's scoping (hirScopedRow_: the caller's schools) and its role checks keep applying underneath.
 // Principal: the old hiring/index.html steps, minus the Owner's (settle a pending reject, revive, refresh the tracker, Start Hiring).
 // Fee Clerk/PRO: the old office/hiring.html legwork (main.gs PDR_FEECLERK_*): add an applicant, propose / record / cancel a visit.
-const GAME_HR_ROLES = { owner: 'Owner', principal: 'Principal', fee_clerk: 'FeeClerk' };
+const GAME_HR_ROLES = { owner: 'Owner', principal: 'Principal', fee_clerk: 'FeeClerk', hr: 'Hr' };
 const GAME_HR_ROLE_OPS = {
   Owner: GAME_HR_OPS,
   Principal: ['shortlist', 'unshortlist', 'markstage', 'propose', 'held', 'appt', 'interview', 'demo', 'add', 'dupsettle', 'calretry'],
   FeeClerk: ['propose', 'held', 'appt', 'add'], // appt: cancel only (the Fee Clerk never accepts or declines)
+  Hr: ['shortlist', 'unshortlist', 'markstage', 'propose', 'held', 'appt', 'interview', 'demo', 'add', 'dupsettle', 'calretry'], // the Principal's steps, for every school the game says the person's hr grant reaches; never salary
 };
+/** Who acts. The game already checked the person's role grant (an `hr` grant is tenant-wide, granted in People & roles) and the proxy's school
+ *  list bounds what they see. Owner / Principal / FeeClerk must also be on the person's own Allowlist row, as before. Hr needs only to be ON the
+ *  Allowlist (a real employee row); the old hiring.gs rules are written for Principal / Coordinator / Owner, so the call acts as a Principal
+ *  (copy: Owner is never added, salary actions are refused above). Returns the caller to use, or null. */
+function gameHrActAs_(caller, role) {
+  if (!caller || !role) return null;
+  if (role !== 'Hr') return callerHasRole_(caller, role) ? caller : null;
+  const c = Object.assign({}, caller);
+  c.roles = (caller.roles || []).filter(function (r) { return r !== 'Owner'; }).concat(['Principal']);
+  return c;
+}
 // the report forms' own fields (hiring.gs hirInterviewRecord_ / hirDemoRecord_); anything else in the form is dropped, never passed on
 const GAME_HR_FORM_KEYS = {
   interview: ['interviewDate', 'position', 'confidence', 'english', 'commitment', 'experience', 'capability', 'qualificationRemarks', 'otherSkills',
@@ -285,7 +297,8 @@ function gameHrUploadPart_(b) {
   }
   let caller = null;
   try { caller = pdrCallerForEmail_(t.e); } catch (err) { caller = null; }
-  if (!caller || !callerHasRole_(caller, GAME_HR_ROLES[t.r]) || GAME_HR_ROLE_OPS[GAME_HR_ROLES[t.r]].indexOf(t.k) === -1) return { success: false, error: 'not_authorized' };
+  caller = gameHrActAs_(caller, GAME_HR_ROLES[t.r]);
+  if (!caller || GAME_HR_ROLE_OPS[GAME_HR_ROLES[t.r]].indexOf(t.k) === -1) return { success: false, error: 'not_authorized' };
   try {
     hiringUploadReport_(caller, Object.assign({}, t.f, { row: t.row, kind: t.k, file: { base64: Utilities.base64Encode(bytes) } }));
   } catch (err) { return { success: false, error: 'REFUSED', say: gameHrSay_(err) }; }
@@ -301,8 +314,9 @@ function gameHrDispatch_(body) {
   if (GAME_HR_ACTIONS.indexOf(String(body.action)) === -1) return { success: false, error: 'unknown_action' };
   let caller;
   try { caller = pdrCallerForEmail_(body.email); } catch (err) { caller = null; }
-  const role = GAME_HR_ROLES[String(body.role || '')]; // the role the game acts as; it must be on this person's own Allowlist row
-  if (!caller || !role || !callerHasRole_(caller, role)) return gameNo_('not_authorized');
+  const role = GAME_HR_ROLES[String(body.role || '')]; // the role the game acts as; it must be on this person's own Allowlist row (Hr: see gameHrActAs_)
+  caller = gameHrActAs_(caller, role);
+  if (!caller) return gameNo_('not_authorized');
   const ops = GAME_HR_ROLE_OPS[role];
   if (GAME_HR_OWNER_ACTIONS.indexOf(String(body.action)) !== -1 && role !== 'Owner') return gameNo_('not_authorized'); // salary is the Owner's
   const p = body.params || {}, nowMs = Date.now();
