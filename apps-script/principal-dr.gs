@@ -873,7 +873,19 @@ const PDR_GAME_ROUTES_ = {
   // N2, 14 Nov (game-teacher-me.gs): a teacher's own "My week" cards; teacher-only, and gameSsMine needs the verified email
   gamessmine: { roles: ['teacher'], actor: true, run: function (c) { return pdrGameMySs_(c); } },
   gamepdrmyevents: { roles: ['teacher'], run: function (c) { return pdrGameMyEvents_(c); } },
+  // B6 (27 Nov): the history export for lms-game's db/import/pdr-export.mjs. Owner only, one school per call; the two tabs' rows exactly as the sheet shows them
+  // (header first), so the CSV is the same as File > Download. Read only. The sheet's PrincipalEmail / CreatedBy stay in: the importer maps them to people.
+  gamepdrexport: { roles: ['owner'], run: function (c) { return { success: true, data: pdrGameExport_(c.campusId) }; } },
 };
+
+/** the header and this school's rows of the Daily Reports tab (CampusId is column 3) and the Planned Activities tab (CampusId is column 2), as displayed */
+function pdrGameExport_(campusId) {
+  const tab = function (sheet, col) {
+    const v = sheet.getDataRange().getDisplayValues();
+    return v.slice(0, 1).concat(v.slice(1).filter(function (r) { return String(r[col] || '').trim().toUpperCase() === campusId; }));
+  };
+  return { ok: true, daily: tab(pdrDailyReportsSheet_(), 2), planned: tab(pdrPlannedActivitiesSheet_(), 1) };
+}
 
 // gameSsDashboard {} (N4, 14 Nov): the old SS Dashboard tab (action=ssdashboard) for ONE school, staff names and counts only. No email
 // leaves: an evaluator shows as their Allowlist name, else their Employee Master name, else 'An evaluator'. No per-SS history or
