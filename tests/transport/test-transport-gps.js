@@ -342,6 +342,25 @@ assert.deepStrictEqual([pushed.success, pushed.runs, pushed.notYet, pushed.skipp
 assert.deepStrictEqual([fetched[0].url, fetched[0].body.action, fetched[0].body.secret, fetched[0].body.runs],
   [run('COORD_ROSTER_URL'), 'captureprocessed', 'S', [{ reg: 'HP1', runId: 'HP1-20261025-071500-ab12', stops: [3] }, { reg: 'HP7', runId: 'HP7-20261024-071500-zz99', stops: [] }]]);
 assert.deepStrictEqual([capRow('capture_route|HP1')[5], capRow('capture_route|HP7')[5]], ['resolved', 'open'], 'resolved by the push; the bus still without a timelapse keeps it');
+{ // 28 Nov: the pull carries per-frame points (by seq) for the newest runs, asked of the Roster; the pull never fails without them
+  const RID = 'HP1-20261025-071500-ab12', rows = book(run('COORD_TRANSPORT_FORM_ID')).getSheetByName('Capture Runs')._rows(), row = rows.find((r) => r[0] === RID);
+  const was = row[5]; row[5] = Date.now() - 86400000; // ended yesterday: inside the 14 days that carry points
+  const before = fetched.length;
+  roster = { success: true, points: { 'HP1-20261025-071500-ab12': [[31.1, 76.1, 1000, 4.3], null, [31.2, 76.2, 2000, null]] }, later: [] };
+  const withPts = J(run('coordCapturePull_({secret:"S"})')).runs;
+  const ask = fetched.slice(before).find((f) => f.body.action === 'capturepoints');
+  assert.ok(ask && ask.body.secret === 'S' && ask.body.runs.every((r) => r.reg && r.runId && 'frames' in r), 'the Roster is asked (capturepoints, shared secret) for each run: reg, runId, frames');
+  const hit = withPts.find((r) => r.runId === 'HP1-20261025-071500-ab12');
+  assert.ok(hit); assert.deepStrictEqual(hit.points, [[31.1, 76.1, 1000, 4.3], null, [31.2, 76.2, 2000, null]], 'run.points: [lat, lng, takenAt, accuracy] by seq');
+  assert.ok(withPts.filter((r) => r.runId !== 'HP1-20261025-071500-ab12').every((r) => !('points' in r)), 'a run the Roster had no points for carries none');
+  row[5] = '2026-01-01T00:00:00.000Z'; fetched.length = 0; J(run('coordCapturePull_({secret:"S"})'));
+  assert.ok(!fetched.some((f) => f.body.action === 'capturepoints'), 'runs that ended over 14 days ago are not asked for (the Mac has their points.json)');
+  row[5] = Date.now() - 86400000;
+  const real = ctx.UrlFetchApp; ctx.UrlFetchApp = { fetch: () => { throw new Error('Roster down'); } };
+  assert.strictEqual(J(run('coordCapturePull_({secret:"S"})')).success, true, 'the Roster being down does not fail the pull');
+  ctx.UrlFetchApp = real; row[5] = was;
+  roster = { success: true, found: { 'HP1-20261025-071500-ab12': { videoFileId: 'VIDblurred123', photos: { 3: 'PHOTOblurred1' } } }, notYet: [] };
+}
 pulled = J(run('coordCapturePull_({secret:"S"})'));
 assert.deepStrictEqual(pulled.runs.map(r => r.done), [true, false], 'a stored run is not pushed again; the "not yet" one is');
 roster = { success: false, error: 'Not authorized' };

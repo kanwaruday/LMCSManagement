@@ -414,6 +414,21 @@ def test_tracker_reads_the_bus_points_in_ist_and_nothing_else():
     assert C.load_tracker(db, "HP3", ms, ms + 300000) is None and C.load_tracker(Path(d) / "none.sqlite", "HP1", ms, ms) is None
 
 
+def test_frame_points_read_the_pull_then_points_json_then_path_json():
+    root = tempfile.mkdtemp()
+    run = synth_run(root, "HP1", "a", n=4)
+    d = Path(root) / "HP1" / "a"
+    want = run["points"]
+    assert [p["acc"] for p in C.frame_points(d, run)] == [5.0] * 4 and [p["lat"] for p in C.frame_points(d, run)] == [w[0] for w in want], "the pull's points"
+    bare = {k: v for k, v in run.items() if k != "points"}
+    (d / "points.json").write_text(json.dumps([[1.0, 2.0, 5, 7.5], None, [3.0, 4.0, 6, None], [5.0, 6.0, 7, 9.0]]))
+    got = C.frame_points(d, bare)
+    assert [p["acc"] for p in got] == [7.5, None, None, 9.0] and got[1]["lat"] is None and got[2]["lng"] == 4.0, "else the Roster's points.json, by seq; a null accuracy stays unknown"
+    (d / "points.json").unlink()
+    (d / "processed" / "path.json").write_text(json.dumps([[1.0, 2.0, 5]] * 4))
+    assert [p["acc"] for p in C.frame_points(d, bare)] == [None] * 4, "else path.json, which has no accuracy"
+
+
 def test_combine_needs_three_runs_and_writes_nothing_before_that():
     root = tempfile.mkdtemp()
     runs = {r: synth_run(root, "HP1", r, seed=k) for k, r in enumerate("ab")}

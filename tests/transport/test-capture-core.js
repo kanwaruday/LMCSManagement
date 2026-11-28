@@ -430,6 +430,21 @@ const test = async (name, fn) => { try { await fn(); console.log('  ok  -', name
     assert.strictEqual(Object.keys(await store.fileIds(run.id)).length, 20);
     assert.strictEqual(srv.calls[srv.calls.length - 1], 'capturerun');
   });
+  await test('28 Nov: a frame\'s GPS accuracy is stored with it and sent in the batch and in the single upload; a frame without one sends none', async () => {
+    const store = mkStore(); const run = await store.newRun({ reg: 'HP1', kind: 'timelapse' });
+    await store.addFrame(run.id, { lat: 31.1, lng: 76.1, accuracy: 6.5, takenAt: 1, base64: 'AAAA' });
+    await store.addFrame(run.id, { lat: 31.2, lng: 76.2, takenAt: 2, base64: 'AAAA' }); // from before the phone sent it
+    await store.endRun(run.id);
+    const bodies = [];
+    const up = (opt) => createUp(Object.assign({ store, post: async (b) => { bodies.push(b); const o = (await batchServer().post(b)); return o; }, sleep: instant }, opt));
+    await up({}).start(run.id);
+    const f = bodies.find((b) => b.action === 'capturefiles').files;
+    assert.deepStrictEqual(f.map((x) => x.accuracy), [6.5, undefined], 'batch: accuracy rides with lat, lng, takenAt');
+    const store2 = mkStore(); const run2 = await store2.newRun({ reg: 'HP1', kind: 'timelapse' });
+    await store2.addFrame(run2.id, { lat: 1, lng: 2, accuracy: 3, takenAt: 1, base64: 'AAAA' }); await store2.endRun(run2.id);
+    const one = []; await createUp({ store: store2, post: async (b) => { one.push(b); return b.action === 'capturefiles' ? { success: false, error: 'Unknown action: capturefiles' } : { success: true, fileId: 'D' + b.seq }; }, sleep: instant }).start(run2.id);
+    assert.strictEqual(one.find((b) => b.action === 'capturefile').accuracy, 3, 'single-file fallback sends it too');
+  });
   await test('batches: a batch stays under 2 MB', async () => {
     const store = mkStore(); const run = await store.newRun({ reg: 'HP1', kind: 'timelapse' });
     for (let i = 0; i < 6; i++) await store.addFrame(run.id, { lat: 0, lng: 0, takenAt: i, base64: 'A'.repeat(800000) }); // 600 KB each

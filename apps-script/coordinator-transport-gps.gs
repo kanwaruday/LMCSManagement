@@ -342,7 +342,7 @@ function gpsInspectionCover_(fleet, inspections, loadout) {
 // ── Capture timelapses: the Mac pulls the runs to process and pushes back the processed ones ──
 /** POST action=transportcapturepull {secret} -> {success, runs:[{runId, reg, kind, status, frames, startedAt, endedAt, stops, frameTimes, done}]}:
  *  the ended timelapse runs of the Capture Runs tab. The Mac finds the files in its Drive copy, Capture/<REG>/<runId>/. frameTimes
- *  (seconds since startedAt by seq) is null when the phone sent none; `done` = already in Capture Stops, so not pushed again. */
+ *  (seconds since startedAt by seq) is null when the phone sent none; `points` (newest runs only: [lat, lng, takenAt, accuracy] | null by seq) is absent when the Roster had none; `done` = already in Capture Stops, so not pushed again. */
 function coordCapturePull_(body) {
   if (!coordTransportSecretOk_(body.secret)) return { success: false, error: 'Not authorized' };
   const sh = SpreadsheetApp.openById(COORD_TRANSPORT_FORM_ID).getSheetByName(COORD_TRANSPORT_TAB_CAPTURE), runs = [], stored = {};
@@ -354,7 +354,27 @@ function coordCapturePull_(body) {
     runs.push({ runId: String(r[0]), reg: String(r[1]), kind: 'timelapse', status: 'ended', frames: Number(r[8]) || 0, startedAt: r[4], endedAt: r[5],
       stops: list(r[10]) || [], frameTimes: list(r[13]), done: !!stored[String(r[0])] });
   });
+  gpsAttachPoints_(runs);
   return { success: true, runs: runs };
+}
+
+const GPS_POINTS_DAYS_ = 14, GPS_POINTS_MAX_ = 20; // only recent runs carry points (the Mac combines the last few days' runs), and not more than this per pull
+/** Adds `points` ([lat, lng, takenAt, accuracy] | null by frame seq) to the newest runs, asked of the Roster (capturepoints). A run the Roster did not
+ *  answer for yet (`later`, or the Roster is down) gets none: the Mac then reads points.json from its Drive copy, or path.json. Never fails the pull. */
+function gpsAttachPoints_(runs) {
+  const cut = Date.now() - GPS_POINTS_DAYS_ * 86400000, ask = runs.filter(function (r) {
+    const e = typeof r.endedAt === 'number' ? r.endedAt : Date.parse(r.endedAt); // epoch ms or ISO text, as the phone's manifest stored it
+    return !isFinite(e) || e >= cut;
+  }).sort(function (a, b) { return a.runId < b.runId ? 1 : -1; }).slice(0, GPS_POINTS_MAX_); // runIds sort by time
+  if (!ask.length) return;
+  try {
+    const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
+    const res = UrlFetchApp.fetch(COORD_ROSTER_URL, { method: 'post', contentType: 'text/plain', muteHttpExceptions: true, followRedirects: true,
+      payload: JSON.stringify({ action: 'capturepoints', secret: secret, runs: ask.map(function (r) { return { reg: r.reg, runId: r.runId, frames: r.frames }; }) }) });
+    const out = JSON.parse(res.getContentText());
+    if (res.getResponseCode() !== 200 || !out || !out.success) return;
+    ask.forEach(function (r) { if (Array.isArray((out.points || {})[r.runId])) r.points = out.points[r.runId]; });
+  } catch (e) { /* the pull still answers */ }
 }
 
 /** One stop as stored and served: counts of children, never names; the stop's name is the place. */

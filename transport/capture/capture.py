@@ -303,14 +303,17 @@ def _onto_line(pts, line):
 def frame_points(run_dir, run):
     """A processed run's frames with where they were taken: [{seq, path, lat, lng, t, acc}] in video order (lat None: no position on record).
     Frames come only from processed/ (blurred). Positions: run['points'] (the pull's per-seq list [lat, lng, takenAt, accuracy] | null,
-    indexed by seq) else processed/path.json (the route view's kept copy, one entry per processed frame in order; accuracy is its 4th
-    value when the phone sent it). The phone's frame file description carries lat, lng and takenAt only today; the accuracy of each
-    frame reaches here only once the capture backend passes it on (see the header of transport-capture.gs)."""
+    indexed by seq) else <run folder>/points.json (the same list, kept by the Roster) else processed/path.json (the route view's kept copy, one entry per processed frame in order; accuracy is its 4th
+    value when the phone sent it: frames from before 28 Nov have none, and an unknown accuracy ranks last).
+    """
     proc = Path(run_dir) / "processed"
     frames = sorted((int(m[1]), p) for p in proc.iterdir() if (m := PROCESSED_FRAME_RE.match(p.name)))
     given = run.get("points")
     if isinstance(given, list):
         pos = [given[s] if s < len(given) else None for s, _ in frames]
+    elif (Path(run_dir) / "points.json").is_file():  # the Roster's kept copy of the pull (capturepoints), in the run's Drive folder
+        kept = json.loads((Path(run_dir) / "points.json").read_text())
+        pos = [kept[s] if isinstance(kept, list) and s < len(kept) else None for s, _ in frames]
     elif (proc / "path.json").is_file():
         kept = json.loads((proc / "path.json").read_text())
         pos = kept if isinstance(kept, list) and len(kept) == len(frames) else [None] * len(frames)

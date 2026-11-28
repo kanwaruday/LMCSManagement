@@ -497,7 +497,7 @@ async function onFix(p) {
   if (!base64) return;
   S.busy = true;
   try {
-    await store.addFrame(S.run.id, { lat: fix.lat, lng: fix.lng, takenAt: fix.at, base64 });
+    await store.addFrame(S.run.id, { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy, takenAt: fix.at, base64 });
     S.last = fix; S.run.frames++; hud();
     if ($('runMsg').textContent === FULL_MSG) runSay('');
   } catch (e) { runSay(e.code === 'STORAGE_FULL' ? FULL_MSG : 'Frame not saved: ' + e.message); }

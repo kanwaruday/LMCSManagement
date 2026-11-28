@@ -291,6 +291,7 @@ function doPost(e) {
     if (body.action === 'gameCaptureRun') return staffJsonOut_(gameCaptureRun_(body)); // the run manifest
     if (body.action === 'capturefiles') return staffJsonOut_(captureFiles_(body)); // a batch of frames, one round trip
     if (body.action === 'capturerun') return staffJsonOut_(captureRun_(body));
+    if (body.action === 'capturepoints') return staffJsonOut_(capturePoints_(body)); // the Coordinator backend's pull: where each frame was taken (same secret)
     if (body.action === 'captureprocessed') return staffJsonOut_(captureProcessed_(body)); // the Coordinator backend, shared secret
     if (body.action === 'capturerunview') return staffJsonOut_(captureRunView_(body)); // the route view: a run the Coordinator backend signed a ticket for
     if (body.action === 'capturediscard') return staffJsonOut_(captureDiscard_(body)); // the shelf's Discard (same secret), or a driver phone's own run

@@ -163,7 +163,7 @@ function capFileCheck_(body) {
   if (row && row.status === 'closed') return { error: 'This run was discarded. Record a new one.' }; // no new folder for a binned run
   return { a: a, reg: reg, runId: runId, runKind: runKind };
 }
-// One photo into the run's folder: {fileId} or {error}. f: {kind, seq, base64, lat, lng, takenAt}
+// One photo into the run's folder: {fileId} or {error}. f: {kind, seq, base64, lat, lng, accuracy, takenAt}
 function capFileSave_(ck, f) {
   const kind = String(f.kind || ''), seq = Number(f.seq);
   if (CAP_KINDS_.indexOf(kind) === -1) return { error: 'Unknown kind: ' + kind };
@@ -183,7 +183,8 @@ function capFileSave_(ck, f) {
   const it = dir.getFilesByName(name);
   if (it.hasNext()) return { fileId: it.next().getId() };
   const file = dir.createFile(Utilities.newBlob(bytes, mime, name));
-  file.setDescription(JSON.stringify({ lat: f.lat, lng: f.lng, takenAt: f.takenAt, by: ck.a.caller.email }));
+  const acc = f.accuracy === '' || f.accuracy == null ? NaN : Number(f.accuracy); // metres; an old phone sends none: the key is then left out, as before
+  file.setDescription(JSON.stringify({ lat: f.lat, lng: f.lng, takenAt: f.takenAt, accuracy: isFinite(acc) && acc >= 0 ? Math.round(acc * 10) / 10 : undefined, by: ck.a.caller.email }));
   cache.put(key, file.getId(), 21600);
   return { fileId: file.getId() };
 }
@@ -375,6 +376,49 @@ function captureRunView_(body) {
   const points = inVideo.map(function (k) { return k in bySeq ? bySeq[k] : null; });
   if (points.length) out.createFile('path.json', JSON.stringify(points), 'application/json'); // ponytail: two first opens at once may both write it; the first one found is used
   return { success: true, points: points, seqs: inVideo };
+}
+
+const CAP_POINTS_FRESH_ = 2; // runs whose frame descriptions are read in one call (a run is ~thousands of getDescription calls); the rest come back in `later`
+/** POST capturepoints {secret, runs:[{reg, runId, frames}]} -> {success, points:{runId:[[lat, lng, takenAt, accuracy] | null]}, later:[runId]}.
+ *  Where each frame was taken, by seq, from the originals' descriptions (null: a stop, or no position on record; accuracy null: a frame
+ *  from before the phone sent it). Kept as points.json in the run folder once every one of the run's `frames` is there, because the
+ *  originals are deleted 30 days after processing; the Mac's Drive copy of that file also serves capture.py. Same shared secret as captureprocessed. */
+function capturePoints_(body) {
+  const secret = String(PropertiesService.getScriptProperties().getProperty('TRANSPORT_PUSH_SECRET') || '').trim();
+  if (!secret || String(body.secret || '').trim() !== secret) return { success: false, error: 'Not authorized' };
+  let f = DriveApp.getFolderById(CENTRAL_REPO_FOLDER_ID_);
+  capPath_().forEach(function (n) { f = f && capSub_(f, n); });
+  const points = {}, later = [];
+  let fresh = 0;
+  (Array.isArray(body.runs) ? body.runs : []).forEach(function (r) {
+    const runId = String(r.runId || ''), reg = String(r.reg || '');
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(runId) || !/^[A-Z0-9]{1,16}$/.test(reg)) return;
+    const bus = f && capSub_(f, reg), dir = bus && capSub_(bus, runId);
+    if (!dir) return;
+    const kept = dir.getFilesByName('points.json');
+    while (kept.hasNext()) {
+      const k = kept.next();
+      if (k.isTrashed && k.isTrashed()) continue;
+      try { points[runId] = JSON.parse(k.getBlob().getDataAsString()); } catch (e) { /* unreadable: read the frames again */ }
+      if (points[runId]) return;
+    }
+    if (fresh >= CAP_POINTS_FRESH_) { later.push(runId); return; }
+    fresh++;
+    const bySeq = {}, it = dir.getFiles();
+    while (it.hasNext()) {
+      const file = it.next(), m = /^frame-(\d{5})( \(\d+\))?\.jpg$/.exec(file.getName());
+      if (!m || (m[2] && Number(m[1]) in bySeq)) continue;
+      let d = null;
+      try { d = JSON.parse(file.getDescription() || 'null'); } catch (e) { d = null; }
+      const ok = d && d.lat !== '' && d.lng !== '' && isFinite(Number(d.lat)) && isFinite(Number(d.lng));
+      bySeq[Number(m[1])] = ok ? [Number(d.lat), Number(d.lng), Number(d.takenAt) || null, d.accuracy === '' || d.accuracy == null || !isFinite(Number(d.accuracy)) ? null : Number(d.accuracy)] : null;
+    }
+    const seqs = Object.keys(bySeq).map(Number), arr = [];
+    for (let i = 0; i <= Math.max.apply(null, seqs.concat([-1])); i++) arr.push(i in bySeq ? bySeq[i] : null);
+    points[runId] = arr;
+    if (seqs.length && seqs.length >= (Number(r.frames) || 0)) dir.createFile('points.json', JSON.stringify(arr), 'application/json'); // ponytail: two first reads at once may both write it; the first found is used
+  });
+  return { success: true, points: points, later: later };
 }
 
 /** POST captureprocessed (see the header): ids of the processed (blurred) files, looked up by path; creates nothing. */

@@ -467,5 +467,34 @@ assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
     assert.ok(/action === 'capturerunview'\) return staffJsonOut_\(captureRunView_\(body\)\)/.test(src), 'capturerunview reaches captureRunView_');
     assert.ok(/action === 'capturerun'\) return staffJsonOut_\(captureRun_\(body\)\)/.test(src) && !/'capturerun'\) return staffJsonOut_\(captureRunView_/.test(src), 'and capturerun stays the manifest');
   }
+  { // 28 Nov: a frame keeps its GPS accuracy; capturepoints hands the Mac every frame's position by seq
+    caller = { email: 'c4@lms.org.in', campusId: 'LMS5', roles: ['Coordinator'], role: 'Coordinator' };
+    const P = 'HP659511-20261128-070000-pt01';
+    const descOf = (seq) => JSON.parse(runDirOf(P).files.find((f) => f.name === 'frame-' + ('00000' + seq).slice(-5) + '.jpg').desc);
+    const put = (o) => assert.strictEqual(frame(Object.assign({ runId: P }, o)).success, true);
+    put({ seq: 0, lat: 31.1, lng: 76.1, takenAt: 1000, accuracy: 4.26 });
+    put({ seq: 1, lat: 31.2, lng: 76.2, takenAt: 2000 }); // an old phone: no accuracy
+    put({ seq: 2, lat: 31.3, lng: 76.3, takenAt: 3000, accuracy: -5 }); // nonsense is left out, never stored
+    put({ seq: 3, lat: 31.4, lng: 76.4, takenAt: 4000, accuracy: 'x' });
+    put({ seq: 5, lat: '', lng: '', takenAt: 6000, accuracy: 9 });
+    assert.deepStrictEqual([descOf(0).accuracy, descOf(0).lat, descOf(0).takenAt], [4.3, 31.1, 1000], 'accuracy is kept next to lat, lng and takenAt (to 0.1 m)');
+    assert.ok(!('accuracy' in descOf(1)) && !('accuracy' in descOf(2)) && !('accuracy' in descOf(3)), 'no accuracy, a negative one or text: the key is simply absent, as before');
+    const cp = (o) => run('capturePoints_(' + JSON.stringify(Object.assign({ secret: 'S' }, o)) + ')');
+    assert.strictEqual(cp({ secret: 'X', runs: [{ reg: 'HP659511', runId: P, frames: 6 }] }).error, 'Not authorized');
+    const r1 = cp({ runs: [{ reg: 'HP659511', runId: P, frames: 99 }, { reg: 'HP659511', runId: '../x', frames: 1 }] });
+    assert.deepStrictEqual(r1.points[P], [[31.1, 76.1, 1000, 4.3], [31.2, 76.2, 2000, null], [31.3, 76.3, 3000, null], [31.4, 76.4, 4000, null], null, null],
+      'points by seq: [lat, lng, takenAt, accuracy], accuracy null for an old frame, null for a frame with no position or a stop seq');
+    assert.ok(!runDirOf(P).files.some((f) => f.name === 'points.json'), 'fewer frames than the run has: not complete, not kept');
+    assert.ok(!('../x' in r1.points), 'a bad run id is skipped');
+    const r2 = cp({ runs: [{ reg: 'HP659511', runId: P, frames: 5 }] });
+    assert.ok(runDirOf(P).files.some((f) => f.name === 'points.json'), 'every frame is there: kept as points.json in the run folder');
+    runDirOf(P).files.find((f) => f.name === 'frame-00000.jpg').trashed = true; runDirOf(P).files = runDirOf(P).files.filter((f) => !/^frame-/.test(f.name)); // originals purged
+    assert.deepStrictEqual(cp({ runs: [{ reg: 'HP659511', runId: P, frames: 5 }] }).points[P], r2.points[P], 'served from the kept copy once the originals are gone');
+    const many = ['a', 'b', 'c'].map((k) => { const id = 'HP659511-20261128-08000' + k + '-zz00'; frame({ runId: id, seq: 0, lat: 1, lng: 2, takenAt: 1 }); return { reg: 'HP659511', runId: id, frames: 1 }; });
+    const r3 = cp({ runs: many });
+    assert.strictEqual(Object.keys(r3.points).length, 2, 'only 2 uncached runs are read per call (Apps Script time)'); assert.deepStrictEqual(r3.later, [many[2].runId]);
+    const src = gs('employee-roster.gs');
+    assert.ok(/action === 'capturepoints'\) return staffJsonOut_\(capturePoints_\(body\)\)/.test(src), 'capturepoints is routed on the Roster');
+  }
   console.log('transport capture: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

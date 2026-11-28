@@ -57,7 +57,7 @@ export function createRunStore(idb, { now = () => Date.now(), rand = Math.random
     if (!f.base64) throw new Error('Photo missing');
     const seq = run.nextSeq++, id = fileId(run.id, kind, seq);
     await idb.data.put({ id, base64: f.base64 });
-    try { await idb.files.put({ id, runId: run.id, kind, seq, lat: f.lat, lng: f.lng, takenAt: f.takenAt, bytes: Math.round(String(f.base64).length * 0.75), sent: false }); }
+    try { await idb.files.put({ id, runId: run.id, kind, seq, lat: f.lat, lng: f.lng, accuracy: f.accuracy, takenAt: f.takenAt, bytes: Math.round(String(f.base64).length * 0.75), sent: false }); }
     catch (e) { await idb.data.delete(id).catch(() => {}); throw e; }
     return seq;
   };

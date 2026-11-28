@@ -86,7 +86,7 @@ export function createUploader({
     // Speed (6 Nov: one at a time ran ~1 frame per 20 s, all round trips): `parallel` requests at once, each a batch of up to
     // `batch` files and under 2 MB (capturefiles). A Roster from before batches answers "Unknown action": then one file per request.
     // A refusal stops the others after their current request.
-    const body = async (f) => ({ kind: f.kind, seq: f.seq, lat: f.lat, lng: f.lng, takenAt: f.takenAt, base64: await store.fileData(runId, f.kind, f.seq) });
+    const body = async (f) => ({ kind: f.kind, seq: f.seq, lat: f.lat, lng: f.lng, accuracy: f.accuracy, takenAt: f.takenAt, base64: await store.fileData(runId, f.kind, f.seq) });
     const saved = async (f, fileId) => { await store.markSent(runId, f.kind, f.seq, fileId); sent++; progress('uploading'); };
     const one = async (f) => { // undefined when saved, else {} (stopped) or {error, f}
       const r = await send({ action: 'capturefile', reg: run.reg, runId, runKind: run.kind, ...(await body(f)) }, progress);
