@@ -485,6 +485,8 @@ assert.ok(!rowOf('DV4')[DV()], 'only a route timelapse carries the note');
     assert.deepStrictEqual(r1.points[P], [[31.1, 76.1, 1000, 4.3], [31.2, 76.2, 2000, null], [31.3, 76.3, 3000, null], [31.4, 76.4, 4000, null], null, null],
       'points by seq: [lat, lng, takenAt, accuracy], accuracy null for an old frame, null for a frame with no position or a stop seq');
     assert.ok(!runDirOf(P).files.some((f) => f.name === 'points.json'), 'fewer frames than the run has: not complete, not kept');
+    const z = cp({ runs: [{ reg: 'HP659511', runId: P, frames: 0 }, { reg: 'HP659511', runId: P }] });
+    assert.ok(z.points[P] && !runDirOf(P).files.some((f) => f.name === 'points.json'), 'frames 0 or missing: the points are served but never kept');
     assert.ok(!('../x' in r1.points), 'a bad run id is skipped');
     const r2 = cp({ runs: [{ reg: 'HP659511', runId: P, frames: 5 }] });
     assert.ok(runDirOf(P).files.some((f) => f.name === 'points.json'), 'every frame is there: kept as points.json in the run folder');

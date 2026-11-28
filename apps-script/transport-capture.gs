@@ -416,7 +416,8 @@ function capturePoints_(body) {
     const seqs = Object.keys(bySeq).map(Number), arr = [];
     for (let i = 0; i <= Math.max.apply(null, seqs.concat([-1])); i++) arr.push(i in bySeq ? bySeq[i] : null);
     points[runId] = arr;
-    if (seqs.length && seqs.length >= (Number(r.frames) || 0)) dir.createFile('points.json', JSON.stringify(arr), 'application/json'); // ponytail: two first reads at once may both write it; the first found is used
+    const want = Number(r.frames) || 0; // 0 or missing while frames are still uploading: never keep it, a kept partial list would be permanent
+    if (want > 0 && seqs.length >= want) dir.createFile('points.json', JSON.stringify(arr), 'application/json'); // ponytail: two first reads at once may both write it; the first found is used
   });
   return { success: true, points: points, later: later };
 }
