@@ -15,6 +15,8 @@ Run it with /usr/local/bin/python3 (framework 3.13, which has numpy, Pillow and 
   /usr/local/bin/python3 transport/capture/capture.py                 # the daily job
   /usr/local/bin/python3 transport/capture/capture.py --dry-run       # read and plan only: nothing written, deleted or pushed
   /usr/local/bin/python3 transport/capture/capture.py --root DIR --manifest runs.json   # a test folder and a local manifest; nothing pushed
+  /usr/local/bin/python3 transport/capture/capture.py --combine       # per bus with 3+ processed runs: GPS-sync them, write Capture/<REG>/combined/
+                                                                      #   route.mp4 + route-web.mp4 + route-manifest.json (--tracker-db, --max-accuracy; with --root/--manifest it is offline)
   /usr/local/bin/python3 transport/capture/test_capture.py            # tests; the real-detector one runs once the models are installed
 
 Privacy: blur FAILS CLOSED. Without OpenCV, onnxruntime or either model file, no run is processed (no frames, no route.mp4),
@@ -35,8 +37,8 @@ Install:
   curl -fLO https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
   curl -fLO https://github.com/ankandrew/open-image-models/releases/download/assets/yolo-v9-t-640-license-plates-end2end.onnx
 """
-import argparse, json, os, re, shutil, subprocess, sys, tempfile, time
-from datetime import datetime, timezone
+import argparse, json, math, os, re, shutil, sqlite3, statistics, subprocess, sys, tempfile, time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -250,6 +252,276 @@ def process_run(run_dir, run, detectors):
         raise
 
 
+# ---------------------------------------------------------------------------------------------------------------------------
+# GPS sync and the combined route (Uday, 28 Nov: "at least 3 timelapse runs ... a virtual tour of the route overlaid on the map,
+# GPS synced so the overlay is accurate"). Plan: notes folder route-3-runs-and-bus-counts-plan.md, part B.
+# Every number below is config: change it here or with a flag, never in the logic.
+SYNC = {
+    "max_accuracy_m": 30.0,     # a frame whose GPS accuracy is worse than this is dropped (the phone itself pauses frames past 50 m)
+    "max_speed_kmh": 110.0,     # a fix that needs a faster hop than this from the last kept one is an impossible jump: dropped
+    "jump_m_without_time": 150.0,  # the same test when the frame has no time: frames are ~10 m apart, so this is a leap
+    "tracker_offset_m": 25.0,   # the run's median distance to the bus's GPS tracker line, over which the run is flagged
+    "segment_m": 10.0,          # the base track is cut into segments this long; one best frame per segment
+    "match_m": 25.0,            # a frame within this of the base track is "on" it
+    "stop_cluster_m": 40.0,     # one-tap stops from different runs closer than this are one stop
+    "different_route_below": 0.70,  # a run with less of its frames on the base track than this is "a different route", never merged
+    "runs_wanted": 3,           # the k in "seen k/3"; also how many processed runs a bus needs before combine() runs
+    "stop_accuracy_default_m": 15.0,  # a stop with no accuracy weighs as this
+}
+IST = timezone(timedelta(hours=5, minutes=30))
+TRACKER_DB = Path.home() / "Projects" / "transport-gps" / "trips.sqlite"  # insights.py's points(veh, at, lat, lng, ...): at is IST text
+PROCESSED_FRAME_RE = re.compile(r"^frame-(\d{5})\.jpg$")
+
+
+def _xy(lat, lng, origin):
+    """Metres east / north of origin (flat-earth: exact enough over one route)."""
+    return ((lng - origin[1]) * 111320.0 * math.cos(math.radians(origin[0])), (lat - origin[0]) * 110540.0)
+
+
+def _latlng(x, y, origin):
+    return (origin[0] + y / 110540.0, origin[1] + x / (111320.0 * math.cos(math.radians(origin[0]))))
+
+
+def _onto_line(pts, line):
+    """Each row of pts (n,2 metres) -> (distance to the polyline, distance along it, the nearest point (n,2)). line is (m,2), m >= 2."""
+    a, b = line[:-1], line[1:]
+    ab = b - a
+    seg = np.hypot(ab[:, 0], ab[:, 1])
+    cum = np.concatenate([[0.0], np.cumsum(seg)])
+    l2 = np.where(seg > 0, seg * seg, 1.0)
+    dist, arc, near = np.empty(len(pts)), np.empty(len(pts)), np.empty((len(pts), 2))
+    for i, p in enumerate(pts):
+        t = np.clip(((p - a) * ab).sum(1) / l2, 0.0, 1.0)
+        t = np.where(seg > 0, t, 0.0)
+        proj = a + t[:, None] * ab
+        d = np.hypot(*(p - proj).T)
+        k = int(np.argmin(d))
+        dist[i], arc[i], near[i] = d[k], cum[k] + t[k] * seg[k], proj[k]
+    return dist, arc, near
+
+
+def frame_points(run_dir, run):
+    """A processed run's frames with where they were taken: [{seq, path, lat, lng, t, acc}] in video order (lat None: no position on record).
+    Frames come only from processed/ (blurred). Positions: run['points'] (the pull's per-seq list [lat, lng, takenAt, accuracy] | null,
+    indexed by seq) else processed/path.json (the route view's kept copy, one entry per processed frame in order; accuracy is its 4th
+    value when the phone sent it). The phone's frame file description carries lat, lng and takenAt only today; the accuracy of each
+    frame reaches here only once the capture backend passes it on (see the header of transport-capture.gs)."""
+    proc = Path(run_dir) / "processed"
+    frames = sorted((int(m[1]), p) for p in proc.iterdir() if (m := PROCESSED_FRAME_RE.match(p.name)))
+    given = run.get("points")
+    if isinstance(given, list):
+        pos = [given[s] if s < len(given) else None for s, _ in frames]
+    elif (proc / "path.json").is_file():
+        kept = json.loads((proc / "path.json").read_text())
+        pos = kept if isinstance(kept, list) and len(kept) == len(frames) else [None] * len(frames)
+    else:
+        pos = [None] * len(frames)
+    out = []
+    for (seq, path), p in zip(frames, pos):
+        ok = isinstance(p, (list, tuple)) and len(p) >= 2 and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in p[:2])
+        num = lambda i: p[i] if ok and len(p) > i and isinstance(p[i], (int, float)) and not isinstance(p[i], bool) else None
+        out.append({"seq": seq, "path": path, "lat": p[0] if ok else None, "lng": p[1] if ok else None, "t": num(2), "acc": num(3)})
+    return out
+
+
+def load_tracker(db, reg, t0_ms, t1_ms, margin_min=10):
+    """The bus's GPS-tracker fixes around a run, in order: [(lat, lng)], or None (no database, no such bus, under 3 fixes). Read only."""
+    if not db or not Path(db).is_file() or t0_ms is None or t1_ms is None:
+        return None
+    f = lambda ms, m: datetime.fromtimestamp(ms / 1000, IST).__add__(timedelta(minutes=m)).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            rows = con.execute("select lat, lng from points where veh = ? and at between ? and ? order by at",
+                               (reg, f(t0_ms, -margin_min), f(t1_ms, margin_min))).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    return rows if len(rows) >= 3 else None
+
+
+def sync_run(points, tracker=None, cfg=SYNC):
+    """GPS sync of one run. Drops frames with no position, a poor accuracy or an impossible jump at road speed; where the bus's tracker has
+    a line for that day, measures the run against it (median offset over cfg tracker_offset_m is flagged); snaps what is left to the road
+    line: the tracker line if there is one, else the run's own track smoothed with a 5-point mean. Returns (kept, report): kept are the
+    points with lat/lng replaced by the snapped position (and 'raw' = the phone's), report is numbers and one flag text, for printing."""
+    rep = {"frames": len(points), "no_gps": 0, "poor_accuracy": 0, "jumps": 0, "kept": 0, "median_offset_m": None,
+           "line": "own track", "tracker_median_m": None, "flag": None}
+    cand = []
+    for p in points:
+        if p["lat"] is None:
+            rep["no_gps"] += 1
+        elif p["acc"] is not None and p["acc"] > cfg["max_accuracy_m"]:
+            rep["poor_accuracy"] += 1
+        else:
+            cand.append(p)
+    if not cand:
+        rep["flag"] = "no usable GPS"
+        return [], rep
+    origin = (cand[0]["lat"], cand[0]["lng"])
+    kept, last, run_of_drops = [], None, 0
+    for p in cand:
+        xy = _xy(p["lat"], p["lng"], origin)
+        if last is not None and run_of_drops < 5:
+            d = math.hypot(xy[0] - last[0][0], xy[1] - last[0][1])
+            dt = (p["t"] - last[1]) / 1000.0 if p["t"] is not None and last[1] is not None else None
+            if (dt is not None and d / max(dt, 1.0) * 3.6 > cfg["max_speed_kmh"]) or (dt is None and d > cfg["jump_m_without_time"]):
+                rep["jumps"] += 1
+                run_of_drops += 1
+                continue
+        run_of_drops = 0  # five drops in a row: the earlier fix was the bad one; carry on from here
+        last = (xy, p["t"])
+        kept.append((p, xy))
+    rep["kept"] = len(kept)
+    if len(kept) < 2:
+        rep["flag"] = "too few frames after the GPS checks"
+        return [], rep
+    xy = np.array([k[1] for k in kept])
+    half = 2
+    smooth = np.array([xy[max(0, i - half): i + half + 1].mean(axis=0) for i in range(len(xy))])  # jumps are already out, so a mean is safe
+    line, snapped = smooth, smooth
+    if tracker:
+        tl = np.array([_xy(la, ln, origin) for la, ln in tracker])
+        dist, _, near = _onto_line(xy, tl)
+        rep["tracker_median_m"] = float(np.median(dist))
+        if rep["tracker_median_m"] > cfg["tracker_offset_m"]:
+            rep["flag"] = f"offset from the GPS tracker {rep['tracker_median_m']:.0f} m (over {cfg['tracker_offset_m']:.0f} m)"
+        else:
+            rep["line"] = "tracker line"
+            snapped = np.where((dist <= cfg["tracker_offset_m"])[:, None], near, smooth)
+    out = []
+    for (p, raw), s in zip(kept, snapped):
+        la, ln = _latlng(s[0], s[1], origin)
+        out.append(dict(p, lat=la, lng=ln, raw=(p["lat"], p["lng"])))
+    rep["median_offset_m"] = float(np.median(np.hypot(*(xy - snapped).T)))
+    return out, rep
+
+
+def sync_line(run_id, rep):
+    """One printable line of sync quality for a run."""
+    off = "n/a" if rep["median_offset_m"] is None else f"{rep['median_offset_m']:.1f} m"
+    tr = "" if rep["tracker_median_m"] is None else f"; tracker {rep['tracker_median_m']:.1f} m"
+    drop = rep["frames"] - rep["kept"]
+    return (f"{run_id}: {rep['kept']}/{rep['frames']} frames kept, {drop} dropped (no GPS {rep['no_gps']}, poor accuracy {rep['poor_accuracy']}, "
+            f"jump {rep['jumps']}); median offset {off} from the {rep['line']}{tr}" + (f"  [FLAG: {rep['flag']}]" if rep["flag"] else ""))
+
+
+def frame_quality(path):
+    """(sharpness, light) of a blurred frame: variance of the Laplacian and the mean brightness, both of the grey image."""
+    g = np.asarray(Image.open(path).convert("L"), dtype=np.float64)
+    lap = -4 * g[1:-1, 1:-1] + g[:-2, 1:-1] + g[2:, 1:-1] + g[1:-1, :-2] + g[1:-1, 2:]
+    return float(lap.var()) if lap.size else 0.0, float(g.mean())
+
+
+def cluster_stops(stops, base_xy, origin, cfg=SYNC):
+    """One-tap stops of every run -> clusters within cfg stop_cluster_m, position weighted by 1/accuracy^2. stops: [(run index, lat, lng,
+    accuracy|None)]. Returns [{lat, lng, seen (distinct runs)}], never dropping a stop seen once."""
+    cl = []
+    for r, la, ln, acc in stops:
+        x, y = _xy(la, ln, origin)
+        w = 1.0 / (acc if acc and acc > 0 else cfg["stop_accuracy_default_m"]) ** 2
+        for c in cl:
+            if math.hypot(x - c["sx"] / c["sw"], y - c["sy"] / c["sw"]) <= cfg["stop_cluster_m"]:
+                c["sx"] += x * w; c["sy"] += y * w; c["sw"] += w; c["runs"].add(r)
+                break
+        else:
+            cl.append({"sx": x * w, "sy": y * w, "sw": w, "runs": {r}})
+    out = []
+    for c in cl:
+        la, ln = _latlng(c["sx"] / c["sw"], c["sy"] / c["sw"], origin)
+        out.append({"lat": la, "lng": ln, "seen": len(c["runs"])})
+    return out
+
+
+def combine(root, reg, runs=None, tracker_db=None, cfg=SYNC, say=None):
+    """One better route from several processed runs of a bus (Capture/<REG>/combined/). Needs cfg runs_wanted processed runs with usable GPS.
+    Each run is GPS-synced first (sync_run, printed per run). The base track is the run with the most good frames, cut into cfg segment_m
+    segments; per segment the best frame of every run on the base track wins by GPS accuracy (whole metres), then sharpness, then light. A
+    run with under cfg different_route_below of its frames on the base track is reported "a different route: check" and left out (it still
+    counts as a run for the quest). Stops are clustered across runs ("seen k/3"; a stop seen once is kept, to be checked). Frames come only
+    from each run's processed/ folder (already blurred): nothing unblurred is ever read. Built in combined.partial/, renamed when complete.
+    Writes route.mp4, route-web.mp4 and route-manifest.json (numbers only: per video frame lat, lng, time, accuracy, segment, run number;
+    per stop lat, lng, seen, of, frame). Returns a report dict ({'skipped': why} when it did nothing)."""
+    say = say or log
+    root, runs = Path(root), runs or {}
+    synced = []
+    for d in sorted(p for p in (root / reg).iterdir() if p.is_dir() and p.name != "combined" and (p / "processed" / "route.mp4").is_file()) if (root / reg).is_dir() else []:
+        run = runs.get(d.name, {})
+        if run.get("trial") is True:
+            continue
+        pts = frame_points(d, run)
+        times = [p["t"] for p in pts if p["t"] is not None]
+        tracker = load_tracker(tracker_db, reg, min(times) if times else None, max(times) if times else None)
+        kept, rep = sync_run(pts, tracker, cfg)
+        say(sync_line(d.name, rep))
+        if kept:
+            synced.append({"id": d.name, "kept": kept, "rep": rep, "stops": [s for s in run.get("stops") or [] if isinstance(s.get("lat"), (int, float)) and isinstance(s.get("lng"), (int, float))]})
+    if len(synced) < cfg["runs_wanted"]:
+        say(f"{reg}: {len(synced)} of {cfg['runs_wanted']} runs with usable GPS: not combined yet")
+        return {"skipped": f"{len(synced)} of {cfg['runs_wanted']} runs"}
+    base = max(synced, key=lambda r: len(r["kept"]))
+    origin = (base["kept"][0]["lat"], base["kept"][0]["lng"])
+    line = np.array([_xy(p["lat"], p["lng"], origin) for p in base["kept"]])
+    used, different, cand = [], [], {}
+    for n, r in enumerate(synced):
+        dist, arc, _ = _onto_line(np.array([_xy(p["lat"], p["lng"], origin) for p in r["kept"]]), line)
+        on = dist <= cfg["match_m"]
+        r["on_base"] = float(on.mean())
+        if r is not base and r["on_base"] < cfg["different_route_below"]:
+            different.append(r["id"])
+            say(f"{r['id']}: a different route: check ({r['on_base'] * 100:.0f}% of its frames on the base track {base['id']}); left out of the combined route")
+            continue
+        used.append(r)
+        for p, a, ok in zip(r["kept"], arc, on):
+            if ok:
+                cand.setdefault(int(a // cfg["segment_m"]), []).append((len(used) - 1, p, float(a)))
+    pick = []
+    for seg in sorted(cand):
+        rows = cand[seg]
+        def rank(row):
+            sharp, light = frame_quality(row[1]["path"]) if len(rows) > 1 else (0.0, 0.0)
+            acc = row[1]["acc"]
+            return (round(acc) if acc is not None else float("inf"), -sharp, -light)
+        pick.append((seg, min(rows, key=rank)))
+    if not pick:
+        say(f"{reg}: no frames on the base track")
+        return {"skipped": "no frames on the base track"}
+    stops = [(i, s["lat"], s["lng"], s.get("accuracy")) for i, r in enumerate(used) for s in r["stops"]]
+    clusters = cluster_stops(stops, line, origin, cfg)
+    seg_to_frame = {seg: i for i, (seg, _) in enumerate(pick)}
+    segs = sorted(seg_to_frame)
+    man_stops = []
+    for c in clusters:
+        _, a, _ = _onto_line(np.array([_xy(c["lat"], c["lng"], origin)]), line)
+        near = min(segs, key=lambda s: abs(s - a[0] // cfg["segment_m"]))
+        man_stops.append({"lat": round(c["lat"], 6), "lng": round(c["lng"], 6), "seen": c["seen"], "of": cfg["runs_wanted"], "frame": seg_to_frame[near]})
+    man_stops.sort(key=lambda s: s["frame"])
+    frames_out = []
+    for i, (seg, (run_i, p, a)) in enumerate(pick):
+        frames_out.append({"i": i, "seg": seg, "lat": round(p["lat"], 6), "lng": round(p["lng"], 6), "t": p["t"], "acc": p["acc"], "run": run_i})
+        assert p["path"].parent.name == "processed", "combined frames come only from processed/ (blurred)"
+    manifest = {"fps": FPS, "segment_m": cfg["segment_m"], "runs": len(used), "frames": frames_out, "stops": man_stops}
+    chap = chapters([{"seq": s["frame"], "name": f"Stop {n + 1} (seen {s['seen']}/{s['of']})"} for n, s in enumerate(man_stops)],
+                    [{"seq": i} for i in range(len(pick))])
+    part = root / reg / "combined.partial"
+    shutil.rmtree(part, ignore_errors=True)
+    part.mkdir()
+    try:
+        stitch([p["path"] for _, (_, p, _) in pick], chap, part / "route.mp4")
+        web_copy(part / "route.mp4", part / "route-web.mp4")
+        (part / "route-manifest.json").write_text(json.dumps(manifest, separators=(",", ":")))
+        final = root / reg / "combined"
+        shutil.rmtree(final, ignore_errors=True)
+        os.rename(part, final)
+    except BaseException:
+        shutil.rmtree(part, ignore_errors=True)
+        raise
+    say(f"{reg}: combined {len(used)} runs into {len(pick)} frames over {len(pick) * cfg['segment_m']:.0f} m, {len(man_stops)} stops "
+        f"({sum(s['seen'] == 1 for s in man_stops)} seen once: check)" + (f"; left out as a different route: {', '.join(different)}" if different else ""))
+    return {"frames": len(pick), "runs": [r["id"] for r in used], "different": different, "stops": man_stops}
+
+
 def purge(root, now, dry_run=False, days=KEEP_DAYS):
     """Deletes the originals (frame-/stop- JPEGs, not inspection photos, not processed/) of every run whose processed/route.mp4
     is `days` old. Returns the paths deleted (or that would be)."""
@@ -319,6 +591,9 @@ def main(argv=None):
     ap.add_argument("--root", default=str(DEFAULT_ROOT), help="the Drive Capture/ folder (default: the transport folder in Drive for desktop)")
     ap.add_argument("--models", default=str(MODELS_DIR), help="folder with the two ONNX models")
     ap.add_argument("--manifest", help="read the runs from this JSON file ({runs:[...]}) instead of the portal; nothing is pushed")
+    ap.add_argument("--combine", action="store_true", help="only GPS-sync and combine each bus's processed runs into Capture/<REG>/combined/ (no blur, purge or push)")
+    ap.add_argument("--tracker-db", default=str(TRACKER_DB), help="insights.py's trips.sqlite: its GPS-tracker fixes cross-check the frames")
+    ap.add_argument("--max-accuracy", type=float, help="drop frames whose GPS accuracy is worse than this many metres (default: SYNC max_accuracy_m)")
     ap.add_argument("--dry-run", action="store_true", help="read and plan only: nothing is written, deleted or pushed")
     a = ap.parse_args(argv)
     root = Path(a.root)
@@ -330,6 +605,18 @@ def main(argv=None):
             log(f"{r.get('runId')}: ignored (unexpected run id or reg {r.get('reg')!r})")
     if runs and not root.is_dir():
         sys.exit(f"Capture folder not found: {root} (is Drive for desktop running? pass --root)")
+    if a.max_accuracy:
+        SYNC["max_accuracy_m"] = a.max_accuracy
+    if a.combine:
+        by_id = {r["runId"]: r for r in runs}
+        fail = 0
+        for reg in sorted({r["reg"] for r in runs}):
+            try:
+                combine(root, reg, by_id, a.tracker_db)
+            except Exception as e:
+                fail += 1
+                log(f"{reg}: combine failed, nothing published ({type(e).__name__}: {e})")
+        return 1 if fail else 0
     todo = [r for r in runs if not (root / r["reg"] / r["runId"] / "processed" / "route.mp4").exists()]
     failed, detectors = 0, None
     if todo:

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """capture.py: frame order, stop chapters, blur with injected detectors, ffmpeg stitch, fail-closed processing, the 30-day purge.
 Plain asserts: `/usr/local/bin/python3 transport/capture/test_capture.py` (pytest also collects them). Temp dirs and fake images only."""
-import contextlib, io, json, os, subprocess, sys, tempfile, time
+import contextlib, io, json, os, sqlite3, subprocess, sys, tempfile, time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -333,6 +334,153 @@ def test_real_detectors_load_when_installed():
         return
     flat = np.full((720, 1280, 3), 128, np.uint8)
     assert np.array_equal(C.blur(flat, C.load_detectors(models)), flat), "a flat grey frame has no face and no plate"
+
+
+# ---- GPS sync and combine (synthetic roads and frames only: nothing from a real bus, nothing outside a temp dir) --------------------------
+import math, random
+O = (31.9000, 76.5000)  # a made-up origin
+
+
+def road(i, off=0.0):
+    """Point i (10 m apart) of a made-up road: 300 m north-east, then 300 m east. off: metres to the north (a parallel road)."""
+    x = i * 10 * 0.7071 if i <= 30 else 212.13 + (i - 30) * 10
+    y = i * 10 * 0.7071 if i <= 30 else 212.13
+    return C._latlng(x, y + off, O)
+
+
+def synth_run(root, reg, run_id, n=60, acc=5.0, noise=3.0, off=0.0, seed=1, bad=(), jump=(), nogps=(), sharp=None, stops=()):
+    """A processed run on the made-up road. Returns its run dict (with 'points' by seq). bad: seqs with a poor accuracy; jump: seqs thrown
+    2 km off; nogps: seqs with no fix; sharp(i) -> 0..1: how sharp frame i is (noise image) or flat grey."""
+    rnd = random.Random(seed)
+    d = Path(root) / reg / run_id / "processed"
+    d.mkdir(parents=True)
+    (d / "route.mp4").write_bytes(b"x")
+    pts = []
+    for i in range(n):
+        la, ln = road(i, off)
+        la, ln = la + rnd.uniform(-noise, noise) / 110540.0, ln + rnd.uniform(-noise, noise) / 111320.0 / math.cos(math.radians(O[0]))
+        if i in jump:
+            la += 0.018
+        sh = sharp(i) if sharp else 0.5
+        img = np.full((48, 64, 3), 110, np.uint8) + (np.random.default_rng(seed * 1000 + i).integers(0, 1 + int(90 * sh), (48, 64, 1)).astype(np.uint8) if sh else 0)
+        Image.fromarray(img).save(d / f"frame-{i:05d}.jpg", quality=95)
+        pts.append(None if i in nogps else [la, ln, 1_000_000 + i * 1000, 80.0 if i in bad else acc])
+    return {"runId": run_id, "reg": reg, "kind": "timelapse", "status": "ended", "points": pts, "stops": [dict(seq=100 + k, name="s", lat=road(i)[0], lng=road(i)[1], accuracy=a) for k, (i, a) in enumerate(stops)]}
+
+
+def test_sync_drops_no_gps_poor_accuracy_and_an_impossible_jump():
+    root = tempfile.mkdtemp()
+    run = synth_run(root, "HP1", "a", bad={3, 4}, jump={10}, nogps={0})
+    kept, rep = C.sync_run(C.frame_points(Path(root) / "HP1" / "a", run))
+    assert (rep["frames"], rep["no_gps"], rep["poor_accuracy"], rep["jumps"], rep["kept"]) == (60, 1, 2, 1, 56), rep
+    assert len(kept) == 56 and all(p["seq"] not in (0, 3, 4, 10) for p in kept)
+    assert rep["line"] == "own track" and 0.3 < rep["median_offset_m"] < 5, "frames sit within their GPS noise of the smoothed road line"
+    assert "56/60 frames kept" in C.sync_line("a", rep) and "poor accuracy 2" in C.sync_line("a", rep)
+
+
+def test_sync_a_run_that_starts_on_a_bad_fix_still_recovers():
+    root = tempfile.mkdtemp()
+    run = synth_run(root, "HP1", "a", jump={0})
+    _, rep = C.sync_run(C.frame_points(Path(root) / "HP1" / "a", run))
+    assert rep["kept"] >= 50, "the first fix was the bad one: after five drops in a row the run carries on from the next fix"
+
+
+def test_sync_against_the_tracker_line_flags_over_25_m_and_snaps_when_close():
+    root = tempfile.mkdtemp()
+    run = synth_run(root, "HP1", "a")
+    pts = C.frame_points(Path(root) / "HP1" / "a", run)
+    near = [road(i / 2, 2.0) for i in range(121)]
+    kept, rep = C.sync_run(pts, near)
+    assert rep["line"] == "tracker line" and rep["flag"] is None and rep["tracker_median_m"] < 8
+    far = [road(i / 2, 90.0) for i in range(121)]
+    kept2, rep2 = C.sync_run(pts, far)
+    assert rep2["flag"] and "tracker" in rep2["flag"] and rep2["tracker_median_m"] > 25, "a tracker line 90 m off flags the run, it does not move it"
+    assert rep2["line"] == "own track" and len(kept2) == 60
+
+
+def test_tracker_reads_the_bus_points_in_ist_and_nothing_else():
+    d = tempfile.mkdtemp()
+    db = Path(d) / "t.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("create table points(veh,at,lat real,lng real)")
+    ms = 1_700_000_000_000
+    ist = lambda m: datetime.fromtimestamp((ms + m * 60000) / 1000, C.IST).strftime("%Y-%m-%d %H:%M:%S")
+    for m in range(0, 6):
+        con.execute("insert into points values('HP1', ?, 31.9, 76.5)", (ist(m),))
+        con.execute("insert into points values('HP2', ?, 10.0, 10.0)", (ist(m),))
+    con.execute("insert into points values('HP1', ?, 0, 0)", (ist(120),))  # hours later: outside the run's window
+    con.commit(); con.close()
+    assert C.load_tracker(db, "HP1", ms, ms + 300000) == [(31.9, 76.5)] * 6
+    assert C.load_tracker(db, "HP3", ms, ms + 300000) is None and C.load_tracker(Path(d) / "none.sqlite", "HP1", ms, ms) is None
+
+
+def test_combine_needs_three_runs_and_writes_nothing_before_that():
+    root = tempfile.mkdtemp()
+    runs = {r: synth_run(root, "HP1", r, seed=k) for k, r in enumerate("ab")}
+    out = C.combine(root, "HP1", runs, say=lambda m: None)
+    assert out == {"skipped": "2 of 3 runs"} and not (Path(root) / "HP1" / "combined").exists()
+
+
+def test_combine_picks_the_best_frame_per_segment_and_leaves_out_a_different_route():
+    root, lines = tempfile.mkdtemp(), []
+    runs = {
+        "a": synth_run(root, "HP1", "a", seed=1, acc=9.0, bad={20, 21}, jump={40}, stops=[(10, 20.0), (45, 20.0)]),
+        "b": synth_run(root, "HP1", "b", seed=2, acc=4.0, sharp=lambda i: 1.0 if i % 2 else 0.0, stops=[(10, 4.0), (45, 4.0)]),
+        "c": synth_run(root, "HP1", "c", seed=3, acc=6.0, n=55, stops=[(10, 6.0), (30, 6.0)]),
+        "d": synth_run(root, "HP1", "d", seed=4, acc=3.0, off=400.0),  # another road altogether, 400 m north
+    }
+    out = C.combine(root, "HP1", runs, say=lines.append)
+    assert out["different"] == ["d"] and out["runs"] == ["a", "b", "c"]
+    assert any(l.startswith("d: a different route: check") for l in lines)
+    assert sum("frames kept" in l for l in lines) == 4, "sync quality is printed for every run"
+    c = Path(root) / "HP1" / "combined"
+    assert (c / "route.mp4").stat().st_size > 1000 and (c / "route-web.mp4").exists() and not (Path(root) / "HP1" / "combined.partial").exists()
+    m = json.loads((c / "route-manifest.json").read_text())
+    assert m["runs"] == 3 and 55 <= len(m["frames"]) <= 62
+    pos = {f["i"]: f for f in m["frames"]}
+    best = sum(f["run"] == 1 for f in m["frames"])  # run b (index 1 among the used) has the best accuracy, 4 m
+    assert best >= 0.8 * len(m["frames"]), "the best GPS accuracy wins each segment: nearly every frame is run b's"
+    assert all(set(f) == {"i", "seg", "lat", "lng", "t", "acc", "run"} and all(isinstance(v, (int, float)) for v in f.values() if v is not None) for f in m["frames"]), "numbers only"
+    segs = [f["seg"] for f in m["frames"]]
+    assert segs == sorted(set(segs)), "one frame per 10 m segment, along the road"
+    for f in m["frames"]:
+        d, _, _ = C._onto_line(np.array([C._xy(f["lat"], f["lng"], O)]), np.array([C._xy(*road(i / 2), O) for i in range(121)]))
+        assert d[0] < 8, "every frame sits on the road line"
+    seen = sorted((s["seen"], s["of"]) for s in m["stops"])
+    assert seen == [(1, 3), (2, 3), (3, 3)], seen  # the stop at 45 by two runs, at 10 by three, at 30 by one: kept, to be checked
+    assert all(0 <= s["frame"] < len(m["frames"]) for s in m["stops"])
+    assert "Stop 1 (seen" in subprocess.run([C.FFPROBE, "-v", "error", "-show_chapters", str(c / "route.mp4")], capture_output=True, text=True).stdout
+
+
+def test_combine_picks_the_sharper_frame_when_accuracy_ties():
+    root = tempfile.mkdtemp()
+    runs = {"a": synth_run(root, "HP1", "a", seed=1, acc=5.0, noise=1.0, sharp=lambda i: 0.0),
+            "b": synth_run(root, "HP1", "b", seed=2, acc=5.0, noise=1.0, sharp=lambda i: 1.0),
+            "c": synth_run(root, "HP1", "c", seed=3, acc=5.0, noise=1.0, sharp=lambda i: 0.0)}
+    C.combine(root, "HP1", runs, say=lambda m: None)
+    m = json.loads((Path(root) / "HP1" / "combined" / "route-manifest.json").read_text())
+    assert sum(f["run"] == 1 for f in m["frames"]) > 0.75 * len(m["frames"]), "equal accuracy: sharpness decides"
+
+
+def test_combine_never_reads_an_unprocessed_run_and_skips_trials():
+    root = tempfile.mkdtemp()
+    runs = {r: synth_run(root, "HP1", r, seed=k) for k, r in enumerate("abc")}
+    (Path(root) / "HP1" / "raw").mkdir()
+    (Path(root) / "HP1" / "raw" / "frame-00000.jpg").write_bytes(b"not an image")  # an original run folder with no processed/: ignored
+    runs["c"]["trial"] = True
+    assert C.combine(root, "HP1", runs, say=lambda m: None) == {"skipped": "2 of 3 runs"}, "a trial run is practice: it does not count"
+
+
+def test_cli_combine_offline_on_three_synthetic_runs():
+    root, mf = tempfile.mkdtemp(), Path(tempfile.mkdtemp()) / "runs.json"
+    runs = [synth_run(root, "HP1", r, seed=k, acc=5.0 + k) for k, r in enumerate("abc")]
+    mf.write_text(json.dumps({"runs": runs}))
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = C.main(["--root", root, "--manifest", str(mf), "--combine", "--tracker-db", str(Path(root) / "none.sqlite"), "--max-accuracy", "20"])
+    out = buf.getvalue()
+    assert rc == 0 and out.count("frames kept") == 3 and "combined 3 runs" in out, out
+    assert (Path(root) / "HP1" / "combined" / "route-web.mp4").exists()
 
 
 if __name__ == "__main__":
