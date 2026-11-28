@@ -594,7 +594,7 @@ function gameCapturePart_(b) {
   return capGameRun_({ caller: caller, v: v }, function () {
     const ck = capFileCheck_({ reg: t.g, runId: t.u, runKind: t.k });   // the run exists for this bus and kind, and was not discarded
     if (ck.error) return { success: false, error: ck.error };
-    const r = capFileSave_(ck, { kind: b.kind, seq: b.seq, base64: b.base64, lat: b.lat, lng: b.lng, takenAt: b.takenAt });
+    const r = capFileSave_(ck, { kind: b.kind, seq: b.seq, base64: b.base64, lat: b.lat, lng: b.lng, accuracy: b.accuracy, takenAt: b.takenAt }); // capFileSave_ keeps accuracy only if finite and >= 0
     return r.error ? { success: false, error: r.error } : { success: true, fileId: r.fileId };
   });
 }

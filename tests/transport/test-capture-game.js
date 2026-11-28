@@ -115,6 +115,15 @@ assert.strictEqual(crun(ME, { endedAt: '2026-11-26T09:00:00Z', status: 'ended', 
 assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'HP659511-G1')[10], '[{"seq":3}]', "the stop list is read from the run's stop photos, one {seq} each, for the Mac");
 assert.strictEqual(tabs['Capture Runs'].find((r) => r[0] === 'HP659511-G1')[12], 'ended');
 assert.match(dirG.files[0].desc, /driver@test\.invalid/, 'the frame is credited to the sender');
+{ // 28 Nov: the game's frames keep the fix accuracy in the description, as the classic page's do
+  assert.strictEqual(partOf(t1, { seq: 10, accuracy: 6.54 }).success, true);
+  assert.strictEqual(partOf(t1, { seq: 11 }).success, true);          // an old phone: none
+  assert.strictEqual(partOf(t1, { seq: 12, accuracy: -3 }).success, true);
+  assert.strictEqual(partOf(t1, { seq: 13, accuracy: 'x' }).success, true);
+  const d = (n) => JSON.parse(dirG.files.find((f) => f.name === 'frame-000' + n + '.jpg').desc);
+  assert.deepStrictEqual([d(10).accuracy, d(10).lat, d(10).takenAt], [6.5, 31.5, '2026-11-26T08:00:00Z'], 'accuracy next to lat, lng, takenAt (0.1 m)');
+  assert.ok(!('accuracy' in d(11)) && !('accuracy' in d(12)) && !('accuracy' in d(13)), 'none, negative or text: the key is absent');
+}
 // the same checks as the old path: image only, 2 MB
 assert.match(partOf(t1, { seq: 9, base64: PDF }).error, /photo/);
 assert.match(partOf(t1, { seq: 9, base64: b64('FF D8 FF E0', 3 * 1024 * 1024) }).error, /2 MB/);
